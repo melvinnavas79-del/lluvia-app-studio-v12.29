@@ -22,7 +22,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 from fastapi import FastAPI, APIRouter, Request, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, FileResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -109,6 +109,42 @@ async def command_endpoint(data: dict):
         raise HTTPException(status_code=400, detail="message es obligatorio")
     response = await process_command(message, user)
     return {"response": response, "user": user}
+
+
+# ============================================================
+# DESCARGA DEL PAQUETE DE DESPLIEGUE (lluvia-deploy.tar.gz)
+# Force-download para que ningun SPA / cache lo intercepte.
+# ============================================================
+_DEPLOY_PATH = Path("/app/frontend/public/lluvia-deploy.tar.gz")
+
+
+@api_router.get("/download/lluvia-deploy")
+async def download_deploy():
+    if not _DEPLOY_PATH.exists():
+        raise HTTPException(status_code=404, detail="Paquete no disponible")
+    return FileResponse(
+        path=str(_DEPLOY_PATH),
+        media_type="application/gzip",
+        filename="lluvia-deploy.tar.gz",
+        headers={
+            "Content-Disposition": 'attachment; filename="lluvia-deploy.tar.gz"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@api_router.get("/download/lluvia-deploy/info")
+async def download_info():
+    import hashlib
+    if not _DEPLOY_PATH.exists():
+        raise HTTPException(status_code=404, detail="Paquete no disponible")
+    sha = hashlib.sha256(_DEPLOY_PATH.read_bytes()).hexdigest()
+    return {
+        "filename": "lluvia-deploy.tar.gz",
+        "size_bytes": _DEPLOY_PATH.stat().st_size,
+        "sha256": sha,
+        "version": "operario-1.0",
+    }
 
 
 # ============================================================
