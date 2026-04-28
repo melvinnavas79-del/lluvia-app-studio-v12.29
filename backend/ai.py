@@ -2,9 +2,6 @@
 ========================================
 MOTOR DE IA (GPT) - CONEXION DIRECTA OPENAI
 ========================================
-
-Conexion directa a la API de OpenAI usando el SDK oficial.
-La API Key se configura en config.py (OPENAI_API_KEY).
 """
 
 import logging
@@ -16,43 +13,53 @@ import memory
 logger = logging.getLogger(__name__)
 
 
-SYSTEM_MESSAGE = (
+SYSTEM_MESSAGE_BASE = (
     "Eres el Asistente Oficial de Lluvia App Studio (agencia de Melvin Navas que crea bots, "
     "apps y automatizaciones). Respondes en espanol, claro, directo, profesional. "
     "Te presentas como Asistente Oficial de Lluvia App Studio cuando te saludan o preguntan quien eres. "
     "\n\n"
-    "REGLAS CRITICAS — NO LAS ROMPAS:\n"
-    "1. NUNCA inventes resultados de comandos del servidor. Si el usuario pregunta por RAM, disco, "
-    "uptime, CPU, version del sistema o cualquier dato tecnico real, NO inventes numeros. En su lugar, "
-    "dile exactamente que escriba uno de estos comandos para obtener datos REALES:\n"
-    "   - 'cuanta ram tiene mi servidor' o 'ram'\n"
-    "   - 'cuanto disco libre tengo' o 'disco'\n"
-    "   - 'uptime del servidor'\n"
-    "   - 'ejecuta <comando>' (admin only)\n"
-    "2. NUNCA escribas '[Ejecutando comando...]', '[SIMULACION]', 'En un entorno real' ni nada parecido. "
-    "Si no tienes el dato real, di explicitamente: 'Para verlo escribe: <comando exacto>'.\n"
-    "3. Solo el admin puede ejecutar comandos en el servidor o crear repos. Los demas usuarios pueden "
-    "preguntarte de negocio, ventas, o pedirte el rendimiento de su afiliacion con /mi-rendimiento.\n"
-    "4. Cuando un usuario pide algo tecnico que no es admin, sugierele que primero escriba "
-    "'/vincular-admin <password>' (si lo es) o que pida al admin.\n"
+    "REGLAS CRITICAS — NUNCA LAS ROMPAS:\n"
+    "1. NUNCA inventes resultados de comandos, listas de archivos, repositorios, RAM, disco, "
+    "uptime, CPU, version del sistema, ni ningun dato real del servidor o de GitHub. "
+    "Si no tienes el dato real, dile al usuario que ESCRIBA el comando exacto:\n"
+    "   - Para repositorios: 'listar repos'\n"
+    "   - Para crear un repo: 'crear repo <nombre>'\n"
+    "   - Para RAM: 'cuanta ram tiene mi servidor'\n"
+    "   - Para disco: 'cuanto disco libre tengo'\n"
+    "   - Para uptime: 'uptime del servidor'\n"
+    "   - Para crear app: 'crear app <nombre>'\n"
+    "   - Para comandos shell arbitrarios: 'ejecuta <comando>'\n"
+    "2. NUNCA escribas '[Ejecutando comando...]', '[SIMULACION]', 'En un entorno real' ni nada parecido.\n"
+    "3. NUNCA respondas con discursos de seguridad inventados como 'solo el admin puede'. "
+    "El backend hace el control de permisos automaticamente; tu solo guia al usuario al comando correcto.\n"
+)
+
+ADMIN_HINT = (
+    "\nNOTA DE CONTEXTO: Este usuario YA esta vinculado como administrador autorizado. "
+    "Cuando te pida algo tecnico (repos, RAM, comandos), responde con CONFIANZA y "
+    "dile el comando exacto que debe escribir para obtener el resultado real. "
+    "NO le digas que contacte al admin: el ES el admin."
+)
+
+NON_ADMIN_HINT = (
+    "\nNOTA DE CONTEXTO: Este usuario NO esta vinculado como admin. "
+    "Si te pide algo tecnico (repos, comandos shell), dile amablemente que primero "
+    "escriba '/vincular-admin <password>' si lo es, o que pida la accion al admin."
 )
 
 
 def is_ready() -> bool:
-    """Indica si el motor de IA esta listo para responder."""
     return bool(config.OPENAI_API_KEY)
 
 
 def _client() -> AsyncOpenAI:
-    """Crea un cliente de OpenAI con la API Key configurada."""
     return AsyncOpenAI(api_key=config.OPENAI_API_KEY)
 
 
-def _build_messages(user: str, text: str) -> list:
-    """Construye la lista de mensajes incluyendo el historial del usuario."""
+def _build_messages(user: str, text: str, is_admin: bool = False) -> list:
     history = memory.get(user)
-    messages = [{"role": "system", "content": SYSTEM_MESSAGE}]
-    # Recortar historial al limite configurado
+    system = SYSTEM_MESSAGE_BASE + (ADMIN_HINT if is_admin else NON_ADMIN_HINT)
+    messages = [{"role": "system", "content": system}]
     for entry in history[-(memory.MAX_HISTORY * 2):]:
         role = entry.get("role", "user")
         if role not in ("user", "assistant"):
@@ -62,29 +69,24 @@ def _build_messages(user: str, text: str) -> list:
     return messages
 
 
-async def generate(user: str, text: str) -> str:
-    """Genera una respuesta de OpenAI con historial del usuario."""
+async def generate(user: str, text: str, is_admin: bool = False) -> str:
     if not config.OPENAI_API_KEY:
         return (
             "El motor de IA no esta configurado. "
             "Por favor agrega OPENAI_API_KEY en backend/.env"
         )
-
     try:
         client = _client()
-        messages = _build_messages(user, text)
+        messages = _build_messages(user, text, is_admin=is_admin)
 
         response = await client.chat.completions.create(
             model=config.LLM_MODEL,
             messages=messages,
         )
-
         reply = response.choices[0].message.content or ""
 
-        # Guardar en memoria
         memory.save(user, "user", text)
         memory.save(user, "assistant", reply)
-
         return reply
 
     except Exception as e:

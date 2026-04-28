@@ -31,15 +31,40 @@ def create_repo(text: str = "") -> str:
     if not _ready():
         return "GitHub no esta configurado. Agrega GITHUB_TOKEN en .env"
 
-    # Extraer nombre del repo del texto: "crear repo mi-proyecto"
+    # Extraer nombre: tomar el ultimo token slug-like del mensaje
+    # (asumiendo que el usuario escribe el nombre al final)
     name = "bot-generated-repo"
-    match = re.search(r"(?:crear|nuevo)\s+repo(?:sitorio)?\s+([a-zA-Z0-9._-]+)", text, re.IGNORECASE)
-    if match:
-        name = match.group(1)
+    # Buscar tokens que parezcan slugs: minimo 3 chars, contienen dash o son >= 5 chars
+    # y no son palabras comunes en espanol
+    STOPWORDS = {
+        "crear", "crea", "nuevo", "nueva", "repo", "repos", "repositorio",
+        "repositorios", "github", "llamado", "llamada", "para", "como",
+        "favor", "ahora", "por", "que", "una", "uno", "los", "las", "del",
+    }
+    tokens = [t for t in text.split() if t]
+    candidates = []
+    for tok in tokens:
+        # Limpiar puntuacion
+        clean = tok.strip(".,;:!?\"'`").strip()
+        if not clean:
+            continue
+        # Solo aceptar slugs validos
+        import re as _re
+        if not _re.match(r"^[a-zA-Z0-9._-]+$", clean):
+            continue
+        if clean.lower() in STOPWORDS:
+            continue
+        # Aceptar si tiene dash o longitud >= 4
+        if "-" in clean or "_" in clean or len(clean) >= 4:
+            candidates.append(clean)
+
+    if candidates:
+        # El ultimo suele ser el nombre real
+        name = candidates[-1]
 
     payload = {
         "name": name,
-        "description": "Repositorio creado por el bot multiplataforma",
+        "description": "Repositorio creado por el Asistente de Lluvia App Studio",
         "private": False,
         "auto_init": True,
     }

@@ -93,6 +93,19 @@ def interpret(text: str) -> dict:
     if any(k in t for k in ["uname", "version del sistema", "kernel", "que sistema"]):
         return {"action": "server_cmd", "cmd": "uname -a", "raw": text, "label": "Sistema operativo"}
 
+    # GitHub - patrones amplios en lenguaje natural
+    GH_KEYWORDS = ["repo", "repos", "repositorio", "repositorios", "github"]
+    GH_LIST_HINTS = ["cuantos", "cuántos", "cuales", "cuáles", "lista", "listar", "ver", "revisar",
+                     "muestrame", "muéstrame", "dame", "que tengo", "qué tengo", "tenemos", "mis "]
+    GH_CREATE_HINTS = ["crear", "nuevo", "nueva", "crea ", "crea "]
+
+    has_gh = any(k in t for k in GH_KEYWORDS)
+    if has_gh:
+        if any(h in t for h in GH_CREATE_HINTS):
+            return {"action": "github_create", "raw": text}
+        if any(h in t for h in GH_LIST_HINTS) or t in ("repos", "/repos", "github"):
+            return {"action": "github_list", "raw": text}
+
     if "crear repo" in t or "crear repositorio" in t or "nuevo repo" in t:
         return {"action": "github_create", "raw": text}
     if "listar repos" in t or "mis repos" in t:
@@ -140,7 +153,9 @@ async def process_command(text: str, user: str = "default") -> str:
             )
 
     if action == "business_reply":
-        return await ai.generate(user, text)
+        # Pasamos al AI si el user es admin, para que conteste con confianza
+        is_admin = await admin_link.is_admin_chat(user)
+        return await ai.generate(user, text, is_admin=is_admin)
 
     result = execute_action(intent, user=user)
     label = intent.get("label")
