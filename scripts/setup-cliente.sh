@@ -156,13 +156,27 @@ ok "Archivos generados"
 if [ "$DRY_RUN" = "1" ]; then
     warn "DRY_RUN activo: NO se levanta Docker ni Caddy. Solo se generaron archivos."
 else
-    log "docker compose up -d --build (puede tardar 2-3 min)"
-    cd "$CLIENT_DIR" && docker compose up -d --build >/dev/null 2>&1 || warn "Docker compose fallo"
+    log "docker compose build (puede tardar 3-5 min en la primera vez)"
+    cd "$CLIENT_DIR"
+    if ! docker compose build 2>&1 | tail -20; then
+        err "Build fallo. Revisa 'cd $CLIENT_DIR && docker compose build' a mano."
+    fi
+    ok "Build completo"
 
-    log "Esperando backend..."
+    log "docker compose up -d"
+    docker compose up -d || err "docker compose up -d fallo"
+
+    log "Esperando backend (max 60s)..."
     for i in {1..30}; do
-        docker compose exec -T backend curl -fs http://localhost:8001/api/ >/dev/null 2>&1 && { ok "Backend up"; break; }
+        if docker compose exec -T backend curl -fs http://localhost:8001/api/ >/dev/null 2>&1; then
+            ok "Backend up (intento $i)"
+            break
+        fi
         sleep 2
+        if [ "$i" = "30" ]; then
+            warn "Backend no respondio en 60s. Logs ultimos:"
+            docker compose logs backend --tail 30
+        fi
     done
 
     docker ps --format '{{.Names}}' | grep -q '^lluvia_caddy$' && \

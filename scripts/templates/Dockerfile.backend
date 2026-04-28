@@ -1,16 +1,37 @@
-FROM python:3.11-slim
+# =============================================================================
+# Lluvia App Studio - Backend Dockerfile
+# Base PINEADA a Debian 12 (bookworm) - estable y con repos vivos.
+# NO usa python:3.11-slim plano porque Docker Hub lo movió a trixie y rompe.
+# =============================================================================
+FROM python:3.11.10-slim-bookworm
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /app
 
+# Dependencias de sistema MINIMAS (curl para healthcheck, gcc por bcrypt)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential curl \
+        curl \
+        gcc \
+        libffi-dev \
+        ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Requirements de PRODUCCION (no el de desarrollo con 100+ paquetes)
+COPY requirements-prod.txt requirements.txt
+RUN pip install --upgrade pip && pip install -r requirements.txt
 
+# Copiar codigo
 COPY . .
+
+# Healthcheck - confirma que uvicorn esta escuchando
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fs http://localhost:8001/api/ || exit 1
 
 EXPOSE 8001
 
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8001"]
+# Logs en stdout (los recoge `docker compose logs`)
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8001", "--log-level", "info"]

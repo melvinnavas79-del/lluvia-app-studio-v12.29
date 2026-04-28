@@ -143,7 +143,14 @@ async def download_info():
         "filename": "lluvia-deploy.tar.gz",
         "size_bytes": _DEPLOY_PATH.stat().st_size,
         "sha256": sha,
-        "version": "operario-1.0",
+        "version": "operario-2.0-bookworm",
+        "fixes": [
+            "Dockerfile pineado a python:3.11.10-slim-bookworm (Debian 12, NO Trixie)",
+            "requirements-prod.txt con 13 paquetes (vs 123 del original)",
+            "Healthcheck cada 15s en backend y frontend",
+            "setup-cliente.sh con logs visibles (no /dev/null)",
+            "scripts/diagnose.sh para troubleshooting rapido",
+        ],
     }
 
 
