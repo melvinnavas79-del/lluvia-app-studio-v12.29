@@ -38,7 +38,7 @@ def status_text() -> str:
         f"- WhatsApp:  {yn(s['whatsapp'])}\n"
         f"- Telegram:  {yn(s['telegram'])}\n"
         f"- Instagram: {yn(s['instagram'])}\n"
-        f"- IA lista:  {yn(s['llm_ready'])} (modelo {s['model']} via {s['provider']})\n"
+        f"- IA lista:  {yn(s['llm_ready'])} (modelo {s.get('model', '?')})\n"
     )
 
 

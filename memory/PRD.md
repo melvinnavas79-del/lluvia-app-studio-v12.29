@@ -1,92 +1,81 @@
-# PRD - Bot Multiplataforma IA + Modo Afiliado + Branding
+# PRD - Lluvia App Studio Bot (Bot Multiplataforma IA)
 
 ## Problema original (verbatim del usuario)
-> "Cuanto cuesta crear un bot inteligente" → bot multiplataforma con webhooks (Telegram/WhatsApp/Instagram), GitHub, generación de apps, IA conversacional. White-label completo. Iteración 3: pantalla Branding personalizable + verificación de persistencia + migración automática de admin al cambiar `ADMIN_EMAIL`.
+> "Cuanto cuesta crear un bot inteligente" → bot multiplataforma con webhooks (Telegram/WhatsApp/Instagram), GitHub, generación de apps, IA conversacional, white-label completo, modo afiliado y branding personalizable.
+
+## Cliente final
+**Lluvia App Studio** — agencia de Melvin Navas (`melvinnavas79@gmail.com`) que vende copias del bot a sus clientes.
 
 ## Arquitectura
 
 ```
 backend/
-├── server.py          FastAPI - webhooks + /api/command + /api/status + startup seed + indices
-├── auth.py            JWT + bcrypt + dependencies + seed_admin (con migración auto)
-├── models.py          Pydantic: LoginIn, AffiliateCreateIn, SaleCreateIn
-├── affiliates.py      Routers: /auth, /affiliates, /sales, /stats
-├── branding.py        Router: /branding GET (público), PUT (admin), POST /reset
-├── config.py / security.py / memory.py / ai.py / agent.py / executor.py
-└── actions/           github.py, server.py, apps.py, business.py
+├── server.py              FastAPI - webhooks + /api/command + /api/status + startup
+├── auth.py                JWT + bcrypt + seed_admin (con migración auto)
+├── models.py              Pydantic models
+├── affiliates.py          Routers: /auth, /affiliates, /sales, /stats
+├── branding.py            Routers: /branding GET (público), PUT/RESET (admin)
+├── config.py              Carga .env, expone credentials_status()
+├── security.py            Blacklist comandos peligrosos
+├── memory.py              Historial conversacional por usuario (RAM)
+├── ai.py                  OpenAI SDK directo (AsyncOpenAI)
+├── agent.py               Intent dispatcher (incluye /mi-rendimiento)
+├── executor.py
+└── actions/
+    ├── github.py
+    ├── server.py
+    ├── apps.py
+    ├── business.py        help_text, status_text, auto_reply
+    └── affiliate_stats.py /mi-rendimiento → resumen del afiliado por chat_id
 
 frontend/src/
-├── App.js             Switch: Login | AdminDashboard | AffiliateDashboard
-├── api.js             axios + Bearer interceptor + fmt helpers
-├── AuthContext.js     login/logout/me + persistencia localStorage
-├── BrandingContext.js carga /api/branding al montar, aplica CSS vars + document.title
-├── App.css            Tema dark + amber (vars CSS personalizables)
+├── App.js                 Switch: Login | AdminDashboard | AffiliateDashboard
+├── api.js                 axios + Bearer + helpers
+├── AuthContext.js         login/logout/me + persistencia localStorage
+├── BrandingContext.js     carga branding, aplica CSS vars + document.title
+├── App.css                Tema dark con CSS variables (theme-able)
 └── components/
-    ├── Login.js                   (lee branding para mostrar logo y product_name)
-    ├── AdminDashboard.js          (4 tabs: Overview / Afiliados / Ventas / Branding)
-    ├── AffiliateDashboard.js      (vista personal del afiliado)
-    └── BrandingTab.js             (form admin con color pickers, logo upload, preview en vivo)
+    ├── Login.js           Refleja product_name, tagline, support_email
+    ├── AdminDashboard.js  4 tabs: Overview / Afiliados / Ventas / Branding
+    ├── AffiliateDashboard.js
+    └── BrandingTab.js     Form admin + preview en vivo
 ```
-
-## Personas
-- **Admin (owner)**: configura .env, gestiona afiliados, registra ventas, personaliza branding.
-- **Afiliado**: login propio, ve solo sus ventas y comisiones.
-- **Cliente final**: chatea con el bot por WhatsApp/Telegram/Instagram.
 
 ## Estado de implementación
 
-### ✅ Iteración 1 (2026-01-28) — Bot core + IA conversacional
-- Webhooks Telegram/WhatsApp/Instagram + `/api/command`
-- IA con memoria, GitHub, generador de landings, comandos shell con security
-- 16/16 pytest + 6/6 UI
+### ✅ Iter 1 — Bot core (16 backend + 6 UI)
+Webhooks, IA, GitHub, generador landings, comandos shell.
 
-### ✅ Iteración 2 (2026-01-28) — White-label + Modo Afiliado MANUAL
-- Removido todo el branding externo (badge, scripts, librerías)
-- IA con OpenAI SDK directo (key del usuario)
-- Auth JWT propia (HS256 + bcrypt, Bearer 8h, admin seed)
-- CRUD afiliados + ventas + cálculo de comisión + 2 dashboards (admin/afiliado)
-- 25/25 pytest + 9/9 UI
+### ✅ Iter 2 — White-label + Modo Afiliado MANUAL (25 + 9)
+Removido todo branding externo. OpenAI directo. Auth JWT propia. CRUD afiliados/ventas. Dashboards separados por rol.
 
-### ✅ Iteración 3 (2026-01-28) — Branding white-label + persistencia + hardenings
-- **Pantalla Branding** (4ta tab del admin):
-  - Cambio de `product_name`, `tagline`, 4 colores (primary/accent/bg/text), `company_name`, `support_email`
-  - Upload de logo (max 600KB, base64 data URL)
-  - Preview en vivo a la derecha del form (sin guardar)
-  - Validación hex `^#[0-9a-fA-F]{6}$` en backend (422 para colores inválidos)
-  - Aplicación inmediata: CSS variables + document.title
-  - Login refleja product_name y logo dinámicamente
-  - Botón Restablecer con confirmación
-- **Persistencia validada**: tras `supervisorctl restart backend`, admin/afiliados/ventas/branding sobreviven
-- **`seed_admin` mejorado**: si cambias `ADMIN_EMAIL` en `.env` y reinicias, el admin existente migra a ese email automáticamente (no crea duplicado, no requiere tocar Mongo)
-- **Defensa adicional**: `POST /api/sales` rechaza ventas a afiliados con `active:false` (HTTP 400)
-- 41/41 pytest backend + 14/14 UI = **55/55 checks**
+### ✅ Iter 3 — Pantalla Branding + Persistencia + Hardenings (16 + 14)
+Branding personalizable (nombre, colores, logo, soporte). Migración auto de admin. Validación hex de colores. Defensa de venta a afiliado desactivado.
 
-## Total acumulado: 82 backend tests + 29 UI tests = **111 checks, 100% verde**
+### ✅ Iter 4 — Cierre Lluvia App Studio (18 + 12)
+- Admin migrado a `melvinnavas79@gmail.com` (admin@admin.com elimnado, mismo UUID preservado)
+- Telegram bot @LluviaAppStudioBot activo con webhook y comando `/mi-rendimiento` funcional
+- Branding por defecto = Lluvia App Studio (azul lluvia #5fb4ff)
+- CSS variables aplicadas: `--brand-primary`, `--brand-accent`, `--brand-bg`, `--brand-text`
+- 0 referencias a Emergent en código de producto (solo URL preview de infraestructura)
+- Bug fix `/status` (KeyError 'provider' pre-existente)
+
+## Total acumulado: **129/129 verde** (75 backend + 54 UI)
+
+## URL de acceso
+- **Panel**: https://ai-bot-cost-calc.preview.emergentagent.com
+- **Bot Telegram**: https://t.me/LluviaAppStudioBot
 
 ## Backlog priorizado
+- P0: deployment a producción con dominio propio (eliminar `*.preview.emergentagent.com` de cara al cliente)
+- P0: rotar TELEGRAM_TOKEN + JWT_SECRET (compartidos en chat)
+- P1: Cambio de password por el propio afiliado, brute-force protection, refresh tokens
+- P1: Dividir AdminDashboard.js (>400 líneas)
+- P2: Pagos automáticos, tracking de clicks por afiliado, multi-idioma del bot
 
-### P0
-- Comando `/mi-rendimiento` en Telegram para que el afiliado consulte sus stats por chat
-- Persistir memoria conversacional del bot en MongoDB (hoy es RAM)
-- Endpoint para que el afiliado cambie su propia password
-
-### P1
-- Brute-force protection (5 fallos = lock 15 min)
-- Refresh tokens
-- Rate limit en `PUT /api/branding`
-- Generación de PDF/CSV de liquidación mensual de comisiones
-- Aggregation pipeline para `/api/stats/network` (hoy N+1)
-- Dividir AdminDashboard.js en archivos separados (>400 líneas)
-
-### P2
-- Pagos automáticos (Stripe Connect / MercadoPago Payouts)
-- Tracking de clicks con links cortos firmados + cookie de atribución
-- Multi-idioma del bot (auto-detect)
-- Webhook signed HMAC validation para Meta
-- Sistema de logo de uploads en filesystem en lugar de base64
-
-## Acciones inmediatas que el usuario puede hacer
-1. **Cambiar el email del admin**: editar `ADMIN_EMAIL` en `/app/backend/.env`, luego `sudo supervisorctl restart backend`. El admin se migrará automáticamente al nuevo email manteniendo todos sus permisos. La misma password (`Admin#2026`) o cambiarla simultáneamente con `ADMIN_PASSWORD`.
-2. Personalizar marca desde la tab **Branding** del panel admin.
-3. Crear afiliados reales y empezar a registrar ventas.
-4. Configurar tokens reales de WhatsApp/Telegram/Instagram para recibir mensajes en vivo.
+## Acciones inmediatas para Melvin
+1. **Rotar token de Telegram**: `/revoke` en @BotFather → nuevo token → `TELEGRAM_TOKEN=` en `.env` → `setWebhook` con la URL nueva
+2. **Cambiar password admin** desde `.env` (`ADMIN_PASSWORD`)
+3. **Subir logo de Lluvia App Studio** desde tab Branding del panel
+4. **Crear afiliados reales** desde tab Afiliados
+5. **Vincular `telegram_chat_id` a cada afiliado** para que puedan usar `/mi-rendimiento`
