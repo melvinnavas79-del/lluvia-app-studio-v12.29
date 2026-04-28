@@ -8,11 +8,14 @@ sin tocar codigo. Una sola coleccion 'branding' con un unico documento.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime, timezone
+import re
 
 import auth
+
+HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 router = APIRouter(prefix="/branding")
 _db_ref = {"db": None}
@@ -49,6 +52,15 @@ class BrandingIn(BaseModel):
     logo_data_url: Optional[str] = Field(default=None, max_length=2_000_000)  # ~1.5MB base64
     company_name: Optional[str] = Field(default=None, max_length=120)
     support_email: Optional[str] = Field(default=None, max_length=120)
+
+    @field_validator("primary_color", "accent_color", "background_color", "text_color")
+    @classmethod
+    def validate_hex(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":
+            return v
+        if not HEX_RE.match(v):
+            raise ValueError("Color invalido. Usa formato #RRGGBB (6 dig hex)")
+        return v.lower()
 
 
 async def _get_branding_doc() -> dict:

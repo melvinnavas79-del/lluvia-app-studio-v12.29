@@ -122,7 +122,13 @@ async def seed_admin(db) -> None:
         # Asegurar unicidad del nuevo email (no debe colisionar con otro user)
         clash = await db.users.find_one({"email": email})
         if clash:
-            # Si el email ya esta tomado por un afiliado, no podemos migrar
+            import logging
+            logging.getLogger("auth").warning(
+                f"seed_admin: no se pudo migrar admin a {email} porque ya existe "
+                f"un usuario (rol={clash.get('role')}) con ese email. "
+                f"El admin actual sigue siendo {other_admin['email']}. "
+                f"Revisa ADMIN_EMAIL en .env."
+            )
             return
         await db.users.update_one(
             {"id": other_admin["id"]},
