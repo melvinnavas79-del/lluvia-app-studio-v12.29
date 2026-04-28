@@ -2,32 +2,27 @@
 ========================================
 AGENTE - INTERPRETACION DE COMANDOS
 ========================================
-
-Decide que accion tomar segun el texto del usuario.
 """
 
-import os
 import logging
 import ai
 from executor import execute_action
 from actions import affiliate_stats
+from actions import admin_link
 
 logger = logging.getLogger(__name__)
 
 
-def is_admin_chat(user: str) -> bool:
-    """True si el chat_id pertenece a un admin autorizado (env ADMIN_TELEGRAM_CHAT_IDS)."""
-    raw = os.environ.get("ADMIN_TELEGRAM_CHAT_IDS", "")
-    ids = [x.strip() for x in raw.split(",") if x.strip()]
-    return str(user) in ids
-
-
 def interpret(text: str) -> dict:
-    """Interpreta el texto del usuario y devuelve la accion a ejecutar."""
     if not text:
         return {"action": "business_reply", "raw": text}
 
     t = text.lower().strip()
+
+    # Vincular admin: /vincular-admin <password>
+    if t.startswith("/vincular-admin "):
+        pwd = text.split(" ", 1)[1].strip()
+        return {"action": "link_admin", "password": pwd, "raw": text}
 
     # Saludo / inicio
     if t in ("/start", "/inicio", "hola", "buenas", "buenos dias", "buenas tardes", "buenas noches"):
@@ -37,6 +32,31 @@ def interpret(text: str) -> dict:
     if t in ("/mi-rendimiento", "/mirendimiento", "/mis-stats", "mi rendimiento", "mis ventas"):
         return {"action": "my_performance", "raw": text}
 
+    # === COMANDOS DE SERVIDOR EN LENGUAJE NATURAL ===
+    # RAM / memoria
+    if any(k in t for k in ["ram", "memoria"]) and any(k in t for k in ["servidor", "tiene", "cuanta", "muestra", "ver", "dame"]):
+        return {"action": "server_cmd", "cmd": "free -h", "raw": text, "label": "Memoria del servidor"}
+    if t in ("ram", "memoria", "/ram", "/memoria"):
+        return {"action": "server_cmd", "cmd": "free -h", "raw": text, "label": "Memoria del servidor"}
+
+    # Disco
+    if any(k in t for k in ["disco", "almacenamiento", "espacio"]) and any(k in t for k in ["servidor", "libre", "tiene", "cuanto", "muestra", "ver", "dame"]):
+        return {"action": "server_cmd", "cmd": "df -h /", "raw": text, "label": "Espacio en disco"}
+    if t in ("disco", "/disco", "espacio"):
+        return {"action": "server_cmd", "cmd": "df -h /", "raw": text, "label": "Espacio en disco"}
+
+    # Uptime / carga
+    if any(k in t for k in ["uptime", "encendido", "carga del servidor", "tiempo activo"]):
+        return {"action": "server_cmd", "cmd": "uptime", "raw": text, "label": "Uptime del servidor"}
+
+    # CPU
+    if "cpu" in t and any(k in t for k in ["servidor", "info", "muestra", "cuantos"]):
+        return {"action": "server_cmd", "cmd": "nproc && cat /proc/cpuinfo | grep 'model name' | head -1", "raw": text, "label": "CPU"}
+
+    # Sistema
+    if any(k in t for k in ["uname", "version del sistema", "kernel", "que sistema"]):
+        return {"action": "server_cmd", "cmd": "uname -a", "raw": text, "label": "Sistema operativo"}
+
     # GitHub
     if "crear repo" in t or "crear repositorio" in t or "nuevo repo" in t:
         return {"action": "github_create", "raw": text}
@@ -44,27 +64,20 @@ def interpret(text: str) -> dict:
     if "listar repos" in t or "mis repos" in t:
         return {"action": "github_list", "raw": text}
 
-    # Apps / Web
+    # Apps
     if "crear app" in t or "crear aplicacion" in t or "crear pagina" in t or "crear web" in t:
         return {"action": "create_app", "raw": text}
 
-    # Servidor
-    if "instalar radio" in t or "radio online" in t:
-        return {"action": "install_radio", "raw": text}
-
+    # Comando shell explicito
     if t.startswith("ejecuta ") or t.startswith("comando ") or t.startswith("/run "):
-        # Extraer el comando real
         cmd = text.split(" ", 1)[1] if " " in text else ""
-        return {"action": "server_cmd", "cmd": cmd, "raw": text}
+        return {"action": "server_cmd", "cmd": cmd, "raw": text, "label": f"$ {cmd}"}
 
-    # Redes sociales / negocio
-    if "publicar" in t or "post en" in t or "redes sociales" in t:
-        return {"action": "social_post", "raw": text}
-
+    # Negocio
     if "cliente" in t or "ventas" in t or "vender" in t:
         return {"action": "business_reply", "raw": text}
 
-    # Comandos del bot
+    # Comandos basicos
     if t in ("/help", "ayuda"):
         return {"action": "help", "raw": text}
 
@@ -75,26 +88,37 @@ def interpret(text: str) -> dict:
 
 
 async def process_command(text: str, user: str = "default") -> str:
-    """Procesa un mensaje del usuario: interpreta + ejecuta."""
     intent = interpret(text)
     action = intent["action"]
     logger.info(f"[{user}] intent: {action} | text: {text[:80]}")
 
-    # /mi-rendimiento: requiere DB
+    # /vincular-admin: no requiere ser admin (auto-registro con password)
+    if action == "link_admin":
+        return await admin_link.link_admin(user, intent.get("password", ""))
+
+    # /mi-rendimiento
     if action == "my_performance":
         return await affiliate_stats.my_performance(user)
 
     # Comandos sensibles requieren admin
     PRIVILEGED = {"server_cmd", "github_create", "github_list", "create_app", "install_radio"}
-    if action in PRIVILEGED and not is_admin_chat(user):
-        return (
-            "Este comando solo lo puede usar el administrador de Lluvia App Studio. "
-            "Si tu eres el admin, agrega tu chat_id a ADMIN_TELEGRAM_CHAT_IDS en backend/.env."
-        )
+    if action in PRIVILEGED:
+        if not await admin_link.is_admin_chat(user):
+            return (
+                "Esta accion solo la puede ordenar el administrador de Lluvia App Studio.\n\n"
+                "Si tu eres el admin, escribe primero:\n"
+                "  /vincular-admin <tu password>\n\n"
+                "y vuelve a intentarlo."
+            )
 
-    # Las respuestas de negocio van por IA con historial
+    # business_reply -> IA
     if action == "business_reply":
         return await ai.generate(user, text)
 
-    # El resto son acciones tecnicas
-    return execute_action(intent, user=user)
+    # Resto: ejecucion sincrona
+    result = execute_action(intent, user=user)
+    # Si el intent traia un label, lo prependemos para que el output sea claro
+    label = intent.get("label")
+    if label and action == "server_cmd":
+        return f"📊 {label}:\n\n{result}"
+    return result

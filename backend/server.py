@@ -33,6 +33,7 @@ import branding as branding_module
 from agent import process_command
 from actions import apps as ap
 from actions import affiliate_stats as affiliate_stats_module
+from actions import admin_link as admin_link_module
 import memory
 
 
@@ -51,6 +52,7 @@ auth_module.set_db(db)
 affiliates_module.set_db(db)
 branding_module.set_db(db)
 affiliate_stats_module.set_db(db)
+admin_link_module.set_db(db)
 
 
 # ----------------------- APP -----------------------
