@@ -6,12 +6,20 @@ AGENTE - INTERPRETACION DE COMANDOS
 Decide que accion tomar segun el texto del usuario.
 """
 
+import os
 import logging
 import ai
 from executor import execute_action
 from actions import affiliate_stats
 
 logger = logging.getLogger(__name__)
+
+
+def is_admin_chat(user: str) -> bool:
+    """True si el chat_id pertenece a un admin autorizado (env ADMIN_TELEGRAM_CHAT_IDS)."""
+    raw = os.environ.get("ADMIN_TELEGRAM_CHAT_IDS", "")
+    ids = [x.strip() for x in raw.split(",") if x.strip()]
+    return str(user) in ids
 
 
 def interpret(text: str) -> dict:
@@ -21,7 +29,11 @@ def interpret(text: str) -> dict:
 
     t = text.lower().strip()
 
-    # Afiliado: su rendimiento (debe revisarse antes que otros patrones)
+    # Saludo / inicio
+    if t in ("/start", "/inicio", "hola", "buenas", "buenos dias", "buenas tardes", "buenas noches"):
+        return {"action": "greeting", "raw": text}
+
+    # Afiliado: su rendimiento
     if t in ("/mi-rendimiento", "/mirendimiento", "/mis-stats", "mi rendimiento", "mis ventas"):
         return {"action": "my_performance", "raw": text}
 
@@ -53,7 +65,7 @@ def interpret(text: str) -> dict:
         return {"action": "business_reply", "raw": text}
 
     # Comandos del bot
-    if t in ("/start", "hola", "/help", "ayuda"):
+    if t in ("/help", "ayuda"):
         return {"action": "help", "raw": text}
 
     if t == "/status" or t == "estado":
@@ -72,9 +84,17 @@ async def process_command(text: str, user: str = "default") -> str:
     if action == "my_performance":
         return await affiliate_stats.my_performance(user)
 
+    # Comandos sensibles requieren admin
+    PRIVILEGED = {"server_cmd", "github_create", "github_list", "create_app", "install_radio"}
+    if action in PRIVILEGED and not is_admin_chat(user):
+        return (
+            "Este comando solo lo puede usar el administrador de Lluvia App Studio. "
+            "Si tu eres el admin, agrega tu chat_id a ADMIN_TELEGRAM_CHAT_IDS en backend/.env."
+        )
+
     # Las respuestas de negocio van por IA con historial
     if action == "business_reply":
         return await ai.generate(user, text)
 
-    # El resto son acciones tecnicas (sincronas)
+    # El resto son acciones tecnicas
     return execute_action(intent, user=user)

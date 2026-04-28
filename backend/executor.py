@@ -19,6 +19,9 @@ def execute_action(intent: dict, user: str = "default") -> str:
     action = intent.get("action", "")
 
     try:
+        if action == "greeting":
+            return bz.greeting()
+
         if action == "create_app":
             return ap.create_app(intent.get("raw", ""))
 
