@@ -10,7 +10,7 @@ Para obtener tus API Keys:
 - WHATSAPP/INSTAGRAM (Meta): https://developers.facebook.com/
 - TELEGRAM: Habla con @BotFather en Telegram
 - GITHUB: https://github.com/settings/tokens
-- OPENAI: https://platform.openai.com/api-keys (o usa EMERGENT_LLM_KEY)
+- OPENAI: https://platform.openai.com/api-keys
 """
 
 import os
@@ -25,48 +25,46 @@ load_dotenv(ROOT_DIR / ".env")
 # ==========================================
 # TOKEN GENERAL DE SEGURIDAD (interno)
 # ==========================================
-TOKEN = os.environ.get("BOT_SECRET_TOKEN", "TU_TOKEN")
+TOKEN = os.environ.get("BOT_SECRET_TOKEN", "")
 
 
 # ==========================================
 # GITHUB
 # ==========================================
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "TU_GITHUB")
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_USER = os.environ.get("GITHUB_USER", "")
 
 
 # ==========================================
 # WHATSAPP (Meta Cloud API)
 # ==========================================
-WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN", "TOKEN_META")
-PHONE_ID = os.environ.get("PHONE_ID", "PHONE_ID")
+WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN", "")
+PHONE_ID = os.environ.get("PHONE_ID", "")
 VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "12345")
 
 
 # ==========================================
 # TELEGRAM
 # ==========================================
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "BOT_TOKEN")
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 
 
 # ==========================================
 # INSTAGRAM (Meta)
 # ==========================================
-INSTAGRAM_TOKEN = os.environ.get("INSTAGRAM_TOKEN", "TOKEN_META")
-IG_ID = os.environ.get("IG_ID", "IG_ID")
+INSTAGRAM_TOKEN = os.environ.get("INSTAGRAM_TOKEN", "")
+IG_ID = os.environ.get("IG_ID", "")
 
 
 # ==========================================
-# OPENAI / EMERGENT LLM
+# OPENAI - CONEXION DIRECTA
 # ==========================================
-# Si tienes tu propia API Key de OpenAI, ponla en OPENAI_API_KEY.
-# Si dejas vacia OPENAI_API_KEY, el bot usa EMERGENT_LLM_KEY automaticamente.
+# Pega aqui tu API Key personal de OpenAI o configurala en .env.
+# Obtener en: https://platform.openai.com/api-keys
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 
-# Modelo por defecto
-LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "openai")
-LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-5.2")
+# Modelo por defecto (puedes cambiarlo: gpt-4o, gpt-4o-mini, gpt-4.1, etc.)
+LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4o-mini")
 
 
 # ==========================================
@@ -81,18 +79,12 @@ DB_NAME = os.environ.get("DB_NAME", "bot_multiplataforma")
 # ==========================================
 def credentials_status() -> dict:
     """Retorna el estado de las credenciales configuradas (sin exponer valores)."""
-    placeholders = {
-        "TU_TOKEN", "TU_GITHUB", "TOKEN_META", "PHONE_ID",
-        "BOT_TOKEN", "IG_ID", "TU_API_KEY", "12345", ""
-    }
     return {
-        "github": GITHUB_TOKEN not in placeholders,
-        "whatsapp": WHATSAPP_TOKEN not in placeholders and PHONE_ID not in placeholders,
-        "telegram": TELEGRAM_TOKEN not in placeholders,
-        "instagram": INSTAGRAM_TOKEN not in placeholders and IG_ID not in placeholders,
-        "openai_personal": bool(OPENAI_API_KEY),
-        "emergent_llm": bool(EMERGENT_LLM_KEY),
-        "llm_ready": bool(OPENAI_API_KEY) or bool(EMERGENT_LLM_KEY),
+        "github": bool(GITHUB_TOKEN),
+        "whatsapp": bool(WHATSAPP_TOKEN) and bool(PHONE_ID),
+        "telegram": bool(TELEGRAM_TOKEN),
+        "instagram": bool(INSTAGRAM_TOKEN) and bool(IG_ID),
+        "openai": bool(OPENAI_API_KEY),
+        "llm_ready": bool(OPENAI_API_KEY),
         "model": LLM_MODEL,
-        "provider": LLM_PROVIDER,
     }

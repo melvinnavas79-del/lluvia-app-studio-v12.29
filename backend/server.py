@@ -6,10 +6,9 @@ SERVIDOR FASTAPI - BOT MULTIPLATAFORMA
 Webhooks para Telegram, WhatsApp e Instagram.
 Endpoint /api/command para uso directo.
 
-NOTA EMERGENT:
+NOTA INFRAESTRUCTURA:
 - Este servicio corre en el puerto 8001 (gestionado por supervisor).
-- Externamente accesible vIa REACT_APP_BACKEND_URL con prefijo /api.
-- Equivale al puerto 8080 que pediste, adaptado al ingress de Emergent.
+- Externamente accesible via la URL publica configurada con prefijo /api.
 """
 
 import logging

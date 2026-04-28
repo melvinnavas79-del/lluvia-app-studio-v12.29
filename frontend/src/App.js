@@ -10,7 +10,7 @@ const PLATFORMS = [
   { key: "whatsapp",  label: "WhatsApp",  hint: "Meta Cloud API webhook",            icon: "WA" },
   { key: "instagram", label: "Instagram", hint: "Mensajes directos via Meta",        icon: "IG" },
   { key: "github",    label: "GitHub",    hint: "Crear repos / listar / commits",    icon: "GH" },
-  { key: "llm_ready", label: "Motor IA",  hint: "GPT-5.2 via Emergent LLM Key",       icon: "AI" },
+  { key: "llm_ready", label: "Motor IA",  hint: "OpenAI GPT (conexion directa)",     icon: "AI" },
 ];
 
 const SUGGESTIONS = [
@@ -108,7 +108,7 @@ function App() {
             <span className="accent">ejecuta y vende.</span>
           </h1>
           <p className="hero-sub">
-            FastAPI + GPT-5.2 conectado a Telegram, WhatsApp e Instagram.
+            FastAPI + OpenAI GPT conectado a Telegram, WhatsApp e Instagram.
             Crea apps, gestiona tu GitHub, ejecuta comandos en el servidor
             y responde a tus clientes con memoria conversacional.
           </p>
@@ -209,7 +209,7 @@ function App() {
             <h4>Edita el archivo .env</h4>
             <p>
               Abre <code>backend/.env</code> y completa los tokens de las plataformas
-              que quieras activar. La <code>EMERGENT_LLM_KEY</code> ya viene lista.
+              que quieras activar, incluida tu <code>OPENAI_API_KEY</code>.
             </p>
           </div>
           <div className="step">

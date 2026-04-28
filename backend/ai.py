@@ -1,14 +1,14 @@
 """
 ========================================
-MOTOR DE IA (GPT)
+MOTOR DE IA (GPT) - CONEXION DIRECTA OPENAI
 ========================================
 
-Conexion al modelo LLM via emergentintegrations.
-Soporta OpenAI directo (con OPENAI_API_KEY) o Emergent LLM Key universal.
+Conexion directa a la API de OpenAI usando el SDK oficial.
+La API Key se configura en config.py (OPENAI_API_KEY).
 """
 
 import logging
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from openai import AsyncOpenAI
 
 import config
 import memory
@@ -25,52 +25,54 @@ SYSTEM_MESSAGE = (
 )
 
 
-def _get_api_key() -> str:
-    """Devuelve la API key disponible (OpenAI personal o Emergent LLM Key)."""
-    if config.OPENAI_API_KEY:
-        return config.OPENAI_API_KEY
-    if config.EMERGENT_LLM_KEY:
-        return config.EMERGENT_LLM_KEY
-    return ""
-
-
 def is_ready() -> bool:
     """Indica si el motor de IA esta listo para responder."""
-    return bool(_get_api_key())
+    return bool(config.OPENAI_API_KEY)
+
+
+def _client() -> AsyncOpenAI:
+    """Crea un cliente de OpenAI con la API Key configurada."""
+    return AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+
+
+def _build_messages(user: str, text: str) -> list:
+    """Construye la lista de mensajes incluyendo el historial del usuario."""
+    history = memory.get(user)
+    messages = [{"role": "system", "content": SYSTEM_MESSAGE}]
+    # Recortar historial al limite configurado
+    for entry in history[-(memory.MAX_HISTORY * 2):]:
+        role = entry.get("role", "user")
+        if role not in ("user", "assistant"):
+            role = "user"
+        messages.append({"role": role, "content": entry.get("content", "")})
+    messages.append({"role": "user", "content": text})
+    return messages
 
 
 async def generate(user: str, text: str) -> str:
-    """Genera una respuesta del LLM con historial del usuario."""
-    api_key = _get_api_key()
-    if not api_key:
+    """Genera una respuesta de OpenAI con historial del usuario."""
+    if not config.OPENAI_API_KEY:
         return (
             "El motor de IA no esta configurado. "
-            "Por favor agrega OPENAI_API_KEY o EMERGENT_LLM_KEY en el archivo .env"
+            "Por favor agrega OPENAI_API_KEY en backend/.env"
         )
 
     try:
-        # Crear nueva instancia por cada conversacion (recomendado por playbook)
-        chat = LlmChat(
-            api_key=api_key,
-            session_id=f"bot-user-{user}",
-            system_message=SYSTEM_MESSAGE,
-        ).with_model(config.LLM_PROVIDER, config.LLM_MODEL)
+        client = _client()
+        messages = _build_messages(user, text)
 
-        # Inyectar historial reciente como contexto
-        history_text = memory.get_text_history(user, limit=8)
-        full_prompt = (
-            f"Historial reciente:\n{history_text}\n\n"
-            f"Usuario actual dice: {text}"
+        response = await client.chat.completions.create(
+            model=config.LLM_MODEL,
+            messages=messages,
         )
 
-        user_message = UserMessage(text=full_prompt)
-        response = await chat.send_message(user_message)
+        reply = response.choices[0].message.content or ""
 
         # Guardar en memoria
         memory.save(user, "user", text)
-        memory.save(user, "assistant", response)
+        memory.save(user, "assistant", reply)
 
-        return response
+        return reply
 
     except Exception as e:
         logger.error(f"Error generando respuesta IA: {e}")
