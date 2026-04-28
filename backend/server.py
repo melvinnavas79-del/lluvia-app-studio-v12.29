@@ -29,6 +29,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import config
 import auth as auth_module
 import affiliates as affiliates_module
+import branding as branding_module
 from agent import process_command
 from actions import apps as ap
 import memory
@@ -47,6 +48,7 @@ mongo_client = AsyncIOMotorClient(config.MONGO_URL)
 db = mongo_client[config.DB_NAME]
 auth_module.set_db(db)
 affiliates_module.set_db(db)
+branding_module.set_db(db)
 
 
 # ----------------------- APP -----------------------
@@ -220,6 +222,7 @@ def send_instagram(user_id: str, msg: str) -> None:
 # REGISTRAR ROUTERS + CORS
 # ============================================================
 api_router.include_router(affiliates_module.router)
+api_router.include_router(branding_module.router)
 app.include_router(api_router)
 
 app.add_middleware(

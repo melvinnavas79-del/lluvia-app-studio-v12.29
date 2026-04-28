@@ -1,0 +1,96 @@
+"""
+========================================
+BRANDING - WHITE LABEL PERSONALIZABLE
+========================================
+
+Permite al admin personalizar logo, colores y nombre del producto
+sin tocar codigo. Una sola coleccion 'branding' con un unico documento.
+"""
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from typing import Optional
+from datetime import datetime, timezone
+
+import auth
+
+router = APIRouter(prefix="/branding")
+_db_ref = {"db": None}
+
+
+def set_db(db):
+    _db_ref["db"] = db
+
+
+def _db():
+    return _db_ref["db"]
+
+
+DEFAULT_BRANDING = {
+    "product_name": "Bot Multiplataforma",
+    "tagline": "Un bot que entiende, ejecuta y vende.",
+    "primary_color": "#f5d76e",      # ambar
+    "accent_color": "#5fdbc4",       # cyan
+    "background_color": "#08090d",   # near-black
+    "text_color": "#e7e9ee",
+    "logo_data_url": "",             # base64 data URI o URL
+    "company_name": "",
+    "support_email": "",
+}
+
+
+class BrandingIn(BaseModel):
+    product_name: Optional[str] = Field(default=None, max_length=80)
+    tagline: Optional[str] = Field(default=None, max_length=200)
+    primary_color: Optional[str] = Field(default=None, max_length=20)
+    accent_color: Optional[str] = Field(default=None, max_length=20)
+    background_color: Optional[str] = Field(default=None, max_length=20)
+    text_color: Optional[str] = Field(default=None, max_length=20)
+    logo_data_url: Optional[str] = Field(default=None, max_length=2_000_000)  # ~1.5MB base64
+    company_name: Optional[str] = Field(default=None, max_length=120)
+    support_email: Optional[str] = Field(default=None, max_length=120)
+
+
+async def _get_branding_doc() -> dict:
+    db = _db()
+    doc = await db.branding.find_one({"_id": "main"}, {"_id": 0})
+    if not doc:
+        return dict(DEFAULT_BRANDING)
+    # Merge sobre defaults (asegura todos los campos presentes)
+    merged = dict(DEFAULT_BRANDING)
+    merged.update(doc)
+    return merged
+
+
+@router.get("")
+async def get_branding():
+    """Publico: la pantalla de login y dashboards lo leen sin auth."""
+    return await _get_branding_doc()
+
+
+@router.put("")
+async def update_branding(
+    payload: BrandingIn,
+    admin: dict = Depends(auth.require_admin),
+):
+    db = _db()
+    update = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
+    if not update:
+        raise HTTPException(status_code=400, detail="Nada para actualizar")
+
+    update["updated_at"] = datetime.now(timezone.utc).isoformat()
+    update["updated_by"] = admin["email"]
+
+    await db.branding.update_one(
+        {"_id": "main"},
+        {"$set": update},
+        upsert=True,
+    )
+    return await _get_branding_doc()
+
+
+@router.post("/reset")
+async def reset_branding(admin: dict = Depends(auth.require_admin)):
+    db = _db()
+    await db.branding.delete_one({"_id": "main"})
+    return await _get_branding_doc()

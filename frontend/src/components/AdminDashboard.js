@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { api, fmtMoney, fmtDate, formatError } from "../api";
 import { useAuth } from "../AuthContext";
+import { useBranding } from "../BrandingContext";
 import { PLATFORMS } from "./AffiliateDashboard";
+import BrandingTab from "./BrandingTab";
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
+  const { branding } = useBranding();
   const [tab, setTab] = useState("overview");
   const [network, setNetwork] = useState(null);
   const [affiliates, setAffiliates] = useState([]);
@@ -48,10 +51,10 @@ export default function AdminDashboard() {
 
       <header className="hero">
         <span className="hero-tag">PANEL DE CONTROL</span>
-        <h1>Red de afiliados.</h1>
+        <h1>{branding?.product_name ? `${branding.product_name}.` : "Red de afiliados."}</h1>
         <p className="hero-sub">
-          Gestiona afiliados, registra ventas y consulta el rendimiento de toda la red.
-          Solo tu, como admin, ves estos numeros consolidados.
+          Gestiona afiliados, registra ventas, consulta el rendimiento de toda la red
+          y personaliza la marca. Solo tu, como admin, ves estos numeros consolidados.
         </p>
       </header>
 
@@ -63,6 +66,7 @@ export default function AdminDashboard() {
           ["overview", "Vision general"],
           ["affiliates", "Afiliados"],
           ["sales", "Ventas"],
+          ["branding", "Branding"],
         ].map(([k, label]) => (
           <button
             key={k}
@@ -93,6 +97,7 @@ export default function AdminDashboard() {
           setErr={setErr}
         />
       )}
+      {tab === "branding" && <BrandingTab />}
     </div>
   );
 }

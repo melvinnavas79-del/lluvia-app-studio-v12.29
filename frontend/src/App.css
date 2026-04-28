@@ -419,6 +419,65 @@ html, body, #root {
   margin-bottom: 1.25rem;
 }
 
+/* BRANDING PREVIEW */
+.branding-grid {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 1.25rem;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .branding-grid { grid-template-columns: 1fr; }
+}
+.preview-card { position: sticky; top: 1rem; }
+.preview-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #6c7280;
+  margin-bottom: 1rem;
+}
+.preview-box {
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px;
+  padding: 2.25rem 1.75rem;
+  text-align: center;
+  transition: all .25s ease;
+}
+.preview-logo {
+  height: 56px; width: auto;
+  margin: 0 auto 1rem;
+  display: block;
+  object-fit: contain;
+}
+.preview-logo-placeholder {
+  width: 56px; height: 56px;
+  border-radius: 14px;
+  margin: 0 auto 1rem;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 800;
+  font-size: 1.6rem;
+  letter-spacing: -0.02em;
+}
+.preview-name {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.4rem;
+}
+.preview-tag { font-size: 0.85rem; font-style: italic; }
+.preview-chip {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  padding: 0.3rem 0.7rem;
+  border-radius: 4px;
+  font-weight: 700;
+}
+
 @media (max-width: 600px) {
   .container { padding: 1.75rem 1rem 4rem; }
   .hero { margin-bottom: 2.5rem; }

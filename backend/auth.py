@@ -97,26 +97,50 @@ async def require_admin(user: dict = Depends(get_current_user)) -> dict:
 
 
 async def seed_admin(db) -> None:
-    """Crea (o actualiza) el admin segun ADMIN_EMAIL / ADMIN_PASSWORD."""
-    email = os.environ.get("ADMIN_EMAIL", "admin@bot.local").strip().lower()
+    """
+    Garantiza que exista exactamente UN admin con el email/password de .env.
+    Si cambia el email en .env, migra el admin existente (no crea uno nuevo).
+    Si cambia la password en .env, actualiza el hash.
+    """
+    import uuid
+    email = os.environ.get("ADMIN_EMAIL", "admin@admin.com").strip().lower()
     password = os.environ.get("ADMIN_PASSWORD", "Admin#2026")
 
-    existing = await db.users.find_one({"email": email})
-    if not existing:
-        import uuid
-        await db.users.insert_one({
-            "id": str(uuid.uuid4()),
-            "email": email,
-            "password_hash": hash_password(password),
-            "name": "Administrador",
-            "role": "admin",
-            "active": True,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
-    else:
-        # Si la password en .env cambio, actualizarla
-        if not verify_password(password, existing["password_hash"]):
+    # 1) Caso ideal: ya existe admin con ese email
+    existing_target = await db.users.find_one({"email": email, "role": "admin"})
+    if existing_target:
+        if not verify_password(password, existing_target["password_hash"]):
             await db.users.update_one(
-                {"email": email},
+                {"id": existing_target["id"]},
                 {"$set": {"password_hash": hash_password(password)}},
             )
+        return
+
+    # 2) Existe algun otro admin? -> migrar (cambiar su email/password)
+    other_admin = await db.users.find_one({"role": "admin"})
+    if other_admin:
+        # Asegurar unicidad del nuevo email (no debe colisionar con otro user)
+        clash = await db.users.find_one({"email": email})
+        if clash:
+            # Si el email ya esta tomado por un afiliado, no podemos migrar
+            return
+        await db.users.update_one(
+            {"id": other_admin["id"]},
+            {"$set": {
+                "email": email,
+                "password_hash": hash_password(password),
+                "name": "Administrador",
+            }},
+        )
+        return
+
+    # 3) No hay admin alguno -> crearlo
+    await db.users.insert_one({
+        "id": str(uuid.uuid4()),
+        "email": email,
+        "password_hash": hash_password(password),
+        "name": "Administrador",
+        "role": "admin",
+        "active": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })

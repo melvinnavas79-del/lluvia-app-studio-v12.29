@@ -1,5 +1,6 @@
 import "@/App.css";
 import { AuthProvider, useAuth } from "./AuthContext";
+import { BrandingProvider } from "./BrandingContext";
 import Login from "./components/Login";
 import AdminDashboard from "./components/AdminDashboard";
 import AffiliateDashboard from "./components/AffiliateDashboard";
@@ -28,9 +29,11 @@ function Inner() {
 export default function App() {
   return (
     <div className="App">
-      <AuthProvider>
-        <Inner />
-      </AuthProvider>
+      <BrandingProvider>
+        <AuthProvider>
+          <Inner />
+        </AuthProvider>
+      </BrandingProvider>
     </div>
   );
 }
