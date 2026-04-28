@@ -9,6 +9,7 @@ import ai
 from executor import execute_action
 from actions import affiliate_stats
 from actions import admin_link
+from actions import client_provisioning
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,10 @@ def interpret(text: str) -> dict:
     if t in ("/mi-rendimiento", "/mirendimiento", "/mis-stats", "mi rendimiento", "mis ventas"):
         return {"action": "my_performance", "raw": text}
 
+    # /cliente nuevo
+    if t in ("/cliente nuevo", "/cliente-nuevo", "cliente nuevo", "/nuevocliente", "nuevo cliente"):
+        return {"action": "client_new", "raw": text}
+
     if any(k in t for k in ["ram", "memoria"]) and any(k in t for k in ["servidor", "tiene", "cuanta", "muestra", "ver", "dame"]):
         return {"action": "server_cmd", "cmd": "free -h", "raw": text, "label": "Memoria del servidor"}
     if t in ("ram", "memoria", "/ram", "/memoria"):
@@ -132,6 +137,17 @@ def interpret(text: str) -> dict:
 
 
 async def process_command(text: str, user: str = "default") -> str:
+    # Si hay un provisioning activo para este chat, todos los mensajes van al state machine
+    if client_provisioning.has_session(user):
+        # Excepcion: permitir vincular admin / start fuera del flujo si lo intentan
+        if text.strip().lower() in ("/cancelar", "cancelar"):
+            return client_provisioning.cancel(user)
+        # Solo el admin puede manejar el flujo (defensa)
+        if not await admin_link.is_admin_chat(user):
+            client_provisioning.cancel(user)
+            return "Provisioning solo para admins. Sesion cancelada."
+        return await client_provisioning.handle(user, text)
+
     intent = interpret(text)
     action = intent["action"]
     logger.info(f"[{user}] intent: {action} | text: {text[:80]}")
@@ -141,6 +157,15 @@ async def process_command(text: str, user: str = "default") -> str:
 
     if action == "my_performance":
         return await affiliate_stats.my_performance(user)
+
+    # /cliente nuevo - iniciar provisioning
+    if action == "client_new":
+        if not await admin_link.is_admin_chat(user):
+            return (
+                "Solo el admin puede crear clientes. "
+                "Si lo eres, escribe primero: /vincular-admin <password>"
+            )
+        return client_provisioning.start(user)
 
     PRIVILEGED = {"server_cmd", "github_create", "github_list", "create_app", "install_radio"}
     if action in PRIVILEGED:
@@ -153,7 +178,6 @@ async def process_command(text: str, user: str = "default") -> str:
             )
 
     if action == "business_reply":
-        # Pasamos al AI si el user es admin, para que conteste con confianza
         is_admin = await admin_link.is_admin_chat(user)
         return await ai.generate(user, text, is_admin=is_admin)
 

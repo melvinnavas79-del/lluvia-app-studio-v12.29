@@ -53,10 +53,10 @@ async def my_performance(telegram_chat_id: str) -> str:
 
     msg = [
         f"Hola {name}!",
-        f"",
+        "",
         f"Codigo: {code}  ·  Comision: {pct}%",
-        f"",
-        f"Tus numeros:",
+        "",
+        "Tus numeros:",
         f"  Ventas:        {total_sales}",
         f"  Facturado:     ${total_amount:,.2f}",
         f"  Comision tot.: ${total_commission:,.2f}",
@@ -65,8 +65,8 @@ async def my_performance(telegram_chat_id: str) -> str:
     ]
     if last:
         msg += [
-            f"",
-            f"Ultima venta:",
+            "",
+            "Ultima venta:",
             f"  {last['product']} · ${last['amount']:,.2f}"
             f" → comision ${last['commission']:,.2f}"
             f" ({'PAGADA' if last.get('paid') else 'PENDIENTE'})",
