@@ -12,6 +12,33 @@
 5. GitHub real + admin gates + identidad oficial
 6. Pipeline `setup-cliente.sh` + parser tolerante
 7. **Comando `/cliente nuevo` desde Telegram** — entrega final
+8. **Modo Operario (anti-ego)** — bot deja de dar planes y ejecuta tools en 1 paso
+
+## Iteración 8 — Modo Operario (Feb 2026)
+
+### Problema reportado por usuario
+El bot, ante "instala una radio", devolvía un plan numerado de 5 pasos preguntando
+qué lenguaje usar, qué software de streaming, etc. Comportamiento de profesor.
+"Habla demasiado y actúa poco." — Melvin
+
+### Cambios aplicados
+- `backend/ai.py`:
+  - `SYSTEM_MESSAGE_BASE` reescrito en modo Operario: prohíbe planes numerados,
+    "Pasos a seguir", explicaciones de backend/frontend, preguntas de framework,
+    markdown decorativo. Stack Lluvia asumido por defecto.
+  - `temperature=0.2`, `max_tokens=400` para forzar respuestas cortas.
+  - Nueva tool `provision_client_quick(display_name, admin_email?, app_type?)`:
+    despliega un cliente end-to-end con defaults Lluvia en una sola orden.
+- `backend/actions/client_provisioning.py`:
+  - Nueva función `quick_provision()` para aprovisionamiento de 1 disparo
+    (sin state machine de 6 preguntas) — usada por la tool del bot.
+
+### Verificación E2E (curl)
+- "instala una radio para Pedro Martinez" → Despliega + URL + pass (3 líneas)
+- "instala una tienda para Acme Corp" → Despliega + URL + pass (3 líneas)
+- "crea una radio con donaciones" → "¿Nombre del cliente?" (1 línea)
+- Sin vincular → "Vinculate primero: /vincular-admin <password>." (1 línea)
+- "dame la RAM" → output real de `free -h`
 
 ## Iteración 7 — Despliegue desde el chat
 

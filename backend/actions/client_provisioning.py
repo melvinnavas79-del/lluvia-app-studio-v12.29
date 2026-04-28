@@ -148,6 +148,31 @@ async def handle(chat_id: str, text: str) -> str:
     return next_step["ask"]
 
 
+async def quick_provision(display_name: str, admin_email: str = "", app_type: str = "default") -> str:
+    """
+    Aprovisionamiento de 1 disparo - asume stack Lluvia, sin preguntas.
+    Usado por la tool `provision_client_quick` del bot.
+    """
+    if not display_name or not display_name.strip():
+        return "Falta el nombre del cliente."
+    display = display_name.strip()
+    slug = _slug(display)
+    if not slug:
+        return f"No pude generar slug a partir de '{display}'."
+    root = os.environ.get("LLUVIA_ROOT_DOMAIN", "lluvia.app")
+    email = (admin_email or "").strip().lower() or f"admin@{slug}.{root}"
+    if "@" not in email:
+        email = f"admin@{slug}.{root}"
+    data = {
+        "display": display,
+        "logo": "",
+        "primary": "#5fb4ff",
+        "accent": "#5fdbc4",
+        "email": email,
+    }
+    return await _run_script(data)
+
+
 async def _run_script(data: dict) -> str:
     """Ejecuta setup-cliente.sh con los datos recolectados."""
     if not Path(SCRIPT_PATH).exists():
