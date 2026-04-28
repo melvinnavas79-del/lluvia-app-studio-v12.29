@@ -5,6 +5,7 @@ SERVIDOR FASTAPI - BOT MULTIPLATAFORMA
 
 Webhooks para Telegram, WhatsApp e Instagram.
 Endpoint /api/command para uso directo.
+Auth JWT propia + Modo Afiliado.
 
 NOTA INFRAESTRUCTURA:
 - Este servicio corre en el puerto 8001 (gestionado por supervisor).
@@ -16,15 +17,18 @@ from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
+
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / ".env")
+
 from fastapi import FastAPI, APIRouter, Request, HTTPException
 from fastapi.responses import PlainTextResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 
-ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / ".env")
-
 import config
+import auth as auth_module
+import affiliates as affiliates_module
 from agent import process_command
 from actions import apps as ap
 import memory
@@ -41,11 +45,28 @@ logger = logging.getLogger("bot")
 # ----------------------- DB -----------------------
 mongo_client = AsyncIOMotorClient(config.MONGO_URL)
 db = mongo_client[config.DB_NAME]
+auth_module.set_db(db)
+affiliates_module.set_db(db)
 
 
 # ----------------------- APP -----------------------
-app = FastAPI(title="Bot Multiplataforma", version="1.0.0")
+app = FastAPI(title="Bot Multiplataforma", version="1.1.0")
 api_router = APIRouter(prefix="/api")
+
+
+# ============================================================
+# STARTUP: indices + seed admin
+# ============================================================
+@app.on_event("startup")
+async def on_startup():
+    await db.users.create_index("email", unique=True)
+    await db.users.create_index("id", unique=True)
+    await db.users.create_index("affiliate_code")
+    await db.sales.create_index("id", unique=True)
+    await db.sales.create_index("affiliate_id")
+    await db.sales.create_index("created_at")
+    await auth_module.seed_admin(db)
+    logger.info("Startup OK: indices creados, admin seeded")
 
 
 # ============================================================
@@ -57,12 +78,12 @@ async def root():
         "service": "Bot Multiplataforma",
         "status": "running",
         "platforms": ["whatsapp", "telegram", "instagram"],
+        "version": "1.1.0",
     }
 
 
 @api_router.get("/status")
 async def status():
-    """Estado del bot y de las credenciales configuradas."""
     return {
         "ok": True,
         "credentials": config.credentials_status(),
@@ -76,7 +97,6 @@ async def status():
 # ============================================================
 @api_router.post("/command")
 async def command_endpoint(data: dict):
-    """Envia un comando directo al bot (para pruebas o integracion propia)."""
     message = data.get("message") or data.get("text") or ""
     user = str(data.get("user", "default"))
     if not message:
@@ -86,14 +106,13 @@ async def command_endpoint(data: dict):
 
 
 # ============================================================
-# WHATSAPP (Meta Cloud API)
+# WHATSAPP
 # ============================================================
 @api_router.get("/webhook/whatsapp")
 async def whatsapp_verify(request: Request):
     params = request.query_params
     if params.get("hub.verify_token") == config.VERIFY_TOKEN:
-        challenge = params.get("hub.challenge", "")
-        return PlainTextResponse(content=str(challenge))
+        return PlainTextResponse(content=str(params.get("hub.challenge", "")))
     raise HTTPException(status_code=403, detail="verify token invalido")
 
 
@@ -114,20 +133,12 @@ async def whatsapp_webhook(request: Request):
 
 
 def send_whatsapp(to: str, msg: str) -> None:
-    if not config.WHATSAPP_TOKEN or config.WHATSAPP_TOKEN == "TOKEN_META":
+    if not config.WHATSAPP_TOKEN:
         logger.info(f"[WhatsApp simulado] to={to} msg={msg[:80]}")
         return
     url = f"https://graph.facebook.com/v18.0/{config.PHONE_ID}/messages"
-    headers = {
-        "Authorization": f"Bearer {config.WHATSAPP_TOKEN}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "text",
-        "text": {"body": msg[:4000]},
-    }
+    headers = {"Authorization": f"Bearer {config.WHATSAPP_TOKEN}", "Content-Type": "application/json"}
+    payload = {"messaging_product": "whatsapp", "to": to, "type": "text", "text": {"body": msg[:4000]}}
     try:
         requests.post(url, headers=headers, json=payload, timeout=10)
     except Exception as e:
@@ -139,7 +150,7 @@ def send_whatsapp(to: str, msg: str) -> None:
 # ============================================================
 @api_router.post("/webhook/telegram/{token}")
 async def telegram_webhook(token: str, request: Request):
-    if token != config.TELEGRAM_TOKEN:
+    if not config.TELEGRAM_TOKEN or token != config.TELEGRAM_TOKEN:
         raise HTTPException(status_code=403, detail="Telegram token invalido")
     data = await request.json()
     try:
@@ -155,7 +166,7 @@ async def telegram_webhook(token: str, request: Request):
 
 
 def send_telegram(chat_id, msg: str) -> None:
-    if not config.TELEGRAM_TOKEN or config.TELEGRAM_TOKEN == "BOT_TOKEN":
+    if not config.TELEGRAM_TOKEN:
         logger.info(f"[Telegram simulado] chat_id={chat_id} msg={msg[:80]}")
         return
     url = f"https://api.telegram.org/bot{config.TELEGRAM_TOKEN}/sendMessage"
@@ -166,14 +177,13 @@ def send_telegram(chat_id, msg: str) -> None:
 
 
 # ============================================================
-# INSTAGRAM (Meta)
+# INSTAGRAM
 # ============================================================
 @api_router.get("/webhook/instagram")
 async def instagram_verify(request: Request):
     params = request.query_params
     if params.get("hub.verify_token") == config.VERIFY_TOKEN:
-        challenge = params.get("hub.challenge", "")
-        return PlainTextResponse(content=str(challenge))
+        return PlainTextResponse(content=str(params.get("hub.challenge", "")))
     raise HTTPException(status_code=403, detail="verify token invalido")
 
 
@@ -194,18 +204,12 @@ async def instagram_webhook(request: Request):
 
 
 def send_instagram(user_id: str, msg: str) -> None:
-    if not config.INSTAGRAM_TOKEN or config.INSTAGRAM_TOKEN == "TOKEN_META":
+    if not config.INSTAGRAM_TOKEN:
         logger.info(f"[Instagram simulado] user_id={user_id} msg={msg[:80]}")
         return
     url = f"https://graph.facebook.com/v18.0/{config.IG_ID}/messages"
-    headers = {
-        "Authorization": f"Bearer {config.INSTAGRAM_TOKEN}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "recipient": {"id": user_id},
-        "message": {"text": msg[:1000]},
-    }
+    headers = {"Authorization": f"Bearer {config.INSTAGRAM_TOKEN}", "Content-Type": "application/json"}
+    payload = {"recipient": {"id": user_id}, "message": {"text": msg[:1000]}}
     try:
         requests.post(url, headers=headers, json=payload, timeout=10)
     except Exception as e:
@@ -213,13 +217,14 @@ def send_instagram(user_id: str, msg: str) -> None:
 
 
 # ============================================================
-# REGISTRAR ROUTER + CORS
+# REGISTRAR ROUTERS + CORS
 # ============================================================
+api_router.include_router(affiliates_module.router)
 app.include_router(api_router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],

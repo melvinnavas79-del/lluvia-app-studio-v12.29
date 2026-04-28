@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 2 (Modo Afiliado MANUAL + JWT auth) tested end-to-end. Backend: 25/25 pytest cases passed (auth, affiliates CRUD, sales CRUD with commission calc, role-based filtering of /api/sales, stats/me, stats/network, plus iter-1 regressions: root, status, /command real OpenAI, WhatsApp/Telegram webhook auth). Frontend: 9/9 critical UI flows passed (login error legible, admin login -> AdminDashboard with tabs, KPIs visibles, crear afiliado, registrar venta con comision calculada, MARCAR PAGADA, persistencia de sesion tras reload, logout limpia token, login afiliado juan@test.com lleva al AffiliateDashboard mostrando SOLO sus ventas y NO ve admin-tabs).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_2_affiliates.py",
+    "/app/test_reports/pytest/iteration_2_results.xml",
+    "/app/backend/tests/test_bot_multiplataforma.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "AdminDashboard.js is ~419 lines — borderline OK but if more tabs grow it should be split into Overview/Affiliates/Sales subcomponents in their own files (currently sub-components live inline in same module).",
+    "models.py uses EmailStr = str (alias) to bypass strict email validation. This is intentional per main agent notes but means typos like 'admin@@admin.com' pass through. Consider using pydantic.EmailStr at least for AffiliateCreateIn (admin-only, controlled input) while keeping LoginIn permissive.",
+    "auth.py.seed_admin uses os.environ['ADMIN_PASSWORD'] without fallback if .env missing — would crash. .env is currently set so OK, but a defensive default + warning log would harden cold-starts.",
+    "affiliates.py /api/sales POST does not validate that the affiliate is `active` before creating a sale; deactivated affiliates can still receive sales via direct API. The UI dropdown filters to active, but defense-in-depth at API level is desirable.",
+    "GET /api/stats/network does N+1 query: one find per affiliate to compute breakdown. Fine for <500 affiliates but should switch to a single $group aggregation when scale matters.",
+    "JWT_SECRET is hardcoded in /app/backend/.env (committed). For production it should be injected at deploy time, not committed. Acceptable for preview env.",
+    "CORS allow_origins=['*'] with allow_credentials=False is correct for Bearer-token-only flow (no cookies), but if cookies are later added this would silently fail browsers — leave a comment in server.py."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_2_affiliates.py (new)",
+    "/app/test_reports/pytest/iteration_2_results.xml (new)"
+  ],
+  "success_rate": {"backend": "100% (25/25)", "frontend": "100% (9/9)"},
+  "test_credentials": "admin@admin.com / Admin#2026 (admin); juan@test.com / juan123 (affiliate seeded by main agent during iter 2 dev). Both valid at test time. Test created 1 extra affiliate per pytest run (test_aff_<hex>) and 1 UI affiliate (test_ui_<hex>) plus their sales — these accumulate in DB but use unique emails so they do not clash.",
+  "seed_data_creation": "Test runs leave behind affiliates with prefix 'test_aff_' and 'test_ui_' plus their TEST_Producto sales in MongoDB. No cleanup fixture wired (DB cleanup not strictly required since unique IDs prevent collisions). Main agent may run a one-shot cleanup: db.users.deleteMany({email:/^test_/}) + db.sales.deleteMany({product:/^TEST_/}).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Use /app/backend/tests/test_iteration_2_affiliates.py as the regression suite for auth + affiliates + sales + stats + iter-1 endpoints. Note: test fixture `juan_token` will skip affiliate-side tests if juan@test.com has not been seeded — re-create him via POST /api/affiliates {name:'Juan Perez', email:'juan@test.com', password:'juan123', commission_pct:25} as admin. Backend lowercases emails on create, so all test fixtures must use lowercase emails (we use 'test_aff_*' not 'TEST_aff_*'). The affiliate dashboard at the public URL correctly hides admin-tabs and only lists rows where affiliate_id matches the logged-in user — verified via UI screenshot.",
+  "rca of the issue": "N/A — no defects found. All 28 acceptance criteria from the review request validated. Affiliate isolation enforced both at API (query filters by affiliate_id) and UI (different dashboard component) layers. Commission math verified: amount=100, pct=30 -> commission=30.00 (round to 2 decimals)."
+}
