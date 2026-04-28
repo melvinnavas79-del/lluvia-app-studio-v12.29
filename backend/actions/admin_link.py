@@ -23,6 +23,7 @@ async def link_admin(chat_id: str, password: str) -> str:
     """
     /vincular-admin <password>
     Si la password coincide con ADMIN_PASSWORD, registra este chat_id como admin.
+    Tolerante a artefactos de Telegram (backticks, comillas, espacios).
     """
     db = _db_ref["db"]
     if db is None:
@@ -32,7 +33,10 @@ async def link_admin(chat_id: str, password: str) -> str:
     if not expected:
         return "Vinculacion deshabilitada (ADMIN_PASSWORD no configurada)."
 
-    if password != expected:
+    # Limpiar artefactos comunes de Telegram: backticks, comillas, espacios, markdown
+    received = (password or "").strip().strip("`").strip("'").strip('"').strip("*").strip()
+
+    if received != expected:
         return "Password incorrecta. Intenta nuevamente."
 
     chat_id = str(chat_id)

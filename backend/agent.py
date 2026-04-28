@@ -19,10 +19,13 @@ def interpret(text: str) -> dict:
 
     t = text.lower().strip()
 
-    # Vincular admin: /vincular-admin <password>
-    if t.startswith("/vincular-admin "):
-        pwd = text.split(" ", 1)[1].strip()
-        return {"action": "link_admin", "password": pwd, "raw": text}
+    # Vincular admin: /vincular-admin <password> (acepta variantes)
+    if t.startswith("/vincular-admin ") or t.startswith("vincular-admin ") or t.startswith("vincular admin "):
+        # Extraer todo lo que viene despues de la primera palabra
+        parts = text.split(None, 1)
+        if len(parts) > 1:
+            return {"action": "link_admin", "password": parts[1], "raw": text}
+        return {"action": "link_admin", "password": "", "raw": text}
 
     # Saludo / inicio
     if t in ("/start", "/inicio", "hola", "buenas", "buenos dias", "buenas tardes", "buenas noches"):
