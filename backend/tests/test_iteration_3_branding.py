@@ -12,7 +12,7 @@ import requests
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://ai-bot-cost-calc.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
 
-ADMIN_EMAIL = "admin@admin.com"
+ADMIN_EMAIL = "melvinnavas79@gmail.com"
 ADMIN_PASS = "Admin#2026"
 JUAN_EMAIL = "juan@test.com"
 JUAN_PASS = "juan123"
@@ -100,8 +100,8 @@ class TestBrandingPutAdmin:
         r = requests.post(f"{API}/branding/reset", headers=admin_h, timeout=10)
         assert r.status_code == 200
         d = r.json()
-        assert d["product_name"] == "Bot Multiplataforma"
-        assert d["primary_color"] == "#f5d76e"
+        assert d["product_name"] == "Lluvia App Studio"
+        assert d["primary_color"] == "#5fb4ff"
         assert d["accent_color"] == "#5fdbc4"
         assert d["logo_data_url"] == ""
 

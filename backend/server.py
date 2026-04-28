@@ -32,6 +32,7 @@ import affiliates as affiliates_module
 import branding as branding_module
 from agent import process_command
 from actions import apps as ap
+from actions import affiliate_stats as affiliate_stats_module
 import memory
 
 
@@ -49,6 +50,7 @@ db = mongo_client[config.DB_NAME]
 auth_module.set_db(db)
 affiliates_module.set_db(db)
 branding_module.set_db(db)
+affiliate_stats_module.set_db(db)
 
 
 # ----------------------- APP -----------------------

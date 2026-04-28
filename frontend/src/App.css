@@ -6,8 +6,8 @@ html, body, #root {
   margin: 0;
   padding: 0;
   min-height: 100vh;
-  background: #08090d;
-  color: #e7e9ee;
+  background: var(--brand-bg, #08090d);
+  color: var(--brand-text, #e7e9ee);
   font-family: 'Outfit', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
@@ -85,8 +85,8 @@ html, body, #root {
   font-size: 0.72rem;
   letter-spacing: 0.25em;
   text-transform: uppercase;
-  color: #f5d76e;
-  border: 1px solid rgba(245, 215, 110, 0.35);
+  color: var(--brand-primary, #f5d76e);
+  border: 1px solid color-mix(in srgb, var(--brand-primary, #f5d76e) 35%, transparent);
   padding: 0.4rem 0.85rem;
   border-radius: 999px;
   margin-bottom: 1.25rem;
@@ -100,7 +100,7 @@ html, body, #root {
   color: #f4f5f8;
 }
 .hero h1 .accent {
-  background: linear-gradient(135deg, #f5d76e 0%, #ec9b3b 100%);
+  background: linear-gradient(135deg, var(--brand-primary, #f5d76e) 0%, var(--brand-accent, #ec9b3b) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -204,9 +204,9 @@ html, body, #root {
 .login-btn {
   margin-top: 1.5rem;
   width: 100%;
-  background: #f5d76e;
+  background: var(--brand-primary, #f5d76e);
   border: none;
-  color: #0a0c12;
+  color: var(--brand-bg, #0a0c12);
   padding: 0.85rem 1rem;
   font-family: 'Outfit', sans-serif;
   font-weight: 700;
@@ -214,10 +214,10 @@ html, body, #root {
   letter-spacing: 0.05em;
   border-radius: 8px;
   cursor: pointer;
-  transition: background .2s ease, transform .2s ease;
+  transition: filter .2s ease, transform .2s ease;
 }
-.login-btn:hover { background: #ffe48a; transform: translateY(-1px); }
-.login-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+.login-btn:hover { filter: brightness(1.12); transform: translateY(-1px); }
+.login-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; filter: none; }
 
 .logout-btn {
   background: rgba(255,255,255,0.04);

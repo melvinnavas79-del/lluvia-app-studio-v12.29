@@ -18,12 +18,11 @@ def auto_reply() -> str:
 def help_text() -> str:
     return (
         "Comandos disponibles:\n"
+        "- /mi-rendimiento        -> tus ventas y comisiones (afiliados)\n"
         "- crear app <nombre>     -> genera una landing/web\n"
         "- crear repo <nombre>    -> crea un repositorio en GitHub\n"
         "- listar repos           -> lista tus repos\n"
-        "- instalar radio         -> instala servicio de radio\n"
         "- ejecuta <comando>      -> ejecuta un comando shell seguro\n"
-        "- publicar <texto>       -> publica en redes sociales\n"
         "- /status                -> estado del bot\n"
         "- (cualquier otra cosa)  -> conversa con la IA"
     )

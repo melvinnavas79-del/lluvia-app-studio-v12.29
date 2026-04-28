@@ -26,7 +26,7 @@ if not BASE_URL:
 
 API = f"{BASE_URL}/api"
 
-ADMIN_EMAIL = "admin@admin.com"
+ADMIN_EMAIL = "melvinnavas79@gmail.com"
 ADMIN_PASSWORD = "Admin#2026"
 JUAN_EMAIL = "juan@test.com"
 JUAN_PASSWORD = "juan123"

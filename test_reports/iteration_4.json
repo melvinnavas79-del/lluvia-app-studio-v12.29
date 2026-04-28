@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 4 (CIERRE FINAL: admin migration + Telegram /mi-rendimiento + branding=Lluvia + zero Emergent refs) tested end-to-end. Backend pytest: 18/18 PASSED in test_iteration_4_admin_telegram.py + 40/40 PASSED iter2/iter3 regression after updating ADMIN_EMAIL constant. Total 74/75 backend (98.6%). Single failure (test_status_command in iter1 file) is pre-existing carry-over: agent.py raises KeyError 'provider' when handling /status (verified via raw curl). Frontend Playwright: 12/14 functionally PASSED (2 false-positives due to test selectors, NOT app bugs). Visually verified: Lluvia App Studio branding, login screen tagline + support email, admin dashboard 4 tabs, Branding tab inputs/colors, Juan affiliate dashboard with JUANPE-NXJ1/$1.000/$250. Telegram bot @LluviaAppStudioBot live, getMe + getWebhookInfo confirmed. /api/webhook/telegram/{TOKEN} returns {ok:true} for valid+invalid+malformed payloads. POST /api/command with chat_id=123456789 returns Juan's stats; chat_id=999999999 returns 'no encontre tu cuenta de afiliado vinculada'. Old admin@admin.com -> 401 under any password. CSS variables --brand-primary=#5fb4ff, --brand-bg=#0a1220, --brand-accent=#5fdbc4 applied on documentElement. document.title='Lluvia App Studio'. No #emergent-badge, no posthog, 0 Emergent refs in /app/backend (excl tests) /app/frontend/src /app/frontend/public /app/frontend/package.json /app/backend/.env. Persistence after backend restart: confirmed via TestPersistenceAfterRestart (Melvin still admin, branding still Lluvia, Juan still affiliate).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/command (message='/status')", "issue": "Returns 'Error ejecutando \\'status\\': \\'provider\\'' - KeyError on 'provider' key in agent.py status handler. Pre-existing from iter1, not introduced in iter4. Other commands (hola, /mi-rendimiento, etc.) work correctly."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_4_admin_telegram.py",
+    "/app/test_reports/pytest/iteration_4_results.xml",
+    "/app/test_reports/pytest/iteration_4_full.xml"
+  ],
+  "action_items": [
+    "(LOW) Fix /status command in agent.py: handler raises KeyError 'provider'. Pre-existing iter1 bug, not blocking iter4 acceptance criteria."
+  ],
+  "critical_code_review_comments": [
+    "auth.py.seed_admin: migration logic is correct and verified live (admin migrated from admin@admin.com to melvinnavas79@gmail.com preserving id). Logging on collision (path 2 -> clash) is good — observable.",
+    "branding.py: DEFAULT_BRANDING is now hardcoded to Lluvia App Studio. If future re-skinning is needed, consider moving defaults to a JSON file or env vars to avoid touching code.",
+    "server.py.telegram_webhook: any KeyError/TypeError swallowed silently with logger.warning. Acceptable for unknown payloads, but consider per-error metrics so a real outage isn't masked.",
+    "agent.py /status command pre-existing bug (KeyError 'provider'). Likely missing key in status dict construction. Low priority — admin doesn't normally invoke /status.",
+    "Test files iter2/iter3 had ADMIN_EMAIL hardcoded to admin@admin.com — updated to melvinnavas79@gmail.com in this iter so regression suite remains green. Recommend reading from env REACT_APP_BACKEND_URL + a TEST_ADMIN_EMAIL constant in conftest.py to centralize.",
+    "Frontend bundle.js URL hostname includes 'emergentagent.com' (preview infra) — this is the only place the string appears, no actual Emergent SDK loaded. Acceptable until production deployment with custom domain (review explicitly notes this is infra, not bug).",
+    "Carry-over still valid: JWT_SECRET committed in .env, AdminDashboard.js >400 lines, /api/stats/network N+1, no rate limit on /api/branding PUT."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_4_admin_telegram.py (new, 18 tests)",
+    "/app/backend/tests/test_iteration_2_affiliates.py (ADMIN_EMAIL constant updated)",
+    "/app/backend/tests/test_iteration_3_branding.py (ADMIN_EMAIL constant + reset defaults assertions updated to Lluvia App Studio)",
+    "/app/test_reports/pytest/iteration_4_results.xml (new)",
+    "/app/test_reports/pytest/iteration_4_full.xml (new full regression)",
+    "/app/test_reports/iteration_4.json (new)",
+    "/app/memory/test_credentials.md (admin email updated to melvinnavas79@gmail.com)"
+  ],
+  "success_rate": {
+    "backend": "98.6% (74/75 — 18 iter4 + 40 iter2+iter3 regression + 16 iter1, 1 pre-existing /status KeyError)",
+    "frontend": "100% functional (14/14 visual checks; 2 of 14 automated assertions had test-side false-positives on case-sensitive text + bundle.js URL hostname match)"
+  },
+  "test_credentials": "Admin: melvinnavas79@gmail.com / Admin#2026 (migrated from admin@admin.com — old email returns 401 for ANY password). Affiliate: juan@test.com / juan123 (telegram_chat_id=123456789, code=JUANPE-NXJ1, 25%, 1 sale of $1000, $250 pending).",
+  "seed_data_creation": "No new seed data. test_iteration_4_admin_telegram.py is read-only on persistent state. Webhook tests use ephemeral Telegram payloads (not stored). Branding/persistence tests from iter3 (which run as part of full regression) reset to defaults at end.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iteration_4_admin_telegram.py is the suite vigente for iter4 acceptance (admin migration + Telegram + branding defaults). It coexists with test_iteration_3_branding.py (16 cases, branding+persistence+sale defense) and test_iteration_2_affiliates.py (25 cases, full affiliate CRUD). Run all: pytest /app/backend/tests/ -v. ADMIN_EMAIL is now melvinnavas79@gmail.com in all test files. Telegram webhook is live: do NOT call setWebhook again — current URL points to https://ai-bot-cost-calc.preview.emergentagent.com/api/webhook/telegram/{TOKEN}. To validate /mi-rendimiento without going through Telegram, use POST /api/command with user='123456789'. Pre-existing /status command bug (agent.py KeyError 'provider') is the only known failure — not blocking. White-label note: frontend hostname (preview.emergentagent.com) is platform infra and unavoidable until deploy with custom domain (review explicitly acknowledges this).",
+  "rca of the issue": "/status command failure RCA (pre-existing iter1, NOT caused by iter4 changes): POST /api/command {message:'/status'} returns 200 with response 'Error ejecutando status: \\'provider\\''. The agent.py status action is doing dict['provider'] (or similar key access) and the underlying status payload doesn't contain that key. Likely cause: status action expects an LLM provider config field that was renamed/removed in a prior iter. Reproduction: curl -X POST $URL/api/command -d '{\"message\":\"/status\",\"user\":\"x\"}'. Mitigation: in agent.py status handler, use .get('provider', 'unknown') instead of ['provider']. Not blocking iter4 acceptance — all iter4 criteria pass independently."
+}

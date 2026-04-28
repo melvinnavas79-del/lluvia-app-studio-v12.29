@@ -30,15 +30,15 @@ def _db():
 
 
 DEFAULT_BRANDING = {
-    "product_name": "Bot Multiplataforma",
-    "tagline": "Un bot que entiende, ejecuta y vende.",
-    "primary_color": "#f5d76e",      # ambar
-    "accent_color": "#5fdbc4",       # cyan
-    "background_color": "#08090d",   # near-black
-    "text_color": "#e7e9ee",
-    "logo_data_url": "",             # base64 data URI o URL
-    "company_name": "",
-    "support_email": "",
+    "product_name": "Lluvia App Studio",
+    "tagline": "Soluciones inteligentes que llueven sobre tu negocio.",
+    "primary_color": "#5fb4ff",      # azul lluvia
+    "accent_color": "#5fdbc4",       # turquesa
+    "background_color": "#0a1220",   # noche-azul profundo
+    "text_color": "#e7eef8",
+    "logo_data_url": "",
+    "company_name": "Lluvia App Studio",
+    "support_email": "melvinnavas79@gmail.com",
 }
 
 

@@ -9,6 +9,7 @@ Decide que accion tomar segun el texto del usuario.
 import logging
 import ai
 from executor import execute_action
+from actions import affiliate_stats
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,10 @@ def interpret(text: str) -> dict:
         return {"action": "business_reply", "raw": text}
 
     t = text.lower().strip()
+
+    # Afiliado: su rendimiento (debe revisarse antes que otros patrones)
+    if t in ("/mi-rendimiento", "/mirendimiento", "/mis-stats", "mi rendimiento", "mis ventas"):
+        return {"action": "my_performance", "raw": text}
 
     # GitHub
     if "crear repo" in t or "crear repositorio" in t or "nuevo repo" in t:
@@ -62,6 +67,10 @@ async def process_command(text: str, user: str = "default") -> str:
     intent = interpret(text)
     action = intent["action"]
     logger.info(f"[{user}] intent: {action} | text: {text[:80]}")
+
+    # /mi-rendimiento: requiere DB
+    if action == "my_performance":
+        return await affiliate_stats.my_performance(user)
 
     # Las respuestas de negocio van por IA con historial
     if action == "business_reply":
