@@ -166,6 +166,8 @@ async def create_sale(
     aff = await db.users.find_one({"affiliate_code": code, "role": "affiliate"})
     if not aff:
         raise HTTPException(status_code=404, detail=f"No existe afiliado con codigo {code}")
+    if not aff.get("active", True):
+        raise HTTPException(status_code=400, detail=f"El afiliado {code} esta desactivado")
 
     pct = float(aff.get("commission_pct", 0) or 0)
     commission = round(payload.amount * pct / 100, 2)
