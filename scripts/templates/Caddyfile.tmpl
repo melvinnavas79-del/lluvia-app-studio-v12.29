@@ -1,0 +1,20 @@
+# Caddyfile - reverse proxy + SSL automatico para __SLUG__
+# Se concatena al Caddyfile global con el comando "include"
+
+__SLUG__.__ROOT_DOMAIN__ {
+    encode gzip
+
+    # API -> backend del cliente
+    handle /api/* {
+        reverse_proxy lluvia___SLUG___backend:8001
+    }
+
+    # Todo lo demas -> frontend
+    handle {
+        reverse_proxy lluvia___SLUG___frontend:80
+    }
+
+    log {
+        output file /var/log/caddy/__SLUG__.log
+    }
+}

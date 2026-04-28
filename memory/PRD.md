@@ -1,75 +1,59 @@
-# PRD - Lluvia App Studio Bot (Bot Multiplataforma IA)
+# PRD - Lluvia App Studio Bot — Pipeline de Escalamiento
 
-## Cliente
-**Lluvia App Studio** — agencia de Melvin Navas (`melvinnavas79@gmail.com`) que vende copias del bot a sus clientes.
-
-## URLs
-- **Panel admin**: https://ai-bot-cost-calc.preview.emergentagent.com
+## URLs activas
+- **Panel**: https://ai-bot-cost-calc.preview.emergentagent.com
 - **Bot Telegram**: https://t.me/LluviaAppStudioBot
 
-## Arquitectura
+## Estado de implementación
 
-```
-backend/
-├── server.py            FastAPI - webhooks + /api/command + startup
-├── auth.py              JWT + bcrypt + seed_admin migratorio
-├── models.py            Pydantic models
-├── affiliates.py        /auth, /affiliates, /sales, /stats
-├── branding.py          /branding GET (público) + PUT/RESET (admin)
-├── config.py / security.py / memory.py / ai.py / agent.py / executor.py
-└── actions/
-    ├── github.py        Crear/listar repos via API
-    ├── server.py        run_command con blacklist anti-catastrofe
-    ├── apps.py          Genera HTML landings
-    ├── business.py      greeting() + auto_reply() + help_text()
-    └── affiliate_stats.py /mi-rendimiento por chat_id
+### ✅ Iter 1-5 (resumen)
+Bot multiplataforma + IA + GitHub + Modo Afiliado + Branding + Comandos shell admin-gated + Self-vinculación admin (`/vincular-admin`) + Salida real de servidor (RAM/disco/uptime).
 
-frontend/src/
-├── App.js · api.js · AuthContext · BrandingContext · App.css (CSS vars)
-└── components/ Login · AdminDashboard (4 tabs) · AffiliateDashboard · BrandingTab
-```
+### ✅ Iter 6 — Cleanup + Pipeline de venta
+**1. Parser de comandos tolerante a lenguaje natural**:
+  - `clean_shell_command()` strip de muletillas: "en el servidor", "en mi vps", "por favor", "el comando", etc.
+  - Triggers ampliados: `ejecuta`, `comando`, `corre`, `/run`
+  - Tolerancia a backticks, comillas, asteriscos
 
-## Iteraciones completadas
+**2. Suite de despliegue automatizado** (`/app/scripts/`):
+  - `infra-init.sh` — una sola vez en VPS: levanta Caddy reverse-proxy global con SSL automático
+  - `setup-cliente.sh` — interactivo, despliega un cliente nuevo en ~5-10 min
+  - `templates/` — Dockerfiles (backend/frontend), docker-compose template, Caddyfile, nginx.conf
+  - `README.md` — guía de 5 pasos
 
-### ✅ Iter 1 — Bot core (16 + 6)
-Webhooks, IA, GitHub, generador landings, comandos shell con security.
+**Aislamiento por cliente garantizado**:
+  - Volumen Docker exclusivo `lluvia_<slug>_mongo_data` (cada cliente, su propia DB)
+  - Backend container con `JWT_SECRET` único, `ADMIN_EMAIL/PASSWORD` independientes
+  - Frontend buildeado con `REACT_APP_BACKEND_URL` específico del subdominio del cliente
+  - Network Docker separada por cliente
+  - Subdominio dedicado con SSL Let's Encrypt automático
+  - Branding seedeado en su MongoDB privada
 
-### ✅ Iter 2 — White-label + Modo Afiliado MANUAL (25 + 9)
-Removido todo branding externo. OpenAI directo. Auth JWT propia. CRUD afiliados/ventas. Dashboards separados por rol.
+**Defaults configurables vía env**:
+  - `LLUVIA_HOME=/opt/lluvia`
+  - `LLUVIA_SOURCE=/opt/lluvia/source`
+  - `LLUVIA_DEFAULT_OPENAI=` (master key opcional)
+  - `LLUVIA_ROOT_DOMAIN=lluvia.app`
 
-### ✅ Iter 3 — Branding personalizable + persistencia + hardenings (16 + 14)
-Branding (nombre, colores, logo, soporte). Migración auto de admin. Validación hex. Defensa de venta a afiliado desactivado.
-
-### ✅ Iter 4 — Cierre Lluvia App Studio (18 + 12)
-Admin migrado, Telegram bot activo, branding Lluvia, CSS vars aplicadas. Fix bug `/status`.
-
-### ✅ Iter 5 — Capacidades de ejecución completas
-- **GitHub conectado**: probado con cuenta `melvinnavas79-del` (lista y crea repos reales)
-- **Identidad oficial**: el bot se presenta como "Asistente Oficial de Lluvia App Studio" en `/start`, en respuestas de IA (system prompt) y en `auto_reply`
-- **Comando `/start`** separado de `/help`: greeting profesional + comandos rápidos
-- **Permisos por rol en el bot** (defensa en profundidad):
-  - Comandos privilegiados (`server_cmd`, `github_create`, `github_list`, `create_app`): solo se ejecutan si el chat_id está en `ADMIN_TELEGRAM_CHAT_IDS` del `.env`
-  - Cualquier otro usuario recibe mensaje claro y profesional
-- **Blacklist anti-catastrofe** (`rm -rf /`, fork bomb, dd disk-wipe, formateo) **se mantiene intacta incluso para admin** — protección anti-typo no negociable
-- Verificado en runtime: lista repos reales, crea `lluvia-bot-test-final`, ejecuta `uname -a`, bloquea `rm -rf /`, niega comandos a no-admin con mensaje educado
-
-## Total acumulado: **160+ checks verde** en 5 iteraciones
+**Cobertura del pipeline**:
+- Pre-requisitos one-shot: 15 min (VPS + DNS wildcard + Docker)
+- Por cliente nuevo: 5-10 min (objetivo del usuario era < 30 min — superado con margen)
+- 6+ clientes/hora factibles
 
 ## Backlog priorizado
-- **P0**: rotar credenciales compartidas (TELEGRAM_TOKEN, GITHUB_TOKEN, JWT_SECRET, OPENAI_API_KEY)
-- **P0**: deploy a producción con dominio propio para eliminar `*.preview.emergentagent.com`
-- **P1**: comando `/vincular-admin <password>` en Telegram para auto-registrar chat_id sin tocar `.env`
-- **P1**: cambio de password por el propio afiliado, brute-force protection, refresh tokens
-- **P2**: pagos automáticos, tracking de clicks, multi-idioma del bot
-- **P2**: `setup-cliente.sh` para escalar la agencia ("1 cliente por hora")
 
-## Acciones inmediatas para Melvin
-1. **Rotar todos los tokens compartidos en el chat** (Telegram, GitHub, OpenAI, JWT_SECRET)
-2. **Activar comandos privilegiados desde Telegram**:
-   - Escribe `/start` al bot desde tu Telegram personal
-   - Revisa logs `tail /var/log/supervisor/backend.out.log` para ver tu chat_id
-   - Edita `ADMIN_TELEGRAM_CHAT_IDS=tu_chat_id` en `backend/.env`
-   - `sudo supervisorctl restart backend`
-3. **Personalizar branding** (logo, colores) desde el tab Branding del panel
-4. **Crear afiliados reales** desde el panel
-5. **Deploy a producción** con dominio propio
+### P0
+- Rotar todas las credenciales compartidas en este chat (TELEGRAM_TOKEN, GITHUB_TOKEN, OPENAI_API_KEY, JWT_SECRET)
+- Comprar el dominio raíz `lluvia.app` y configurar DNS wildcard
+- Probar el pipeline con un cliente de prueba real
+
+### P1
+- Backups automáticos de volúmenes Mongo por cron
+- Endpoint `/api/admin/clients` para que el script reporte el alta a un dashboard central de Lluvia
+- Comando `/cliente nuevo` desde Telegram que detone `setup-cliente.sh` remotamente vía SSH
+
+### P2
+- Monitorización (Prometheus + Grafana) global
+- Pagos automáticos por copia (Stripe Connect)
+- Multi-idioma en todo el bot
+- Función calling de OpenAI para que el bot decida automáticamente qué comando shell ejecutar

@@ -1,0 +1,49 @@
+version: "3.9"
+
+# Stack aislado por cliente - generado por setup-cliente.sh
+# Slug del cliente: __SLUG__
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: lluvia_${SLUG}_mongo
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - cliente
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: lluvia_${SLUG}_backend
+    restart: unless-stopped
+    env_file: ./backend.env
+    depends_on:
+      - mongo
+    networks:
+      - cliente
+      - web
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_BACKEND_URL: ${PUBLIC_URL}
+    container_name: lluvia_${SLUG}_frontend
+    restart: unless-stopped
+    networks:
+      - web
+
+volumes:
+  mongo_data:
+    name: lluvia_${SLUG}_mongo_data
+
+networks:
+  cliente:
+    name: lluvia_${SLUG}_internal
+  web:
+    name: lluvia_proxy
+    external: true
