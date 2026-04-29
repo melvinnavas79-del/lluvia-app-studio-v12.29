@@ -35,6 +35,7 @@ from actions import apps as ap
 from actions import affiliate_stats as affiliate_stats_module
 from actions import admin_link as admin_link_module
 import memory
+import telegram_poller
 
 
 # ----------------------- LOGGING -----------------------
@@ -73,6 +74,12 @@ async def on_startup():
     await db.sales.create_index("created_at")
     await auth_module.seed_admin(db)
     logger.info("Startup OK: indices creados, admin seeded")
+
+    # Telegram long polling (alternativa a webhook). Activar con TELEGRAM_POLLING=1
+    import os
+    if os.environ.get("TELEGRAM_POLLING", "0") == "1" and config.TELEGRAM_TOKEN:
+        telegram_poller.start()
+        logger.info("Telegram polling activado")
 
 
 # ============================================================
