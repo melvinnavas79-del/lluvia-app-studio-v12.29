@@ -40,7 +40,7 @@ def _delete_webhook() -> None:
         logger.error(f"deleteWebhook fallo: {e}")
 
 
-def _send(chat_id: int, text: str) -> None:
+def _send_sync(chat_id: int, text: str) -> None:
     if not text:
         return
     try:
@@ -55,6 +55,11 @@ def _send(chat_id: int, text: str) -> None:
         logger.error(f"sendMessage fallo: {e}")
 
 
+async def _send(chat_id: int, text: str) -> None:
+    """Wrapper async para no bloquear el event loop al enviar a Telegram."""
+    await asyncio.to_thread(_send_sync, chat_id, text)
+
+
 async def _process_update(update: dict) -> None:
     msg = update.get("message") or update.get("edited_message") or {}
     text = msg.get("text") or ""
@@ -64,10 +69,10 @@ async def _process_update(update: dict) -> None:
     logger.info(f"[poll] chat={chat_id} text={text[:80]}")
     try:
         reply = await process_command(text, str(chat_id))
-        _send(chat_id, reply)
+        await _send(chat_id, reply)
     except Exception as e:
         logger.exception(f"process_command fallo: {e}")
-        _send(chat_id, f"Error interno: {str(e)[:200]}")
+        await _send(chat_id, f"Error interno: {str(e)[:200]}")
 
 
 async def _loop() -> None:
@@ -77,12 +82,16 @@ async def _loop() -> None:
         return
 
     # 1. Asegurar que NO hay webhook competente
-    _delete_webhook()
+    await asyncio.to_thread(_delete_webhook)
 
     logger.info("Telegram polling iniciado")
     while True:
         try:
-            r = requests.get(
+            # CRITICO: requests.get es bloqueante. Lo corremos en thread aparte
+            # para NO bloquear el event loop de uvicorn (todos los demas endpoints
+            # se cuelgan si esto bloquea).
+            r = await asyncio.to_thread(
+                requests.get,
                 _api("getUpdates"),
                 params={"offset": _offset, "timeout": 25, "allowed_updates": '["message"]'},
                 timeout=35,

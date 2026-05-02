@@ -1,6 +1,15 @@
 import axios from "axios";
 
-const BASE = process.env.REACT_APP_BACKEND_URL;
+// Sanitizar BASE para evitar duplicacion de /api.
+// Acepta cualquiera de estas formas en REACT_APP_BACKEND_URL:
+//   https://dominio.com           -> https://dominio.com/api
+//   https://dominio.com/          -> https://dominio.com/api
+//   https://dominio.com/api       -> https://dominio.com/api
+//   https://dominio.com/api/      -> https://dominio.com/api
+//   http://1.2.3.4:8001           -> http://1.2.3.4:8001/api
+//   http://1.2.3.4:8001/api       -> http://1.2.3.4:8001/api
+const RAW = process.env.REACT_APP_BACKEND_URL || "";
+const BASE = RAW.replace(/\/+$/, "").replace(/\/api$/, "");
 export const API = `${BASE}/api`;
 
 export const TOKEN_KEY = "bot_admin_token";

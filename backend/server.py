@@ -150,13 +150,16 @@ async def download_info():
         "filename": "lluvia-deploy.tar.gz",
         "size_bytes": _DEPLOY_PATH.stat().st_size,
         "sha256": sha,
-        "version": "operario-2.0-bookworm",
+        "version": "operario-3.0",
         "fixes": [
-            "Dockerfile pineado a python:3.11.10-slim-bookworm (Debian 12, NO Trixie)",
-            "requirements-prod.txt con 13 paquetes (vs 123 del original)",
-            "Healthcheck cada 15s en backend y frontend",
-            "setup-cliente.sh con logs visibles (no /dev/null)",
-            "scripts/diagnose.sh para troubleshooting rapido",
+            "v3: api.js sanitiza REACT_APP_BACKEND_URL (acepta con o sin /api, sin duplicar)",
+            "v3: .env.example trae MONGO_URL=mongodb://mongo:27017 por defecto (Docker DNS)",
+            "v3: TELEGRAM_POLLING=1 -> bot funciona sin SSL ni dominio publico",
+            "v2: Dockerfile pineado a python:3.11.10-slim-bookworm (NO Trixie)",
+            "v2: requirements-prod.txt minimo (13 paquetes vs 123)",
+            "v2: Healthcheck cada 15s en backend/frontend",
+            "v2: setup-cliente.sh con logs visibles",
+            "v2: scripts/diagnose.sh para troubleshoot",
         ],
     }
 
