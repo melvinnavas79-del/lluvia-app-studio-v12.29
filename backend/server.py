@@ -156,8 +156,9 @@ async def download_info():
         "filename": "lluvia-deploy.tar.gz",
         "size_bytes": _DEPLOY_PATH.stat().st_size,
         "sha256": sha,
-        "version": "operario-3.0",
+        "version": "operario-3.1",
         "fixes": [
+            "v3.1: telegram_poller usa asyncio.to_thread() - NO bloquea event loop de uvicorn",
             "v3: api.js sanitiza REACT_APP_BACKEND_URL (acepta con o sin /api, sin duplicar)",
             "v3: .env.example trae MONGO_URL=mongodb://mongo:27017 por defecto (Docker DNS)",
             "v3: TELEGRAM_POLLING=1 -> bot funciona sin SSL ni dominio publico",
