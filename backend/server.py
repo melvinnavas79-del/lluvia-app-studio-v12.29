@@ -125,7 +125,7 @@ async def command_endpoint(data: dict):
 _DEPLOY_PATH = Path("/app/frontend/public/lluvia-deploy.tar.gz")
 
 
-@api_router.get("/download/lluvia-deploy")
+@api_router.api_route("/download/lluvia-deploy", methods=["GET", "HEAD"])
 async def download_deploy():
     if not _DEPLOY_PATH.exists():
         raise HTTPException(status_code=404, detail="Paquete no disponible")
@@ -140,7 +140,7 @@ async def download_deploy():
     )
 
 
-@api_router.get("/download/lluvia-deploy/info")
+@api_router.api_route("/download/lluvia-deploy/info", methods=["GET", "HEAD"])
 async def download_info():
     import hashlib
     if not _DEPLOY_PATH.exists():
