@@ -140,6 +140,12 @@ async def download_deploy():
     )
 
 
+# Alias con version en el path para forzar bypass de cualquier CDN cache
+@api_router.api_route("/download/lluvia-deploy-v3.tar.gz", methods=["GET", "HEAD"])
+async def download_deploy_v3():
+    return await download_deploy()
+
+
 @api_router.api_route("/download/lluvia-deploy/info", methods=["GET", "HEAD"])
 async def download_info():
     import hashlib
