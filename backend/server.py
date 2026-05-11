@@ -36,6 +36,8 @@ from actions import affiliate_stats as affiliate_stats_module
 from actions import admin_link as admin_link_module
 import memory
 import telegram_poller
+import credits as credits_module
+import console as console_module
 
 
 # ----------------------- LOGGING -----------------------
@@ -54,6 +56,8 @@ affiliates_module.set_db(db)
 branding_module.set_db(db)
 affiliate_stats_module.set_db(db)
 admin_link_module.set_db(db)
+credits_module.set_db(db)
+console_module.set_db(db)
 
 
 # ----------------------- APP -----------------------
@@ -156,17 +160,19 @@ async def download_info():
         "filename": "lluvia-deploy.tar.gz",
         "size_bytes": _DEPLOY_PATH.stat().st_size,
         "sha256": sha,
-        "version": "operario-3.1",
+        "version": "operario-7.0-boss-console",
         "fixes": [
-            "v3.1: telegram_poller usa asyncio.to_thread() - NO bloquea event loop de uvicorn",
-            "v3: api.js sanitiza REACT_APP_BACKEND_URL (acepta con o sin /api, sin duplicar)",
-            "v3: .env.example trae MONGO_URL=mongodb://mongo:27017 por defecto (Docker DNS)",
-            "v3: TELEGRAM_POLLING=1 -> bot funciona sin SSL ni dominio publico",
+            "v7: Boss Console multi-agente (Constructor/Vendedor/Psicologo/Ingeniero/Estratega)",
+            "v7: Sistema de creditos 'oros' con descuento por tarea (chat=1, tools=2-50)",
+            "v7: UI tipo Emergent: sidebar de hilos + chat + badge de oros",
+            "v7: Healthchecks en backend (15s), frontend (30s), mongo (15s) + restart=always",
+            "v7: depends_on con condition=service_healthy para alta disponibilidad",
+            "v3.1: telegram_poller usa asyncio.to_thread() - NO bloquea event loop",
+            "v3: api.js sanitiza REACT_APP_BACKEND_URL",
+            "v3: MONGO_URL=mongodb://mongo:27017 por defecto",
+            "v3: TELEGRAM_POLLING=1 -> bot funciona sin SSL/dominio",
             "v2: Dockerfile pineado a python:3.11.10-slim-bookworm (NO Trixie)",
             "v2: requirements-prod.txt minimo (13 paquetes vs 123)",
-            "v2: Healthcheck cada 15s en backend/frontend",
-            "v2: setup-cliente.sh con logs visibles",
-            "v2: scripts/diagnose.sh para troubleshoot",
         ],
     }
 
@@ -287,6 +293,7 @@ def send_instagram(user_id: str, msg: str) -> None:
 # ============================================================
 api_router.include_router(affiliates_module.router)
 api_router.include_router(branding_module.router)
+api_router.include_router(console_module.router)
 app.include_router(api_router)
 
 app.add_middleware(

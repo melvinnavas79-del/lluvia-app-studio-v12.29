@@ -4,6 +4,7 @@ import { useAuth } from "../AuthContext";
 import { useBranding } from "../BrandingContext";
 import { PLATFORMS } from "./AffiliateDashboard";
 import BrandingTab from "./BrandingTab";
+import BossConsole from "./BossConsole";
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
@@ -64,6 +65,7 @@ export default function AdminDashboard() {
       <div className="tabs" data-testid="admin-tabs">
         {[
           ["overview", "Vision general"],
+          ["console", "Boss Console"],
           ["affiliates", "Afiliados"],
           ["sales", "Ventas"],
           ["branding", "Branding"],
@@ -80,6 +82,7 @@ export default function AdminDashboard() {
       </div>
 
       {tab === "overview" && <Overview network={network} />}
+      {tab === "console" && <BossConsole />}
       {tab === "affiliates" && (
         <AffiliatesTab
           affiliates={affiliates}
