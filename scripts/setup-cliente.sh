@@ -130,7 +130,17 @@ SLUG=${SLUG}
 PUBLIC_URL=${PUBLIC_URL}
 EOF
 
-sed "s/__SLUG__/${SLUG}/g" "$TEMPLATES_DIR/docker-compose.yml.tmpl" > "$CLIENT_DIR/docker-compose.yml"
+sed -e "s|__SLUG__|${SLUG}|g" -e "s|__PUBLIC_URL__|${PUBLIC_URL}|g" \
+    "$TEMPLATES_DIR/docker-compose.yml.tmpl" > "$CLIENT_DIR/docker-compose.yml"
+
+# Sanity check: el archivo se genero y NO quedo ningun placeholder
+if [ ! -s "$CLIENT_DIR/docker-compose.yml" ]; then
+    err "docker-compose.yml no se genero. Revisa $TEMPLATES_DIR/docker-compose.yml.tmpl"
+fi
+if grep -q "__SLUG__\|__PUBLIC_URL__" "$CLIENT_DIR/docker-compose.yml"; then
+    err "Quedaron placeholders sin reemplazar en docker-compose.yml"
+fi
+ok "docker-compose.yml generado en $CLIENT_DIR"
 
 mkdir -p "$CADDY_CONF_DIR"
 sed "s/__SLUG__/${SLUG}/g; s/__ROOT_DOMAIN__/${ROOT_DOMAIN}/g" \

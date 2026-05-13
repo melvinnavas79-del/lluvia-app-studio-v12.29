@@ -1,11 +1,11 @@
 # Lluvia App Studio - Stack del cliente
-# Generado por setup-cliente.sh para el slug: __SLUG__
-# v7: alta disponibilidad - healthchecks, restart policies, depends_on con health
+# Generado por setup-cliente.sh - todos los placeholders __XXX__ se reemplazan via sed
+# v7.1: 100% interpolado por sed (cero dependencia de .env de docker-compose)
 
 services:
   mongo:
     image: mongo:7
-    container_name: lluvia_${SLUG}_mongo
+    container_name: lluvia___SLUG___mongo
     restart: always
     volumes:
       - mongo_data:/data/db
@@ -22,7 +22,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: lluvia_${SLUG}_backend
+    container_name: lluvia___SLUG___backend
     restart: always
     env_file: ./backend.env
     depends_on:
@@ -43,8 +43,8 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        REACT_APP_BACKEND_URL: ${PUBLIC_URL}
-    container_name: lluvia_${SLUG}_frontend
+        REACT_APP_BACKEND_URL: __PUBLIC_URL__
+    container_name: lluvia___SLUG___frontend
     restart: always
     depends_on:
       backend:
@@ -60,11 +60,11 @@ services:
 
 volumes:
   mongo_data:
-    name: lluvia_${SLUG}_mongo_data
+    name: lluvia___SLUG___mongo_data
 
 networks:
   cliente:
-    name: lluvia_${SLUG}_internal
+    name: lluvia___SLUG___internal
   web:
     name: lluvia_proxy
     external: true
