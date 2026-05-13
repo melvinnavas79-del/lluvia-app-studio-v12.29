@@ -160,8 +160,10 @@ async def download_info():
         "filename": "lluvia-deploy.tar.gz",
         "size_bytes": _DEPLOY_PATH.stat().st_size,
         "sha256": sha,
-        "version": "operario-7.1-boss-console",
+        "version": "operario-7.2-boss-console",
         "fixes": [
+            "v7.2: setup-cliente.sh idempotente con LLUVIA_FORCE=1 (baja containers + borra dir)",
+            "v7.2: slug_from() strippea comillas y espacios antes de slugificar",
             "v7.1: FIX docker-compose.yml.tmpl 100% interpolado via sed (placeholders __SLUG__/__PUBLIC_URL__)",
             "v7.1: setup-cliente.sh con sanity check post-render que aborta si quedan placeholders",
             "v7: Boss Console multi-agente (Constructor/Vendedor/Psicologo/Ingeniero/Estratega)",

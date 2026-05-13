@@ -42,8 +42,17 @@ ask_secret() {
     if [ "$NI" = "1" ]; then echo ""; return; fi
     local prompt="$1" var; read -rsp "$prompt: " var; echo >&2; echo "$var"
 }
-slug_from() { echo "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g' | cut -c1-30; }
+slug_from() {
+    # Quita comillas, trim, lowercase, no alfa numericos -> guion, recorta
+    echo "$1" | sed -E 's/^["'"'"' ]+|["'"'"' ]+$//g' \
+              | tr '[:upper:]' '[:lower:]' \
+              | sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g' \
+              | cut -c1-30
+}
 valid_hex() { [[ "$1" =~ ^#[0-9a-fA-F]{6}$ ]]; }
+
+# Flag para idempotencia: LLUVIA_FORCE=1 borra el directorio del cliente si ya existe
+FORCE="${LLUVIA_FORCE:-0}"
 
 # ----- Pre-checks -----
 [ -d "$SOURCE_DIR/backend" ] || err "No encontrado $SOURCE_DIR/backend (define LLUVIA_SOURCE)"
@@ -91,7 +100,15 @@ TG_TOKEN="${LLUVIA_TG_TOKEN:-$(ask 'Telegram token del cliente (vacio = configur
 
 # ----- Crear estructura -----
 CLIENT_DIR="$CLIENTS_DIR/$SLUG"
-[ -d "$CLIENT_DIR" ] && err "Ya existe $CLIENT_DIR"
+if [ -d "$CLIENT_DIR" ]; then
+    if [ "$FORCE" = "1" ]; then
+        warn "Ya existe $CLIENT_DIR, LLUVIA_FORCE=1 -> bajando containers y borrando"
+        (cd "$CLIENT_DIR" && docker compose down -v 2>/dev/null || true)
+        rm -rf "$CLIENT_DIR"
+    else
+        err "Ya existe $CLIENT_DIR. Para reinstalar: 'LLUVIA_FORCE=1 bash setup-cliente.sh' o borralo manualmente con 'rm -rf $CLIENT_DIR'"
+    fi
+fi
 mkdir -p "$CLIENT_DIR"
 log "Estructura en $CLIENT_DIR"
 
