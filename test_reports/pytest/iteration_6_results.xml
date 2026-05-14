@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="0" skipped="0" tests="1" time="0.167" timestamp="2026-05-14T10:48:25.456012+00:00" hostname="agent-env-7b3e6866-9b4f-44e5-bf80-f6619e99f671"><testcase classname="" name="tests.test_iteration_6_v11" time="0.000"><error message="collection failure">tests/test_iteration_6_v11.py:15: in &lt;module&gt;
+    BASE = os.environ["REACT_APP_BACKEND_URL"].rstrip("/")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen os&gt;:679: in __getitem__
+    ???
+E   KeyError: 'REACT_APP_BACKEND_URL'</error></testcase></testsuite></testsuites>
