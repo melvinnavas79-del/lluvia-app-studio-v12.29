@@ -1,11 +1,7 @@
 """
 ========================================
-CHAT MULTI-AGENTE CON TOOLS Y CREDITOS
+CHAT MULTI-AGENTE CON TOOLS Y CREDITOS (v9)
 ========================================
-
-- Cada sesion tiene un agente asociado
-- Cada mensaje cuesta oros (chat + tools que se ejecuten)
-- Mensajes y tool_calls quedan persistidos
 """
 
 import json
@@ -15,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
 
@@ -35,6 +32,16 @@ _db_ref: dict = {"db": None}
 
 def set_db(db) -> None:
     _db_ref["db"] = db
+
+
+async def _get_agent_any(agent_id: str) -> Optional[dict]:
+    """Busca primero en built-in, luego en custom_agents de Mongo."""
+    ag = agents_catalog.get_agent(agent_id)
+    if ag:
+        return ag
+    db = _db_ref["db"]
+    custom = await db.custom_agents.find_one({"id": agent_id}, {"_id": 0})
+    return custom
 
 
 # ============================================================
@@ -140,7 +147,17 @@ class MessageIn(BaseModel):
 # ============================================================
 @router.get("/agents")
 async def list_agents(_=Depends(get_current_user)):
-    return {"agents": agents_catalog.list_agents()}
+    builtins = agents_catalog.list_agents()
+    db = _db_ref["db"]
+    customs = []
+    async for a in db.custom_agents.find({}, {"_id": 0}):
+        customs.append({
+            "id": a["id"], "name": a["name"], "emoji": a["emoji"],
+            "color": a["color"], "voice": a.get("voice", "alloy"),
+            "tagline": a.get("tagline", ""), "tools": a.get("tools", []),
+            "is_custom": True,
+        })
+    return {"agents": builtins + customs}
 
 
 @router.get("/credits/me")
@@ -229,7 +246,7 @@ async def send_message(
     if not sess:
         raise HTTPException(status_code=404, detail="Sesion no encontrada")
 
-    agent = agents_catalog.get_agent(sess["agent_id"])
+    agent = await _get_agent_any(sess["agent_id"])
     if not agent:
         raise HTTPException(status_code=400, detail="Agente invalido en sesion")
 

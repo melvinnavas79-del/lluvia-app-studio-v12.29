@@ -5,6 +5,8 @@ import { useBranding } from "../BrandingContext";
 import { PLATFORMS } from "./AffiliateDashboard";
 import BrandingTab from "./BrandingTab";
 import BossConsole from "./BossConsole";
+import AgentBuilder from "./AgentBuilder";
+import AgencyView from "./AgencyView";
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
@@ -66,6 +68,8 @@ export default function AdminDashboard() {
         {[
           ["overview", "Vision general"],
           ["console", "Boss Console"],
+          ["agency", "Agency View"],
+          ["builder", "Arquitecto"],
           ["affiliates", "Afiliados"],
           ["sales", "Ventas"],
           ["branding", "Branding"],
@@ -83,6 +87,8 @@ export default function AdminDashboard() {
 
       {tab === "overview" && <Overview network={network} />}
       {tab === "console" && <BossConsole />}
+      {tab === "agency" && <AgencyView />}
+      {tab === "builder" && <AgentBuilder />}
       {tab === "affiliates" && (
         <AffiliatesTab
           affiliates={affiliates}

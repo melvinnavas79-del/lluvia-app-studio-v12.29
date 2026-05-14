@@ -38,6 +38,10 @@ import memory
 import telegram_poller
 import credits as credits_module
 import console as console_module
+import paypal_integration
+import voice as voice_module
+import agent_builder
+import agency_view
 
 
 # ----------------------- LOGGING -----------------------
@@ -58,6 +62,9 @@ affiliate_stats_module.set_db(db)
 admin_link_module.set_db(db)
 credits_module.set_db(db)
 console_module.set_db(db)
+paypal_integration.set_db(db)
+agent_builder.set_db(db)
+agency_view.set_db(db)
 
 
 # ----------------------- APP -----------------------
@@ -160,10 +167,14 @@ async def download_info():
         "filename": "lluvia-deploy.tar.gz",
         "size_bytes": _DEPLOY_PATH.stat().st_size,
         "sha256": sha,
-        "version": "operario-7.2-boss-console",
+        "version": "operario-9.0-full",
         "fixes": [
-            "v7.2: setup-cliente.sh idempotente con LLUVIA_FORCE=1 (baja containers + borra dir)",
-            "v7.2: slug_from() strippea comillas y espacios antes de slugificar",
+            "v9: 7 agentes especializados (Sexologo/Psicologo/Contador/DevOps/App Builder/Vendedor/Arquitecto)",
+            "v9: Voz - Whisper (audio in) + OpenAI TTS (voces por agente)",
+            "v9: PayPal Checkout integrado (Starter/Growth/Scale)",
+            "v9: Agency View con MRR estimado y lista de clientes",
+            "v9: Arquitecto Maestro UI - crea/edita agentes custom desde panel",
+            "v9: Boss Console rediseñado con mic, shop, play TTS por mensaje",
             "v7.1: FIX docker-compose.yml.tmpl 100% interpolado via sed (placeholders __SLUG__/__PUBLIC_URL__)",
             "v7.1: setup-cliente.sh con sanity check post-render que aborta si quedan placeholders",
             "v7: Boss Console multi-agente (Constructor/Vendedor/Psicologo/Ingeniero/Estratega)",
@@ -298,6 +309,10 @@ def send_instagram(user_id: str, msg: str) -> None:
 api_router.include_router(affiliates_module.router)
 api_router.include_router(branding_module.router)
 api_router.include_router(console_module.router)
+api_router.include_router(paypal_integration.router)
+api_router.include_router(voice_module.router)
+api_router.include_router(agent_builder.router)
+api_router.include_router(agency_view.router)
 app.include_router(api_router)
 
 app.add_middleware(

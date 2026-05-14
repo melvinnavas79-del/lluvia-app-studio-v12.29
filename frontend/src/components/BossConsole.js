@@ -1,9 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { api, formatError } from "../api";
-import { useAuth } from "../AuthContext";
 
 export default function BossConsole() {
-  const { user } = useAuth();
   const [agents, setAgents] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [activeId, setActiveId] = useState(null);
@@ -11,20 +9,29 @@ export default function BossConsole() {
   const [balance, setBalance] = useState(null);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [recording, setRecording] = useState(false);
   const [err, setErr] = useState("");
-  const [showAgentPicker, setShowAgentPicker] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
+  const [showShop, setShowShop] = useState(false);
+  const [packs, setPacks] = useState({});
+  const [packsConfigured, setPacksConfigured] = useState(false);
   const scrollRef = useRef(null);
+  const mediaRef = useRef(null);
+  const chunksRef = useRef([]);
 
   const refreshAll = async () => {
     try {
-      const [a, s, c] = await Promise.all([
+      const [a, s, c, p] = await Promise.all([
         api.get("/console/agents"),
         api.get("/console/sessions"),
         api.get("/console/credits/me"),
+        api.get("/paypal/packs"),
       ]);
       setAgents(a.data.agents);
       setSessions(s.data.sessions);
       setBalance(c.data.balance);
+      setPacks(p.data.packs || {});
+      setPacksConfigured(p.data.configured);
     } catch (e) {
       setErr(formatError(e));
     }
@@ -33,7 +40,7 @@ export default function BossConsole() {
   useEffect(() => { refreshAll(); }, []);
 
   useEffect(() => {
-    if (!activeId) return;
+    if (!activeId) { setActiveSession(null); return; }
     api.get(`/console/sessions/${activeId}`)
       .then((r) => setActiveSession(r.data))
       .catch((e) => setErr(formatError(e)));
@@ -44,52 +51,108 @@ export default function BossConsole() {
   }, [activeSession?.messages?.length, sending]);
 
   const createSession = async (agentId) => {
-    setShowAgentPicker(false);
-    setErr("");
+    setShowPicker(false);
     try {
       const r = await api.post("/console/sessions", { agent_id: agentId });
       await refreshAll();
       setActiveId(r.data.id);
-    } catch (e) {
-      setErr(formatError(e));
-    }
+    } catch (e) { setErr(formatError(e)); }
   };
 
-  const send = async () => {
-    if (!input.trim() || !activeId || sending) return;
-    const text = input.trim();
+  const send = async (overrideText) => {
+    const text = (overrideText ?? input).trim();
+    if (!text || !activeId || sending) return;
     setInput("");
     setSending(true);
     setErr("");
-    // optimista
-    setActiveSession((prev) => prev ? {
-      ...prev,
-      messages: [...(prev.messages || []), { id: "tmp", role: "user", content: text, ts: new Date().toISOString() }],
-    } : prev);
+    setActiveSession((p) => p ? {
+      ...p,
+      messages: [...(p.messages || []), { id: "tmp" + Date.now(), role: "user", content: text, ts: new Date().toISOString() }],
+    } : p);
     try {
       const r = await api.post(`/console/sessions/${activeId}/messages`, { text });
       setBalance(r.data.balance);
-      // refrescar sesion completa
       const fresh = await api.get(`/console/sessions/${activeId}`);
       setActiveSession(fresh.data);
-      // refrescar lista (updated_at)
       const s = await api.get("/console/sessions");
       setSessions(s.data.sessions);
     } catch (e) {
       setErr(formatError(e));
-    } finally {
-      setSending(false);
+    } finally { setSending(false); }
+  };
+
+  const delSession = async (id) => {
+    if (!window.confirm("Borrar este hilo?")) return;
+    await api.delete(`/console/sessions/${id}`);
+    if (activeId === id) setActiveId(null);
+    refreshAll();
+  };
+
+  // ---- VOZ: grabar y transcribir
+  const toggleRecord = async () => {
+    if (recording) {
+      mediaRef.current?.stop();
+      setRecording(false);
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      chunksRef.current = [];
+      mr.ondataavailable = (e) => chunksRef.current.push(e.data);
+      mr.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        const fd = new FormData();
+        fd.append("audio", blob, "voice.webm");
+        try {
+          const r = await api.post("/voice/transcribe", fd, {
+            headers: { "Content-Type": "multipart/form-data" },
+          });
+          setBalance(r.data.balance);
+          if (r.data.text) send(r.data.text);
+        } catch (e) { setErr(formatError(e)); }
+      };
+      mr.start();
+      mediaRef.current = mr;
+      setRecording(true);
+    } catch (e) {
+      setErr("Permiso de microfono denegado");
     }
   };
 
-  const deleteSession = async (id) => {
-    if (!window.confirm("Borrar este hilo?")) return;
-    await api.delete(`/console/sessions/${id}`);
-    if (activeId === id) {
-      setActiveId(null);
-      setActiveSession(null);
-    }
-    refreshAll();
+  const playTts = async (text, voice) => {
+    try {
+      const resp = await api.post("/voice/tts", { text, voice: voice || "alloy" },
+        { responseType: "blob" });
+      const balance = resp.headers["x-balance-after"];
+      if (balance) setBalance(parseInt(balance, 10));
+      const url = URL.createObjectURL(resp.data);
+      new Audio(url).play();
+    } catch (e) { setErr(formatError(e)); }
+  };
+
+  // ---- PAYPAL
+  const buyPack = async (packId) => {
+    try {
+      const r = await api.post("/paypal/create-order", { pack: packId });
+      const w = window.open(r.data.approve_url, "_blank", "width=500,height=700");
+      // Polling: cuando el usuario apruebe y vuelva, capturamos
+      const orderId = r.data.order_id;
+      const poll = setInterval(async () => {
+        if (w && w.closed) {
+          clearInterval(poll);
+          try {
+            const cap = await api.post(`/paypal/capture/${orderId}`);
+            if (cap.data.balance) setBalance(cap.data.balance);
+            setShowShop(false);
+            alert(`✅ Acreditados ${cap.data.credited_oros || 0} oros. Saldo: ${cap.data.balance}`);
+          } catch (e) {
+            alert("La orden quedo pendiente. Intentaras de nuevo desde 'Mis ordenes'.");
+          }
+        }
+      }, 1500);
+    } catch (e) { setErr(formatError(e)); }
   };
 
   const getAgent = (id) => agents.find((a) => a.id === id);
@@ -97,30 +160,19 @@ export default function BossConsole() {
 
   return (
     <div className="boss-console" data-testid="boss-console">
-      {/* Sidebar threads */}
-      <aside className="bc-sidebar" data-testid="bc-sidebar">
+      <aside className="bc-sidebar">
         <div className="bc-side-head">
-          <button
-            className="bc-new-btn"
-            onClick={() => setShowAgentPicker(true)}
-            data-testid="bc-new-thread-btn"
-          >
+          <button className="bc-new-btn" onClick={() => setShowPicker(true)} data-testid="bc-new-thread-btn">
             + Nuevo hilo
           </button>
         </div>
-        <div className="bc-thread-list" data-testid="bc-thread-list">
-          {sessions.length === 0 && (
-            <div className="bc-empty">Sin hilos aun. Crea uno arriba.</div>
-          )}
+        <div className="bc-thread-list">
+          {sessions.length === 0 && <div className="bc-empty">Sin hilos aun</div>}
           {sessions.map((s) => {
             const ag = getAgent(s.agent_id);
             return (
-              <div
-                key={s.id}
-                className={`bc-thread ${activeId === s.id ? "active" : ""}`}
-                onClick={() => setActiveId(s.id)}
-                data-testid={`bc-thread-${s.id}`}
-              >
+              <div key={s.id} className={`bc-thread ${activeId === s.id ? "active" : ""}`}
+                   onClick={() => setActiveId(s.id)} data-testid={`bc-thread-${s.id}`}>
                 <div className="bc-thread-emoji" style={{ background: ag?.color || "#333" }}>
                   {ag?.emoji || "💬"}
                 </div>
@@ -128,18 +180,14 @@ export default function BossConsole() {
                   <div className="bc-thread-title">{s.title}</div>
                   <div className="bc-thread-preview">{s.last_message_preview || "Sin mensajes"}</div>
                 </div>
-                <button
-                  className="bc-thread-del"
-                  onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }}
-                  data-testid={`bc-del-${s.id}`}
-                >×</button>
+                <button className="bc-thread-del"
+                        onClick={(e) => { e.stopPropagation(); delSession(s.id); }}>×</button>
               </div>
             );
           })}
         </div>
       </aside>
 
-      {/* Main panel */}
       <main className="bc-main">
         <header className="bc-header">
           <div className="bc-header-left">
@@ -153,39 +201,39 @@ export default function BossConsole() {
                   <div className="bc-header-tag">{currentAgent.tagline}</div>
                 </div>
               </>
-            ) : (
-              <div className="bc-header-tag">Selecciona o crea un hilo para comenzar</div>
-            )}
+            ) : <div className="bc-header-tag">Elige un agente para empezar</div>}
           </div>
-          <div className="bc-credits" data-testid="bc-credits">
-            <span className="bc-credits-icon">⚜</span>
-            <span className="bc-credits-num">{balance ?? "—"}</span>
-            <span className="bc-credits-label">oros</span>
+          <div className="bc-header-right">
+            <button className="bc-shop-btn" onClick={() => setShowShop(true)} data-testid="bc-shop-btn">
+              + Recargar
+            </button>
+            <div className="bc-credits" data-testid="bc-credits">
+              <span className="bc-credits-icon">⚜</span>
+              <span className="bc-credits-num">{balance ?? "—"}</span>
+              <span className="bc-credits-label">oros</span>
+            </div>
           </div>
         </header>
 
         {err && <div className="alert" data-testid="bc-error">{err}</div>}
 
-        <div className="bc-chat" ref={scrollRef} data-testid="bc-chat-area">
+        <div className="bc-chat" ref={scrollRef}>
           {!activeSession && (
-            <div className="bc-welcome" data-testid="bc-welcome">
-              <h2>Boss Console</h2>
-              <p>Multi-agente · tools reales · oros descuentan por tarea</p>
+            <div className="bc-welcome">
+              <h2>Boss Console v9</h2>
+              <p>{agents.length} agentes · tools reales · voz · oros</p>
               <div className="bc-agent-grid">
                 {agents.map((a) => (
-                  <button
-                    key={a.id}
-                    className="bc-agent-card"
-                    style={{ borderColor: a.color }}
-                    onClick={() => createSession(a.id)}
-                    data-testid={`bc-agent-card-${a.id}`}
-                  >
+                  <button key={a.id} className="bc-agent-card" style={{ borderColor: a.color }}
+                          onClick={() => createSession(a.id)} data-testid={`bc-agent-card-${a.id}`}>
                     <div className="bc-agent-emoji" style={{ background: a.color }}>{a.emoji}</div>
                     <div className="bc-agent-name">{a.name}</div>
                     <div className="bc-agent-tag">{a.tagline}</div>
-                    {a.tools.length > 0 && (
-                      <div className="bc-agent-tools">{a.tools.length} tools</div>
-                    )}
+                    <div className="bc-agent-foot">
+                      <span className="bc-voice-tag">🎙 {a.voice || "alloy"}</span>
+                      {a.tools?.length > 0 && <span>{a.tools.length} tools</span>}
+                      {a.is_custom && <span className="bc-custom-tag">custom</span>}
+                    </div>
                   </button>
                 ))}
               </div>
@@ -193,63 +241,51 @@ export default function BossConsole() {
           )}
 
           {activeSession?.messages?.map((m) => (
-            <Message key={m.id} msg={m} agent={currentAgent} />
+            <Message key={m.id} msg={m} agent={currentAgent} onPlay={playTts} />
           ))}
 
           {sending && (
-            <div className="bc-msg bc-msg-assistant" data-testid="bc-typing">
+            <div className="bc-msg bc-msg-assistant">
               <div className="bc-msg-avatar" style={{ background: currentAgent?.color }}>
                 {currentAgent?.emoji}
               </div>
               <div className="bc-msg-body">
-                <div className="bc-typing-dots"><span></span><span></span><span></span></div>
+                <div className="bc-typing-dots"><span/><span/><span/></div>
               </div>
             </div>
           )}
         </div>
 
         {activeSession && (
-          <div className="bc-composer" data-testid="bc-composer">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  send();
-                }
-              }}
-              placeholder={`Escribele a ${currentAgent?.name}... (Enter para enviar)`}
-              rows={2}
-              data-testid="bc-input"
-              disabled={sending}
-            />
+          <div className="bc-composer">
             <button
-              className="bc-send-btn"
-              onClick={send}
-              disabled={!input.trim() || sending}
-              data-testid="bc-send-btn"
-            >
+              className={`bc-mic-btn ${recording ? "rec" : ""}`}
+              onClick={toggleRecord}
+              data-testid="bc-mic-btn"
+              title="Hablar al agente">
+              {recording ? "⏹" : "🎙"}
+            </button>
+            <textarea value={input} onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }}}
+              placeholder={`Escribele a ${currentAgent?.name}...`}
+              rows={2} data-testid="bc-input" disabled={sending} />
+            <button className="bc-send-btn" onClick={() => send()} disabled={!input.trim() || sending}
+                    data-testid="bc-send-btn">
               {sending ? "..." : "Enviar"}
             </button>
           </div>
         )}
       </main>
 
-      {/* Modal: picker de agente */}
-      {showAgentPicker && (
-        <div className="bc-modal-overlay" onClick={() => setShowAgentPicker(false)}>
-          <div className="bc-modal" onClick={(e) => e.stopPropagation()} data-testid="bc-agent-picker">
+      {/* Modal: agent picker */}
+      {showPicker && (
+        <div className="bc-modal-overlay" onClick={() => setShowPicker(false)}>
+          <div className="bc-modal" onClick={(e) => e.stopPropagation()}>
             <h3>Elige un agente</h3>
             <div className="bc-agent-grid">
               {agents.map((a) => (
-                <button
-                  key={a.id}
-                  className="bc-agent-card"
-                  style={{ borderColor: a.color }}
-                  onClick={() => createSession(a.id)}
-                  data-testid={`bc-picker-${a.id}`}
-                >
+                <button key={a.id} className="bc-agent-card" style={{ borderColor: a.color }}
+                        onClick={() => createSession(a.id)}>
                   <div className="bc-agent-emoji" style={{ background: a.color }}>{a.emoji}</div>
                   <div className="bc-agent-name">{a.name}</div>
                   <div className="bc-agent-tag">{a.tagline}</div>
@@ -259,11 +295,40 @@ export default function BossConsole() {
           </div>
         </div>
       )}
+
+      {/* Modal: PayPal shop */}
+      {showShop && (
+        <div className="bc-modal-overlay" onClick={() => setShowShop(false)}>
+          <div className="bc-modal" onClick={(e) => e.stopPropagation()} data-testid="bc-shop-modal">
+            <h3>Recargar oros</h3>
+            {!packsConfigured ? (
+              <div className="alert">
+                PayPal no configurado todavia.<br/>
+                Pega tus credenciales en <code>backend/.env</code>:<br/>
+                <code>PAYPAL_CLIENT_ID=...</code><br/>
+                <code>PAYPAL_SECRET=...</code><br/>
+                Y reinicia el backend.
+              </div>
+            ) : (
+              <div className="bc-pack-grid">
+                {Object.entries(packs).map(([k, p]) => (
+                  <button key={k} className="bc-pack-card" onClick={() => buyPack(k)}
+                          data-testid={`bc-pack-${k}`}>
+                    <div className="bc-pack-oros">{p.oros.toLocaleString()} ⚜</div>
+                    <div className="bc-pack-price">${p.price_usd} USD</div>
+                    <div className="bc-pack-label">{p.label}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function Message({ msg, agent }) {
+function Message({ msg, agent, onPlay }) {
   const isUser = msg.role === "user";
   return (
     <div className={`bc-msg ${isUser ? "bc-msg-user" : "bc-msg-assistant"}`} data-testid={`bc-msg-${msg.role}`}>
@@ -282,9 +347,15 @@ function Message({ msg, agent }) {
           </div>
         )}
         <div className="bc-msg-text">{msg.content}</div>
-        {msg.cost_oros !== undefined && msg.cost_oros > 0 && (
-          <div className="bc-msg-cost">-{msg.cost_oros} oros</div>
-        )}
+        <div className="bc-msg-foot">
+          {msg.cost_oros !== undefined && msg.cost_oros > 0 && (
+            <span className="bc-msg-cost">-{msg.cost_oros} oros</span>
+          )}
+          {!isUser && msg.content && (
+            <button className="bc-play-btn" onClick={() => onPlay(msg.content, agent?.voice)}
+                    title="Escuchar (15 oros)">🔊</button>
+          )}
+        </div>
       </div>
     </div>
   );
