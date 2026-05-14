@@ -87,12 +87,127 @@ OPENAI_TOOLS = [
             "admin_email": {"type": "string"},
         }, "required": ["display_name"]},
     }},
+    {"type": "function", "function": {
+        "name": "create_agent",
+        "description": "Crea un agente custom NUEVO y lo registra en la plataforma. Aparece al instante en Boss Console.",
+        "parameters": {"type": "object", "properties": {
+            "id": {"type": "string", "description": "snake_case, 2-40 chars, ej: peluqueria_asistente"},
+            "name": {"type": "string", "description": "Nombre visible, ej: Asistente Peluqueria"},
+            "emoji": {"type": "string", "description": "1 emoji"},
+            "color": {"type": "string", "description": "hex #rrggbb"},
+            "voice": {"type": "string", "enum": ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]},
+            "tagline": {"type": "string", "description": "max 120 chars"},
+            "system": {"type": "string", "description": "prompt completo del agente, 200-2000 chars"},
+            "tools": {"type": "array", "items": {"type": "string"}, "default": []},
+        }, "required": ["id", "name", "emoji", "color", "voice", "tagline", "system"]},
+    }},
+    {"type": "function", "function": {
+        "name": "update_agent",
+        "description": "Modifica un agente custom existente (no built-in).",
+        "parameters": {"type": "object", "properties": {
+            "id": {"type": "string"},
+            "name": {"type": "string"}, "emoji": {"type": "string"},
+            "color": {"type": "string"}, "voice": {"type": "string"},
+            "tagline": {"type": "string"}, "system": {"type": "string"},
+        }, "required": ["id"]},
+    }},
+    {"type": "function", "function": {
+        "name": "delete_agent",
+        "description": "Borra un agente custom (no built-in) por id.",
+        "parameters": {"type": "object", "properties": {
+            "id": {"type": "string"},
+        }, "required": ["id"]},
+    }},
+    {"type": "function", "function": {
+        "name": "list_agents",
+        "description": "Lista todos los agentes built-in y custom disponibles.",
+        "parameters": {"type": "object", "properties": {}},
+    }},
 ]
 
 
 def _filter_tools(allowed: list) -> list:
     """Filtra OPENAI_TOOLS a las allowed para este agente."""
     return [t for t in OPENAI_TOOLS if t["function"]["name"] in allowed]
+
+
+VOICES = {"alloy", "echo", "fable", "onyx", "nova", "shimmer"}
+
+
+async def _tool_create_agent(args: dict, user_id: str) -> dict:
+    """Crea un agente custom invocado por el Arquitecto."""
+    import re
+    db = _db_ref["db"]
+    aid = re.sub(r"[^a-z0-9_-]", "", (args.get("id") or "").lower())[:40]
+    if not aid or len(aid) < 2:
+        return {"error": "id invalido (snake_case minimo 2 chars)"}
+    if aid in agents_catalog.AGENTS:
+        return {"error": f"id '{aid}' colisiona con built-in. Usa otro."}
+    if await db.custom_agents.find_one({"id": aid}, {"_id": 0}):
+        return {"error": f"ya existe agente con id '{aid}'"}
+    voice = args.get("voice", "alloy")
+    if voice not in VOICES:
+        voice = "alloy"
+    valid_tools = set(agents_catalog.TOOL_NAMES.keys())
+    tools = [t for t in (args.get("tools") or []) if t in valid_tools]
+    name = (args.get("name") or "").strip()[:40]
+    emoji = (args.get("emoji") or "🤖").strip()[:4]
+    color = (args.get("color") or "#5fb4ff").strip()[:20]
+    tagline = (args.get("tagline") or "").strip()[:120]
+    system = (args.get("system") or "").strip()[:2000]
+    if not name or len(system) < 20:
+        return {"error": "name y system son obligatorios (system min 20 chars)"}
+    doc = {
+        "id": aid, "name": name, "emoji": emoji, "color": color,
+        "voice": voice, "tagline": tagline, "system": system,
+        "tools": tools,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": user_id, "is_custom": True,
+    }
+    await db.custom_agents.insert_one(doc)
+    doc.pop("_id", None)
+    return {"created": True, "agent": doc}
+
+
+async def _tool_update_agent(args: dict) -> dict:
+    db = _db_ref["db"]
+    aid = (args.get("id") or "").strip()
+    if not aid:
+        return {"error": "id requerido"}
+    if aid in agents_catalog.AGENTS:
+        return {"error": "no se puede modificar un agente built-in"}
+    updates = {k: v for k, v in args.items()
+               if k in {"name", "emoji", "color", "voice", "tagline", "system"} and v}
+    if "voice" in updates and updates["voice"] not in VOICES:
+        updates["voice"] = "alloy"
+    if not updates:
+        return {"error": "nada para actualizar"}
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    res = await db.custom_agents.update_one({"id": aid}, {"$set": updates})
+    if res.matched_count == 0:
+        return {"error": f"agente '{aid}' no encontrado"}
+    return {"updated": True, "id": aid, "fields": list(updates.keys())}
+
+
+async def _tool_delete_agent(args: dict) -> dict:
+    db = _db_ref["db"]
+    aid = (args.get("id") or "").strip()
+    if not aid:
+        return {"error": "id requerido"}
+    if aid in agents_catalog.AGENTS:
+        return {"error": "no se puede borrar un agente built-in"}
+    res = await db.custom_agents.delete_one({"id": aid})
+    return {"deleted": res.deleted_count > 0, "id": aid}
+
+
+async def _tool_list_agents() -> dict:
+    builtins = [{"id": a["id"], "name": a["name"], "type": "built-in"}
+                for a in agents_catalog.AGENTS.values()]
+    db = _db_ref["db"]
+    customs = []
+    async for a in db.custom_agents.find({}, {"_id": 0, "id": 1, "name": 1}):
+        customs.append({"id": a["id"], "name": a["name"], "type": "custom"})
+    return {"builtin": builtins, "custom": customs, "total": len(builtins) + len(customs)}
 
 
 async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tuple[str, int]:
@@ -123,6 +238,20 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
                 admin_email=args.get("admin_email", ""),
             )
             data = {"result": output}
+        elif name == "create_agent":
+            if not is_admin:
+                return json.dumps({"error": "create_agent requiere admin"}), 0
+            data = await _tool_create_agent(args, user_id)
+        elif name == "update_agent":
+            if not is_admin:
+                return json.dumps({"error": "update_agent requiere admin"}), 0
+            data = await _tool_update_agent(args)
+        elif name == "delete_agent":
+            if not is_admin:
+                return json.dumps({"error": "delete_agent requiere admin"}), 0
+            data = await _tool_delete_agent(args)
+        elif name == "list_agents":
+            data = await _tool_list_agents()
         else:
             return json.dumps({"error": f"Tool desconocida: {name}"}), 0
         return json.dumps(data, ensure_ascii=False)[:30000], cost

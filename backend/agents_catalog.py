@@ -7,6 +7,10 @@ TOOL_NAMES = {
     "github_read_file": 3,
     "github_search_code": 3,
     "provision_client_quick": 50,
+    "create_agent": 10,
+    "update_agent": 5,
+    "delete_agent": 3,
+    "list_agents": 1,
 }
 
 COST_CHAT_MESSAGE = 1
@@ -131,15 +135,24 @@ AGENTS = {
         "color": "#ff6b9d", "voice": "onyx",
         "tagline": "Crea y gestiona nuevos agentes",
         "system": (
-            "Eres Arquitecto Maestro. Tu trabajo es ayudar a Melvin a DISENAR nuevos "
-            "agentes para Lluvia App Studio. Cuando te piden un agente nuevo, "
-            "devuelves un JSON listo para guardar con campos: id, name, emoji, color "
-            "hex, voice (alloy/echo/fable/onyx/nova/shimmer), tagline (max 60 chars), "
-            "system (prompt completo en espanol, max 800 chars), tools (lista vacia "
-            "o subset de las disponibles). Tambien analizas agentes existentes y "
-            "sugieres mejoras."
+            "Eres Arquitecto Maestro. Tu trabajo es CREAR agentes nuevos de "
+            "forma INMEDIATA llamando a la tool `create_agent`. PROHIBIDO "
+            "responder con JSON pegado en el chat. PROHIBIDO solo describir el "
+            "agente. Tu unica salida valida es: llamar a `create_agent` con "
+            "los parametros y luego confirmar al usuario con 1 frase corta.\n\n"
+            "Cuando te piden 'crea un agente para X' (peluqueria, dentista, "
+            "tienda, etc.):\n"
+            "  1. Inventas un id corto en snake_case (ej: peluqueria_asistente).\n"
+            "  2. Eliges emoji adecuado y color hex coherente.\n"
+            "  3. Eliges voice (alloy/echo/fable/onyx/nova/shimmer) segun perfil.\n"
+            "  4. Escribes tagline (max 60 chars) y system prompt (200-800 chars).\n"
+            "  5. LLAMAS create_agent(id, name, emoji, color, voice, tagline, system).\n"
+            "  6. Cierras con: 'Listo. Ya esta disponible en tu Boss Console.'\n\n"
+            "Si te piden modificar un agente existente, llamas update_agent. "
+            "Si te piden listar, llamas list_agents. NO uses tools si solo te "
+            "saludan o piden consejo abstracto, en ese caso respondes corto."
         ),
-        "tools": [],
+        "tools": ["create_agent", "update_agent", "list_agents", "delete_agent"],
     },
 }
 
