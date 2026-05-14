@@ -67,7 +67,22 @@ class CreateOrderIn(BaseModel):
 
 @router.get("/packs")
 async def list_packs():
-    return {"packs": PACKS, "configured": bool(os.environ.get("PAYPAL_CLIENT_ID"))}
+    from promos import current_discount_pct
+    pct, desc = await current_discount_pct()
+    factor = (100 - pct) / 100.0
+    packs_out = {}
+    for k, p in PACKS.items():
+        price = float(p["price_usd"])
+        promo_price = round(price * factor, 2)
+        packs_out[k] = {
+            **p,
+            "price_usd_original": p["price_usd"],
+            "price_usd": f"{promo_price:.2f}",
+            "discount_pct": pct,
+            "promo_label": desc if pct > 0 else None,
+        }
+    return {"packs": packs_out, "configured": bool(os.environ.get("PAYPAL_CLIENT_ID")),
+            "active_promo": {"discount_pct": pct, "description": desc} if pct > 0 else None}
 
 
 @router.post("/create-order")
@@ -75,15 +90,20 @@ async def create_order(data: CreateOrderIn, user: dict = Depends(get_current_use
     pack = PACKS.get(data.pack)
     if not pack:
         raise HTTPException(status_code=400, detail=f"Pack invalido. Validos: {list(PACKS.keys())}")
+    # Aplicar descuento de promo activa
+    from promos import current_discount_pct
+    pct, desc = await current_discount_pct()
+    factor = (100 - pct) / 100.0
+    final_price = round(float(pack["price_usd"]) * factor, 2)
     base, _, _ = _paypal_env()
     token = _access_token()
     order_payload = {
         "intent": "CAPTURE",
         "purchase_units": [{
             "reference_id": f"oros-{user['id']}-{uuid.uuid4().hex[:8]}",
-            "description": pack["label"],
+            "description": f"{pack['label']}" + (f" ({pct}% OFF)" if pct > 0 else ""),
             "custom_id": f"{user['id']}:{data.pack}",
-            "amount": {"currency_code": "USD", "value": pack["price_usd"]},
+            "amount": {"currency_code": "USD", "value": f"{final_price:.2f}"},
         }],
         "application_context": {
             "brand_name": "Lluvia App Studio",

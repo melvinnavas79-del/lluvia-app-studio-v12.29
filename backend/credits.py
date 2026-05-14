@@ -40,10 +40,22 @@ async def get_balance(user_id: str) -> int:
 
 
 async def charge(user_id: str, amount: int, reason: str, meta: Optional[dict] = None) -> bool:
-    """Descuenta `amount` oros. Devuelve True si OK, False si saldo insuficiente."""
+    """Descuenta `amount` oros. Devuelve True si OK, False si saldo insuficiente.
+    ADMINS no se cobran a si mismos."""
     if amount <= 0:
         return True
     db = _db_ref["db"]
+    # Admin acceso gratis a la consola
+    from auth import _db_ref as auth_db
+    udoc = await auth_db["db"].users.find_one({"id": user_id}, {"_id": 0, "role": 1})
+    if udoc and udoc.get("role") == "admin":
+        # registrar txn como "admin_free" pero no descontar
+        await db.credit_txns.insert_one({
+            "user_id": user_id, "type": "admin_free", "amount": 0,
+            "reason": reason, "meta": meta or {},
+            "ts": datetime.now(timezone.utc).isoformat(),
+        })
+        return True
     balance = await get_balance(user_id)
     if balance < amount:
         return False

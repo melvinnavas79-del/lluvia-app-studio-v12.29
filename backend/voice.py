@@ -26,13 +26,16 @@ def _client():
 
 @router.post("/transcribe")
 async def transcribe(audio: UploadFile = File(...), user: dict = Depends(get_current_user)):
-    if not await credits_mod.charge(user["id"], agents_catalog.COST_VOICE_IN,
-                                     "voice_in", {"filename": audio.filename}):
-        raise HTTPException(status_code=402, detail="Saldo insuficiente para audio.")
-    client = _client()
     raw = await audio.read()
     if not raw:
         raise HTTPException(status_code=400, detail="Audio vacio")
+    # Pricing real por minuto: 10 oros / min (asumimos webm/opus ~16KB/seg promedio)
+    # Estimacion: bytes / 16000 ~ segundos
+    estimated_seconds = max(1, len(raw) // 16000)
+    cost = max(1, round(estimated_seconds * 10 / 60))
+    if not await credits_mod.charge(user["id"], cost,
+                                     "voice_in", {"filename": audio.filename, "sec": estimated_seconds}):
+        raise HTTPException(status_code=402, detail="Saldo insuficiente para audio.")
     # OpenAI espera (filename, fileobj, content_type)
     file_tuple = (audio.filename or "audio.webm", io.BytesIO(raw), audio.content_type or "audio/webm")
     try:
@@ -60,7 +63,9 @@ async def text_to_speech(data: TtsIn, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="Texto vacio")
     if data.voice not in {"alloy", "echo", "fable", "onyx", "nova", "shimmer"}:
         data.voice = "alloy"
-    if not await credits_mod.charge(user["id"], agents_catalog.COST_VOICE_OUT,
+    # Pricing real: 2 oros / 100 chars
+    cost = max(1, len(text) // 100 * 2)
+    if not await credits_mod.charge(user["id"], cost,
                                      "voice_out", {"voice": data.voice, "len": len(text)}):
         raise HTTPException(status_code=402, detail="Saldo insuficiente para voz.")
     client = _client()
