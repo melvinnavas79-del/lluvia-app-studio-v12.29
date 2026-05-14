@@ -1,0 +1,60 @@
+{
+  "summary": "Backend-only testing of Lluvia App Studio v11 on preview URL. 26/26 pytest cases passing covering: (1) custom-agent session creation fix (POST /api/console/sessions ahora acepta agent_id custom), (2) full /api/super/* SuperAdmin surface (overview, sessions/all, sessions/{id}, takeover with persistence, users, github/push, github/history) incluyendo 403 para no-admin, (3) /api/appointments GET/DELETE, (4) tool flow LLM-driven que invoca paypal_invoice_card (orden PayPal LIVE creada, approve_url devuelto) + book_appointment + check_availability con persistencia verificada en /api/appointments, (5) validaciones directas de appointments (fecha pasada, formato invalido, campos faltantes, solapamiento), (6) admin-only tool gating, (7) regresion de TODOS los endpoints v10 (promos, proposals, paypal/packs, paypal/webhook 403, branding, download/info, voice/call-center auth).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/super/github/push",
+        "issue": "Cuando todos los pasos (remote/add/commit/push) fallan con git no-op (rc!=0 en add/commit porque el .git en /app puede estar corrupto o vacio), el endpoint devuelve 200 con ok:false como se espera, PERO si tambien falla 'remote' antes (ej: GITHUB_USER vacio + token con caracter especial), no se imprime info de troubleshooting. Sugerencia: agregar gh_user fallback o validacion previa para que el SuperAdmin entienda por que fallo."
+      },
+      {
+        "endpoint": "/api/appointments DELETE /{id}",
+        "issue": "Cuando id no existe devuelve 200 {cancelled:false}. Considerar 404 para mas consistencia con resto de la app (super/sessions/{id} si devuelve 404)."
+      },
+      {
+        "endpoint": "console._exec_tool (paypal_invoice_card)",
+        "issue": "Usa `requests` (sync) dentro de handler async; bloquea el event loop ~1-3s por orden PayPal. En produccion bajo carga puede causar timeouts en otras requests. Sugerencia: migrar a httpx.AsyncClient o aiohttp."
+      },
+      {
+        "endpoint": "console.send_message + tool charge",
+        "issue": "Si el cobro de una tool falla (saldo insuficiente), el codigo NO retorna error sino que pasa un mensaje 'saldo insuficiente para esta tool' al LLM. El LLM puede entonces inventar la respuesta (alucinar la reserva). RCA: en console.py linea ~613, despues de cobrar falla solo sobreescribe `result` pero el loop sigue. Mitigacion: hacer break explicito o devolver 402 al usuario."
+      },
+      {
+        "endpoint": "appointments.tool_book",
+        "issue": "El check de solapamiento solo compara por when_iso exacto (mismo minuto). No respeta duracion del servicio. Dos citas a 10:00 y 10:30 con servicio de 60min se solapan pero el codigo las permite. Sugerencia: agregar duration_minutes y comparar rangos."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_6_v11.py",
+    "/app/test_reports/pytest/iteration_6_results.xml"
+  ],
+  "action_items": [
+    "(Opcional) Cambiar DELETE /api/appointments/{id} para devolver 404 cuando no se encuentra.",
+    "(Opcional) Migrar paypal_invoice_card de requests a httpx.AsyncClient para no bloquear event loop.",
+    "(Importante) En console.send_message, cuando una tool falla por saldo insuficiente, devolver HTTP 402 al cliente en lugar de seguir y permitir que el LLM responda como si la accion se hubiera ejecutado.",
+    "(Mejora) Implementar duracion en appointments para evitar solapamientos parciales."
+  ],
+  "critical_code_review_comments": [
+    "console.py:601-617 — flujo de tool charge tiene bug logico: si charge() devuelve False, sobreescribe result con error pero NO interrumpe el loop ni el cobro de tools posteriores. El LLM puede recibir el mensaje de error y aun asi responder al usuario como si todo hubiese funcionado.",
+    "console.py:270-342 (_tool_paypal_card) — usa la libreria `requests` sincronica dentro de funcion async. Bloquea el event loop en cada llamada a PayPal (~1-3s). Migrar a httpx async.",
+    "super_admin.py:172-176 — subprocess.run con timeout=90 bloquea el event loop async durante todo el git push. Para preview/dev esta bien, pero en produccion habria que envolver en asyncio.to_thread.",
+    "appointments.py:90-96 — colision check solo por when_iso exacto. No considera duracion del servicio; permite citas en 10:00 y 10:30 que se solapan si el servicio dura 1h.",
+    "console.py:559 — tools solo se filtran/activan cuando is_admin=True. Esto significa que afiliados/clientes finales NUNCA podran usar book_appointment ni paypal_invoice_card en sus agentes. Si la intencion es que un cliente del peluquero use el bot para reservar, esto es un bloqueo importante. Verificar con product si es deseado.",
+    "appointments.py:67 — DELETE retorna 200 incluso si el id no existe, sin distinguir 'no era tuyo' de 'no existe'. Confunde al frontend.",
+    "super_admin.py:35 — '_require_super' compara role == 'admin' (mismo check que require_admin). El comentario dice 'En el futuro podriamos agregar is_super_admin flag' pero no esta implementado todavia. OK como esta v11."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_6_v11.py (new)",
+    "/app/backend/tests/conftest.py (new — autouse asyncio marker)",
+    "/app/test_reports/pytest/iteration_6_results.xml (new)"
+  ],
+  "success_rate": {"backend": "100% (26/26)", "frontend": "N/A (backend-only request)"},
+  "test_credentials": "Admin melvinnavas79@gmail.com / Admin#2026. Se creo un afiliado temporal TEST_user_<hex>@test.com con password Hola1234! que queda en mongo pero se limpia entre runs por uuid.",
+  "seed_data_creation": "Creado y limpiado: 1 custom_agent test_v11_<hex>, 2 chat_sessions TEST_*, ~3 appointments (con agent_id test_v11_<hex>). Cleanup ejecutado al final de los tests via fixtures y mongo cleanup post-run. Quedan persistentes en /github_backups: ~1 doc por cada run de test_super_github_push (no se borran intencionalmente para mantener historial).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Re-ejecutar: REACT_APP_BACKEND_URL=https://ai-bot-cost-calc.preview.emergentagent.com MONGO_URL=mongodb://localhost:27017 DB_NAME=bot_multiplataforma python -m pytest /app/backend/tests/test_iteration_6_v11.py -v --junitxml=/app/test_reports/pytest/iteration_6_results.xml. Tests previos iteration_5 (v10) tambien siguen siendo validos. El test_paypal_invoice_card_tool y test_book_and_check_availability dependen del LLM (no-deterministico) y usan pytest.skip si el modelo no llama la tool — en este run ambos invocaron las tools correctamente. GITHUB_TOKEN actualmente en .env esta REVOCADO (rc!=0 en push step) pero el endpoint maneja eso devolviendo 200 ok:false como se especifica. PayPal LIVE crea ordenes reales (no se capturan). Los bugs encontrados son menores y no bloquean el MVP de v11.",
+  "rca of the issue": "No hay issues criticos. Los issues menores listados son oportunidades de mejora (consistencia HTTP 404 vs 200{found:false}, async I/O para PayPal, duracion en appointments, y el comportamiento del loop de tools cuando una tool falla por saldo). El bug fix de v11 (POST /api/console/sessions ahora soporta custom agents via _get_agent_any) esta validado y funciona correctamente."
+}
