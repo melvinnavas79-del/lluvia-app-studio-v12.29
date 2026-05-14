@@ -1,0 +1,40 @@
+{
+  "summary": "Integral backend test of Lluvia App Studio v10. 26/26 pytest cases passing on the public preview URL covering auth+rate-limit, promos CRUD, proposals workflow (create/approve/reject end-to-end including promo_create that materializes a promo), PayPal packs (promo discount + price_usd_original + promo_label), PayPal webhook signature 403, Telegram unified (/agente menu with 8 agents, /agente_devops persistence, /miagente, /saldo, normal message no-crash), Call Center /turn (auth required, 413 oversize, 400 unknown agent, controlled 502 on invalid OPENAI key), extended branding GET/PUT with all v10 fields, /download/lluvia-deploy/info version v10-unified-promos-proposals-callcenter, and v9 endpoints (console agents=8, sessions CRUD, agency clients, agent-builder) all functioning.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/voice/call-center/turn", "issue": "When admin balance is enough the endpoint charges voz-in oros (cost_in) BEFORE calling Whisper; if Whisper later returns 401/invalid key the user is still debited. Suggested: refund on Whisper failure or charge only after Whisper success."},
+      {"endpoint": "/api/proposals (branding_update apply)", "issue": "Handler updates db.branding with _id='default' but GET /api/branding reads {_id:'main'} (see branding.py). Approved branding_update proposals will NOT be reflected in GET /api/branding. RCA: mismatched collection key between proposals._apply_proposal and branding._get_branding_doc."},
+      {"endpoint": "/api/proposals (branding_update payload keys)", "issue": "Whitelist of allowed branding keys in proposals._apply_proposal is {display,tagline,primary,accent,background,text_color,logo_url,product_name} but branding model uses primary_color/accent_color/background_color/logo_data_url/company_name/support_email. Approved branding proposals will drop most fields silently."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_5_v10.py",
+    "/app/test_reports/pytest/iteration_5_results.xml"
+  ],
+  "action_items": [
+    "Fix branding_update proposal handler in /app/backend/proposals.py: use _id='main' (not 'default') and whitelist keys matching branding.py model (primary_color, accent_color, background_color, text_color, logo_data_url, product_name, tagline, company_name, support_email).",
+    "Consider refunding cost_in oros in /app/backend/call_center.py when Whisper raises (currently user is charged even on OpenAI 401).",
+    "(Out of preview scope) OPENAI_API_KEY in preview .env is invalid; voice/chat flows return 502 as expected. Real key only in VPS — confirmed handled correctly."
+  ],
+  "critical_code_review_comments": [
+    "proposals._apply_proposal branding handler is inconsistent with branding module (wrong _id and wrong field whitelist) — silent data loss bug for that proposal type.",
+    "call_center.call_turn charges voz-in oros before Whisper success: no refund on failure.",
+    "telegram_unified.py: `if db is None` fix correctly applied for motor compatibility (no crash observed during /agente, /miagente, /saldo, /agente_devops).",
+    "rate_limit on /api/auth/login is per IP via x-forwarded-for header — works correctly under Kubernetes ingress (429 reproduced).",
+    "PayPal webhook correctly returns 403 when PAYPAL_WEBHOOK_ID env is missing (server logs confirm).",
+    "Hardcoded fallback URL in /api/command rate-limit test was avoided; production code uses env vars correctly."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_5_v10.py (new)",
+    "/app/test_reports/pytest/iteration_5_results.xml (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "N/A (backend-only request)"},
+  "test_credentials": "Admin melvinnavas79@gmail.com / Admin#2026 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Created temporary promos with TEST- prefix during tests; all cleaned up. No long-lived seed data left.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All v10 endpoints functional on preview. Two functional bugs found in proposals.branding_update handler (wrong collection _id key + wrong field whitelist). Once fixed, add a regression test: approve a branding_update proposal then GET /api/branding to verify tagline/primary_color persisted. The call-center 'charge before Whisper' is a minor UX bug worth fixing but not blocking. To re-run: `python -m pytest /app/backend/tests/test_iteration_5_v10.py -v` (wait ~70s if you have already triggered rate-limit). Rate-limit test runs LAST intentionally because it depletes the 8/min login quota for the test IP.",
+  "rca of the issue": "branding proposal bug: proposals._apply_proposal writes to {_id:'default'} with key names like 'primary'/'accent'/'logo_url', but branding._get_branding_doc reads from {_id:'main'} with key names like 'primary_color'/'accent_color'/'logo_data_url'. As a result, approved branding proposals silently do nothing visible. Mitigation: change `_id:'default'` -> `_id:'main'` and align the whitelist with branding.BrandingIn fields."
+}

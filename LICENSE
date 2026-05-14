@@ -1,0 +1,67 @@
+LLUVIA APP STUDIO — LICENCIA PROPIETARIA v10
+============================================
+
+Copyright (c) 2026 Melvin Navas (melvinnavas79@gmail.com)
+Todos los derechos reservados.
+
+Este software, incluyendo su codigo fuente, scripts de despliegue, prompts
+de agentes, infraestructura, branding, manuales y documentacion asociada
+(en conjunto, el "Software"), es propiedad EXCLUSIVA de Melvin Navas
+("el Propietario") y se distribuye bajo los siguientes terminos:
+
+1. PROPIEDAD INTELECTUAL
+   El Propietario es el unico titular de todos los derechos de autor,
+   marca registrada, secretos comerciales y demas derechos de propiedad
+   intelectual sobre el Software. Ningun otro individuo o entidad —
+   incluidos colaboradores externos, agencias, contratistas o proveedores
+   de herramientas asistidas por IA — adquiere por la mera contribucion,
+   asistencia, ejecucion o asesoria, derecho alguno sobre el Software.
+
+2. USO PERMITIDO
+   El Propietario puede:
+   - Usar, modificar, vender, sublicenciar o redistribuir el Software,
+     total o parcialmente, en cualquier forma.
+   - Desplegar copias del Software para clientes finales bajo modelo SaaS,
+     instalacion en VPS, on-premise o cualquier otro modelo comercial.
+   - Adaptar el branding, prompts y configuracion para cada cliente.
+
+3. PROHIBICIONES PARA TERCEROS
+   Sin autorizacion expresa y por escrito del Propietario, queda PROHIBIDO:
+   - Copiar, distribuir, vender, sublicenciar, alquilar o prestar el Software.
+   - Realizar ingenieria inversa, descompilar o desensamblar el Software.
+   - Eliminar o modificar avisos de copyright, marca o atribuciones.
+   - Usar el Software para entrenar modelos de IA de terceros.
+   - Crear obras derivadas con fines de competencia directa.
+
+4. CLIENTES FINALES
+   Los clientes que adquieren una copia desplegada del Software reciben
+   una licencia de USO limitada y no exclusiva sobre su propia instancia.
+   No adquieren el codigo fuente ni derechos sobre el Software base.
+
+5. AUSENCIA DE GARANTIA
+   El Software se entrega "tal cual", sin garantia expresa o implicita
+   de comerciabilidad, idoneidad o no infraccion. El Propietario no
+   sera responsable por danos directos, indirectos, incidentales o
+   consecuentes derivados del uso o imposibilidad de uso del Software.
+
+6. SERVICIOS DE TERCEROS
+   El Software integra OpenAI, PayPal, GitHub y Telegram bajo las
+   licencias y terminos de cada proveedor. El uso de claves API es
+   responsabilidad exclusiva del Propietario o del cliente final
+   correspondiente.
+
+7. JURISDICCION
+   Esta licencia se interpreta segun las leyes aplicables al domicilio
+   del Propietario. Cualquier controversia se resolvera en los tribunales
+   competentes de dicha jurisdiccion.
+
+8. INTEGRIDAD DEL TITULAR
+   Cualquier modificacion al codigo realizada con asistencia de
+   herramientas externas (IA, contratistas, plataformas de desarrollo)
+   constituye una OBRA POR ENCARGO ("work for hire") y queda
+   automaticamente cedida en su totalidad al Propietario.
+
+Para licencias comerciales especiales, partnership o consultas:
+melvinnavas79@gmail.com
+
+— Fin de la licencia —

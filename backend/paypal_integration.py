@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 import credits as credits_mod
 from auth import get_current_user
+from rate_limit import limiter
 
 logger = logging.getLogger("paypal")
 router = APIRouter(prefix="/paypal", tags=["paypal"])
@@ -86,7 +87,8 @@ async def list_packs():
 
 
 @router.post("/create-order")
-async def create_order(data: CreateOrderIn, user: dict = Depends(get_current_user)):
+@limiter.limit("15/hour")
+async def create_order(request: Request, data: CreateOrderIn, user: dict = Depends(get_current_user)):
     pack = PACKS.get(data.pack)
     if not pack:
         raise HTTPException(status_code=400, detail=f"Pack invalido. Validos: {list(PACKS.keys())}")
@@ -172,3 +174,80 @@ async def my_orders(user: dict = Depends(get_current_user)):
     db = _db_ref["db"]
     cur = db.paypal_orders.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).limit(30)
     return {"orders": [o async for o in cur]}
+
+
+# ============================================================
+# WEBHOOK PAYPAL — validacion firma via API oficial
+# ============================================================
+def _verify_paypal_signature(headers: dict, body: bytes) -> bool:
+    """Valida la firma del webhook via la API oficial de PayPal.
+    Requiere PAYPAL_WEBHOOK_ID en .env. Si no esta seteado, rechaza."""
+    webhook_id = os.environ.get("PAYPAL_WEBHOOK_ID", "").strip()
+    if not webhook_id:
+        logger.error("PAYPAL_WEBHOOK_ID no configurado: rechazando webhook")
+        return False
+    try:
+        import json as _json
+        base, _, _ = _paypal_env()
+        token = _access_token()
+        payload = {
+            "auth_algo": headers.get("paypal-auth-algo", ""),
+            "cert_url": headers.get("paypal-cert-url", ""),
+            "transmission_id": headers.get("paypal-transmission-id", ""),
+            "transmission_sig": headers.get("paypal-transmission-sig", ""),
+            "transmission_time": headers.get("paypal-transmission-time", ""),
+            "webhook_id": webhook_id,
+            "webhook_event": _json.loads(body.decode("utf-8")),
+        }
+        r = requests.post(
+            f"{base}/v1/notifications/verify-webhook-signature",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json=payload, timeout=15,
+        )
+        return r.status_code == 200 and r.json().get("verification_status") == "SUCCESS"
+    except Exception as e:
+        logger.exception(f"verify webhook fallo: {e}")
+        return False
+
+
+@router.post("/webhook")
+@limiter.limit("60/minute")
+async def paypal_webhook(request: Request):
+    """Recibe eventos PAYMENT.CAPTURE.COMPLETED y acredita oros si la orden
+    aun no fue procesada. Blindado con verify-webhook-signature de PayPal."""
+    body = await request.body()
+    headers = {k.lower(): v for k, v in request.headers.items()}
+    if not _verify_paypal_signature(headers, body):
+        raise HTTPException(status_code=403, detail="Firma webhook invalida")
+    try:
+        import json as _json
+        event = _json.loads(body.decode("utf-8"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON invalido")
+    etype = event.get("event_type", "")
+    if etype != "PAYMENT.CAPTURE.COMPLETED":
+        return {"ok": True, "ignored": etype}
+    resource = event.get("resource", {}) or {}
+    # PayPal mete order_id en supplementary_data.related_ids.order_id
+    rel = (resource.get("supplementary_data", {}) or {}).get("related_ids", {}) or {}
+    order_id = rel.get("order_id") or resource.get("invoice_id") or ""
+    if not order_id:
+        return {"ok": True, "no_order_id": True}
+    db = _db_ref["db"]
+    order = await db.paypal_orders.find_one({"order_id": order_id}, {"_id": 0})
+    if not order:
+        logger.warning(f"webhook: orden no encontrada {order_id}")
+        return {"ok": True, "order_not_found": order_id}
+    if order.get("status") == "COMPLETED":
+        return {"ok": True, "already_processed": True}
+    # Acreditar oros (idempotente)
+    await credits_mod.topup(order["user_id"], int(order["oros"]),
+                             reason=f"paypal_webhook:{order_id}")
+    await db.paypal_orders.update_one(
+        {"order_id": order_id},
+        {"$set": {"status": "COMPLETED",
+                  "completed_at": datetime.now(timezone.utc).isoformat(),
+                  "via_webhook": True}},
+    )
+    return {"ok": True, "credited": True, "oros": order["oros"]}
+

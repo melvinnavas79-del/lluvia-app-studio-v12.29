@@ -36,12 +36,19 @@ from actions import affiliate_stats as affiliate_stats_module
 from actions import admin_link as admin_link_module
 import memory
 import telegram_poller
+import telegram_unified
 import credits as credits_module
 import console as console_module
 import paypal_integration
 import voice as voice_module
 import agent_builder
 import agency_view
+import promos as promos_module
+import proposals as proposals_module
+import call_center as call_center_module
+from rate_limit import limiter, rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 
 # ----------------------- LOGGING -----------------------
@@ -65,10 +72,17 @@ console_module.set_db(db)
 paypal_integration.set_db(db)
 agent_builder.set_db(db)
 agency_view.set_db(db)
+promos_module.set_db(db)
+proposals_module.set_db(db)
+telegram_unified.set_db(db)
+call_center_module.set_db(db)
 
 
 # ----------------------- APP -----------------------
 app = FastAPI(title="Bot Multiplataforma", version="1.1.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 api_router = APIRouter(prefix="/api")
 
 
@@ -167,8 +181,17 @@ async def download_info():
         "filename": "lluvia-deploy.tar.gz",
         "size_bytes": _DEPLOY_PATH.stat().st_size,
         "sha256": sha,
-        "version": "operario-9.0-full",
+        "version": "v10-unified-promos-proposals-callcenter",
         "fixes": [
+            "v10: Telegram bot unificado (/agente, /agente_<id>, /saldo, /recargar) — un solo bot para los 8 agentes",
+            "v10: App Builder profesional — apps multi-pagina (Inicio/Popular/Explorar/Crear/Notif/Perfil/Detalle) estilo TikTok/Bigo",
+            "v10: Call Center Mode — loop voz->texto->agente->TTS, endpoint /api/voice/call-center/turn",
+            "v10: Sistema de Propuestas — agentes proponen cambios, admin aprueba con 1 click",
+            "v10: Promos automaticas — descuento por dia de semana / dia del mes aplicado a packs PayPal",
+            "v10: Branding extendido — fondo, texto, logo, product_name, tagline, theme",
+            "v10: Blindaje seguridad — rate limiting (slowapi), validacion webhook PayPal HMAC, JWT/admin gates",
+            "v10: Licencia propietaria + documentacion de migracion incluida (LICENSE, MIGRATION.md, SECURITY.md)",
+            "v10: FIX voice.transcribe — _client() ahora se instancia correctamente",
             "v9: 7 agentes especializados (Sexologo/Psicologo/Contador/DevOps/App Builder/Vendedor/Arquitecto)",
             "v9: Voz - Whisper (audio in) + OpenAI TTS (voces por agente)",
             "v9: PayPal Checkout integrado (Starter/Growth/Scale)",
@@ -313,6 +336,9 @@ api_router.include_router(paypal_integration.router)
 api_router.include_router(voice_module.router)
 api_router.include_router(agent_builder.router)
 api_router.include_router(agency_view.router)
+api_router.include_router(promos_module.router)
+api_router.include_router(proposals_module.router)
+api_router.include_router(call_center_module.router)
 app.include_router(api_router)
 
 app.add_middleware(

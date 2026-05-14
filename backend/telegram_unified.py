@@ -27,7 +27,7 @@ def set_db(db) -> None:
 
 async def get_selected_agent(user_key: str) -> str:
     db = _db_ref.get("db")
-    if not db:
+    if db is None:
         return "arquitecto"
     doc = await db.tg_user_pref.find_one({"user": user_key}, {"_id": 0, "agent_id": 1})
     return (doc or {}).get("agent_id") or "arquitecto"
@@ -35,7 +35,7 @@ async def get_selected_agent(user_key: str) -> str:
 
 async def set_selected_agent(user_key: str, agent_id: str) -> None:
     db = _db_ref.get("db")
-    if not db:
+    if db is None:
         return
     await db.tg_user_pref.update_one({"user": user_key},
                                      {"$set": {"agent_id": agent_id}}, upsert=True)

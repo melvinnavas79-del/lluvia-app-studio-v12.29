@@ -4,7 +4,7 @@ Voz: Whisper (audio -> texto) y OpenAI TTS (texto -> audio).
 
 import io
 import logging
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from openai import AsyncOpenAI
@@ -13,6 +13,7 @@ import config
 import credits as credits_mod
 import agents_catalog
 from auth import get_current_user
+from rate_limit import limiter
 
 logger = logging.getLogger("voice")
 router = APIRouter(prefix="/voice", tags=["voice"])
@@ -25,7 +26,8 @@ def _client():
 
 
 @router.post("/transcribe")
-async def transcribe(audio: UploadFile = File(...), user: dict = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def transcribe(request: Request, audio: UploadFile = File(...), user: dict = Depends(get_current_user)):
     raw = await audio.read()
     if not raw:
         raise HTTPException(status_code=400, detail="Audio vacio")
@@ -38,6 +40,7 @@ async def transcribe(audio: UploadFile = File(...), user: dict = Depends(get_cur
         raise HTTPException(status_code=402, detail="Saldo insuficiente para audio.")
     # OpenAI espera (filename, fileobj, content_type)
     file_tuple = (audio.filename or "audio.webm", io.BytesIO(raw), audio.content_type or "audio/webm")
+    client = _client()
     try:
         result = await client.audio.transcriptions.create(
             model="whisper-1",
@@ -57,7 +60,8 @@ class TtsIn(BaseModel):
 
 
 @router.post("/tts")
-async def text_to_speech(data: TtsIn, user: dict = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def text_to_speech(request: Request, data: TtsIn, user: dict = Depends(get_current_user)):
     text = (data.text or "").strip()[:1500]
     if not text:
         raise HTTPException(status_code=400, detail="Texto vacio")

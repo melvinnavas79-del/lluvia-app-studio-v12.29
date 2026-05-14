@@ -7,6 +7,9 @@ import BrandingTab from "./BrandingTab";
 import BossConsole from "./BossConsole";
 import AgentBuilder from "./AgentBuilder";
 import AgencyView from "./AgencyView";
+import ProposalsTab from "./ProposalsTab";
+import PromosTab from "./PromosTab";
+import CallCenter from "./CallCenter";
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
@@ -15,20 +18,23 @@ export default function AdminDashboard() {
   const [network, setNetwork] = useState(null);
   const [affiliates, setAffiliates] = useState([]);
   const [sales, setSales] = useState([]);
+  const [agents, setAgents] = useState([]);
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
 
   const refresh = async () => {
     setErr("");
     try {
-      const [n, a, s] = await Promise.all([
+      const [n, a, s, ag] = await Promise.all([
         api.get("/stats/network"),
         api.get("/affiliates"),
         api.get("/sales"),
+        api.get("/console/agents"),
       ]);
       setNetwork(n.data);
       setAffiliates(a.data);
       setSales(s.data);
+      setAgents(ag.data.agents || []);
     } catch (e) {
       setErr(formatError(e));
     }
@@ -68,8 +74,11 @@ export default function AdminDashboard() {
         {[
           ["overview", "Vision general"],
           ["console", "Boss Console"],
+          ["callcenter", "📞 Call Center"],
           ["agency", "Agency View"],
           ["builder", "Arquitecto"],
+          ["proposals", "Propuestas"],
+          ["promos", "Promos"],
           ["affiliates", "Afiliados"],
           ["sales", "Ventas"],
           ["branding", "Branding"],
@@ -87,8 +96,11 @@ export default function AdminDashboard() {
 
       {tab === "overview" && <Overview network={network} />}
       {tab === "console" && <BossConsole />}
+      {tab === "callcenter" && <CallCenter agents={agents} />}
       {tab === "agency" && <AgencyView />}
       {tab === "builder" && <AgentBuilder />}
+      {tab === "proposals" && <ProposalsTab />}
+      {tab === "promos" && <PromosTab />}
       {tab === "affiliates" && (
         <AffiliatesTab
           affiliates={affiliates}

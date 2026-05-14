@@ -8,7 +8,7 @@ import uuid
 import string
 import random
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, Request
 from typing import List, Optional
 
 import auth
@@ -16,6 +16,7 @@ from models import (
     LoginIn, AffiliateCreateIn, AffiliateUpdateIn,
     SaleCreateIn, SaleMarkPaidIn,
 )
+from rate_limit import limiter
 
 router = APIRouter()
 _db_ref = {"db": None}
@@ -53,7 +54,8 @@ auth_router = APIRouter(prefix="/auth")
 
 
 @auth_router.post("/login")
-async def login(payload: LoginIn):
+@limiter.limit("8/minute")
+async def login(request: Request, payload: LoginIn):
     db = _db()
     email = payload.email.lower().strip()
     user = await db.users.find_one({"email": email})

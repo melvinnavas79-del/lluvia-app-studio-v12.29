@@ -10,6 +10,7 @@ from executor import execute_action
 from actions import affiliate_stats
 from actions import admin_link
 from actions import client_provisioning
+import telegram_unified
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +149,13 @@ async def process_command(text: str, user: str = "default") -> str:
             return "Provisioning solo para admins. Sesion cancelada."
         return await client_provisioning.handle(user, text)
 
+    # === MENU UNIFICADO DE AGENTES (v10) ===
+    # Si el mensaje es un comando especial del menu (/agente, /agente_xxx,
+    # /miagente, /saldo, /recargar), lo manejamos aqui mismo.
+    special = await telegram_unified.handle_special_command(text, user)
+    if special is not None:
+        return special
+
     intent = interpret(text)
     action = intent["action"]
     logger.info(f"[{user}] intent: {action} | text: {text[:80]}")
@@ -179,6 +187,14 @@ async def process_command(text: str, user: str = "default") -> str:
 
     if action == "business_reply":
         is_admin = await admin_link.is_admin_chat(user)
+        # Si el usuario tiene un agente especializado seleccionado, usarlo
+        # (en lugar del prompt generico de Lluvia)
+        try:
+            selected = await telegram_unified.get_selected_agent(user)
+        except Exception:
+            selected = None
+        if selected and selected != "arquitecto":
+            return await telegram_unified.run_with_selected_agent(text, user, is_admin)
         return await ai.generate(user, text, is_admin=is_admin)
 
     result = execute_action(intent, user=user)

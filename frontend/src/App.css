@@ -832,3 +832,67 @@ html, body, #root {
 .ag-table a { color: #5fb4ff; }
 .ag-status.ok { color: #5fdbc4; }
 .ag-status.down { color: #ff6b6b; }
+
+/* ============================================
+   v10 - Proposals
+   ============================================ */
+.proposals-list { display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem; }
+.proposal-card {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+.proposal-head { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.proposal-type { background: rgba(95,180,255,0.18); color: #5fb4ff; }
+.proposal-type.type-promo_create { background: rgba(255,200,90,0.18); color: #ffc85a; }
+.proposal-type.type-agent_create { background: rgba(197,150,255,0.18); color: #c596ff; }
+.proposal-type.type-branding_update { background: rgba(95,219,196,0.18); color: #5fdbc4; }
+.status-pending { background: rgba(255,200,90,0.18); color: #ffc85a; }
+.status-applied { background: rgba(95,219,196,0.18); color: #5fdbc4; }
+.status-rejected { background: rgba(255,107,107,0.18); color: #ff6b6b; }
+.status-failed { background: rgba(255,107,107,0.18); color: #ff6b6b; }
+.proposal-date { font-size: 0.75rem; color: rgba(255,255,255,0.5); margin-left: auto; }
+.proposal-title { margin: 0.6rem 0 0.4rem; font-size: 1.1rem; color: #e7eef8; }
+.proposal-rationale { color: rgba(255,255,255,0.7); margin: 0.25rem 0 0.75rem; font-size: 0.9rem; }
+.proposal-payload { margin: 0.5rem 0; }
+.proposal-payload summary { cursor: pointer; color: #5fb4ff; font-size: 0.85rem; }
+.proposal-payload pre {
+  background: rgba(0,0,0,0.35); padding: 0.75rem; border-radius: 6px;
+  overflow-x: auto; font-size: 0.78rem; color: #c6d6e8;
+}
+.proposal-author { font-size: 0.78rem; color: rgba(255,255,255,0.5); margin: 0.5rem 0; }
+.proposal-actions { display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap; }
+
+/* ============================================
+   v10 - Promos
+   ============================================ */
+.chip-on { background: rgba(95,180,255,0.25) !important; color: #5fb4ff !important; }
+
+/* ============================================
+   v10 - Call Center
+   ============================================ */
+.call-center { margin-top: 1rem; }
+.cc-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.oro-badge {
+  background: rgba(255,200,90,0.18); color: #ffc85a;
+  padding: 0.4rem 0.8rem; border-radius: 999px; font-weight: 600; font-size: 0.85rem;
+}
+.cc-status {
+  padding: 0.7rem 1rem; border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px; background: rgba(0,0,0,0.2); font-size: 0.9rem;
+}
+.cc-transcript {
+  background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px; padding: 1rem; max-height: 480px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 0.75rem;
+}
+.cc-turn { display: flex; flex-direction: column; gap: 0.4rem; }
+.cc-bubble {
+  padding: 0.7rem 1rem; border-radius: 10px; font-size: 0.9rem;
+  position: relative; max-width: 90%;
+}
+.cc-bubble.user { background: rgba(95,180,255,0.12); align-self: flex-end; border: 1px solid rgba(95,180,255,0.25); }
+.cc-bubble.assistant { background: rgba(95,219,196,0.10); align-self: flex-start; border: 1px solid rgba(95,219,196,0.25); }
+.cc-role { color: rgba(255,255,255,0.5); font-size: 0.72rem; text-transform: uppercase; letter-spacing: .05em; display: block; margin-bottom: 0.2rem; }
+.cc-cost { float: right; font-size: 0.7rem; color: #ffc85a; margin-left: 0.5rem; }
