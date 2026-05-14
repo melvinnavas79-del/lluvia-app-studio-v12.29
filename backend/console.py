@@ -18,6 +18,7 @@ from openai import AsyncOpenAI
 import config
 import credits as credits_mod
 import agents_catalog
+import appointments as appt_mod
 from auth import get_current_user
 from actions import github as gh
 from actions import server as srv
@@ -123,6 +124,62 @@ OPENAI_TOOLS = [
         "description": "Lista todos los agentes built-in y custom disponibles.",
         "parameters": {"type": "object", "properties": {}},
     }},
+    {"type": "function", "function": {
+        "name": "book_appointment",
+        "description": "Reserva una cita real en la base de datos. Bloquea solapamiento. Devuelve confirmacion.",
+        "parameters": {"type": "object", "properties": {
+            "client_name": {"type": "string", "description": "Nombre del cliente"},
+            "client_phone": {"type": "string", "description": "Telefono (opcional)"},
+            "client_email": {"type": "string", "description": "Email (opcional)"},
+            "service": {"type": "string", "description": "Servicio reservado"},
+            "date": {"type": "string", "description": "Fecha YYYY-MM-DD"},
+            "time": {"type": "string", "description": "Hora HH:MM 24h"},
+            "notes": {"type": "string", "description": "Observaciones (opcional)"},
+        }, "required": ["client_name", "service", "date", "time"]},
+    }},
+    {"type": "function", "function": {
+        "name": "check_availability",
+        "description": "Consulta disponibilidad real para una fecha. Devuelve horas ocupadas y libres.",
+        "parameters": {"type": "object", "properties": {
+            "date": {"type": "string", "description": "YYYY-MM-DD"},
+        }, "required": ["date"]},
+    }},
+    {"type": "function", "function": {
+        "name": "list_appointments",
+        "description": "Lista citas reservadas del agente actual. Filtrable por client_email o client_phone.",
+        "parameters": {"type": "object", "properties": {
+            "client_email": {"type": "string"},
+            "client_phone": {"type": "string"},
+        }},
+    }},
+    {"type": "function", "function": {
+        "name": "cancel_appointment",
+        "description": "Cancela una cita por id.",
+        "parameters": {"type": "object", "properties": {
+            "id": {"type": "string"},
+        }, "required": ["id"]},
+    }},
+    {"type": "function", "function": {
+        "name": "paypal_invoice_card",
+        "description": "Genera una Rich Card visual con boton PayPal para cobrarle al cliente. Devuelve un objeto card que se renderiza inline en el chat.",
+        "parameters": {"type": "object", "properties": {
+            "amount_usd": {"type": "number", "description": "Monto en USD"},
+            "description": {"type": "string", "description": "Concepto del cobro"},
+            "client_name": {"type": "string", "description": "Cliente que recibira el cobro"},
+        }, "required": ["amount_usd", "description"]},
+    }},
+    {"type": "function", "function": {
+        "name": "service_card",
+        "description": "Renderiza una tarjeta visual de servicio/producto en el chat. Util para mostrar opciones al cliente.",
+        "parameters": {"type": "object", "properties": {
+            "title": {"type": "string"},
+            "description": {"type": "string"},
+            "price_usd": {"type": "number"},
+            "image_url": {"type": "string"},
+            "cta_label": {"type": "string", "description": "Texto del boton, ej: 'Reservar'"},
+            "cta_action": {"type": "string", "description": "Accion sugerida, ej: 'book' | 'info'"},
+        }, "required": ["title"]},
+    }},
 ]
 
 
@@ -210,6 +267,94 @@ async def _tool_list_agents() -> dict:
     return {"builtin": builtins, "custom": customs, "total": len(builtins) + len(customs)}
 
 
+async def _tool_paypal_card(args: dict, user_id: str) -> dict:
+    """Genera una orden real de PayPal y devuelve metadatos de Rich Card.
+    El frontend renderiza <PaymentCard /> usando este resultado."""
+    import os
+    import requests
+    amount = float(args.get("amount_usd") or 0)
+    if amount <= 0 or amount > 10000:
+        return {"error": "amount_usd debe estar entre 0.01 y 10000"}
+    description = (args.get("description") or "Pago").strip()[:120]
+    client_name = (args.get("client_name") or "").strip()[:80]
+
+    cid = os.environ.get("PAYPAL_CLIENT_ID", "").strip()
+    secret = os.environ.get("PAYPAL_SECRET", "").strip()
+    mode = os.environ.get("PAYPAL_MODE", "live").lower()
+    base = "https://api-m.sandbox.paypal.com" if mode == "sandbox" else "https://api-m.paypal.com"
+    if not cid or not secret:
+        return {"error": "PayPal no configurado"}
+
+    # Obtener token
+    try:
+        tk = requests.post(f"{base}/v1/oauth2/token",
+                            data={"grant_type": "client_credentials"},
+                            auth=(cid, secret), timeout=15)
+        if tk.status_code != 200:
+            return {"error": f"PayPal auth fallo: {tk.status_code}"}
+        access_token = tk.json()["access_token"]
+    except Exception as e:
+        return {"error": f"PayPal red: {str(e)[:120]}"}
+
+    # Crear orden
+    payload = {
+        "intent": "CAPTURE",
+        "purchase_units": [{
+            "reference_id": f"card-{user_id[:8]}",
+            "description": description[:120],
+            "amount": {"currency_code": "USD", "value": f"{amount:.2f}"},
+        }],
+        "application_context": {
+            "brand_name": "Lluvia App Studio",
+            "shipping_preference": "NO_SHIPPING",
+            "user_action": "PAY_NOW",
+        },
+    }
+    try:
+        r = requests.post(f"{base}/v2/checkout/orders",
+                          headers={"Authorization": f"Bearer {access_token}",
+                                   "Content-Type": "application/json"},
+                          json=payload, timeout=20)
+        if r.status_code not in (200, 201):
+            return {"error": f"PayPal create-order: {r.status_code} {r.text[:200]}"}
+        j = r.json()
+        approve = next((lk["href"] for lk in j.get("links", []) if lk["rel"] == "approve"), None)
+    except Exception as e:
+        return {"error": f"PayPal exception: {str(e)[:120]}"}
+
+    # Persistir
+    await _db_ref["db"].paypal_orders.insert_one({
+        "order_id": j["id"], "user_id": user_id, "pack": "custom_card",
+        "amount_usd": f"{amount:.2f}", "description": description,
+        "client_name": client_name,
+        "status": "CREATED", "approve_url": approve,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    return {
+        "card_type": "payment",
+        "order_id": j["id"],
+        "amount_usd": f"{amount:.2f}",
+        "description": description,
+        "client_name": client_name,
+        "approve_url": approve,
+        "brand": "Lluvia App Studio",
+    }
+
+
+def _tool_service_card(args: dict) -> dict:
+    """Devuelve un objeto card con datos del servicio para renderizar inline."""
+    return {
+        "card_type": "service",
+        "title": (args.get("title") or "").strip()[:120],
+        "description": (args.get("description") or "").strip()[:400],
+        "price_usd": args.get("price_usd"),
+        "image_url": (args.get("image_url") or "").strip()[:500],
+        "cta_label": (args.get("cta_label") or "Reservar").strip()[:40],
+        "cta_action": (args.get("cta_action") or "info").strip()[:20],
+    }
+
+
 async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tuple[str, int]:
     """Ejecuta una tool. Devuelve (resultado_json, costo_oros)."""
     cost = agents_catalog.TOOL_NAMES.get(name, 1)
@@ -252,6 +397,22 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
             data = await _tool_delete_agent(args)
         elif name == "list_agents":
             data = await _tool_list_agents()
+        elif name == "book_appointment":
+            agent_id = (args.get("_agent_id") or "").strip() or "default"
+            data = await appt_mod.tool_book(user_id, agent_id, args)
+        elif name == "check_availability":
+            agent_id = (args.get("_agent_id") or "").strip() or "default"
+            data = await appt_mod.tool_check_availability(user_id, agent_id, args)
+        elif name == "list_appointments":
+            agent_id = (args.get("_agent_id") or "").strip() or "default"
+            data = await appt_mod.tool_list_appointments(user_id, agent_id, args)
+        elif name == "cancel_appointment":
+            agent_id = (args.get("_agent_id") or "").strip() or "default"
+            data = await appt_mod.tool_cancel_appointment(user_id, agent_id, args)
+        elif name == "paypal_invoice_card":
+            data = await _tool_paypal_card(args, user_id)
+        elif name == "service_card":
+            data = _tool_service_card(args)
         else:
             return json.dumps({"error": f"Tool desconocida: {name}"}), 0
         return json.dumps(data, ensure_ascii=False)[:30000], cost
@@ -325,7 +486,7 @@ async def list_sessions(user: dict = Depends(get_current_user)):
 
 @router.post("/sessions")
 async def create_session(data: SessionCreateIn, user: dict = Depends(get_current_user)):
-    agent = agents_catalog.get_agent(data.agent_id)
+    agent = await _get_agent_any(data.agent_id)
     if not agent:
         raise HTTPException(status_code=400, detail=f"Agente desconocido: {data.agent_id}")
     sid = str(uuid.uuid4())
@@ -334,7 +495,7 @@ async def create_session(data: SessionCreateIn, user: dict = Depends(get_current
         "id": sid,
         "user_id": user["id"],
         "agent_id": data.agent_id,
-        "title": data.title or f"{agent['emoji']} {agent['name']} - nuevo hilo",
+        "title": data.title or f"{agent.get('emoji','💬')} {agent['name']} - nuevo hilo",
         "created_at": now,
         "updated_at": now,
         "messages": [],
@@ -394,7 +555,8 @@ async def send_message(
     messages.append({"role": "user", "content": data.text})
 
     is_admin = user.get("role") == "admin"
-    tools = _filter_tools(agent["tools"]) if (is_admin and agent["tools"]) else None
+    agent_tools = agent.get("tools") or []
+    tools = _filter_tools(agent_tools) if (is_admin and agent_tools) else None
     tool_calls_made = []
     extra_cost = 0
 
@@ -439,6 +601,8 @@ async def send_message(
                 args = json.loads(tc.function.arguments or "{}")
             except Exception:
                 args = {}
+            # Inyectar agent_id para tools que lo necesitan (appointments)
+            args["_agent_id"] = agent["id"]
             result, cost = await _exec_tool(tc.function.name, args, user["id"], is_admin)
             # cobrar el coste de la tool (si falla, abortamos)
             if cost > 0:

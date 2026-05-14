@@ -330,10 +330,24 @@ export default function BossConsole() {
 
 function Message({ msg, agent, onPlay }) {
   const isUser = msg.role === "user";
+  // Extraer rich cards desde tool_calls (paypal_invoice_card / service_card)
+  const cards = (msg.tool_calls || []).map((tc) => {
+    if (!["paypal_invoice_card", "service_card"].includes(tc.name)) return null;
+    try {
+      const r = JSON.parse(tc.result_preview || "{}");
+      if (r.card_type) return r;
+    } catch (_) {}
+    return null;
+  }).filter(Boolean);
+
+  // Avatar: usa color del agente como circulo con iniciales (estilo Enterprise)
+  const avatarInitial = isUser ? "TU" : (agent?.name || "AI").slice(0, 2).toUpperCase();
+  const avatarBg = isUser ? "linear-gradient(135deg,#2a2a3a,#1a1a2a)" : (agent?.color || "#5fb4ff");
+
   return (
     <div className={`bc-msg ${isUser ? "bc-msg-user" : "bc-msg-assistant"}`} data-testid={`bc-msg-${msg.role}`}>
-      <div className="bc-msg-avatar" style={{ background: isUser ? "#222" : agent?.color }}>
-        {isUser ? "👤" : agent?.emoji || "🤖"}
+      <div className="bc-msg-avatar bc-avatar-circle" style={{ background: avatarBg }}>
+        {avatarInitial}
       </div>
       <div className="bc-msg-body">
         {msg.tool_calls?.length > 0 && (
@@ -346,16 +360,75 @@ function Message({ msg, agent, onPlay }) {
             ))}
           </div>
         )}
-        <div className="bc-msg-text">{msg.content}</div>
+        {msg.content && <div className="bc-msg-text">{msg.content}</div>}
+        {cards.map((c, i) => (
+          c.card_type === "payment"
+            ? <PaymentCard key={i} card={c} agent={agent} />
+            : <ServiceCard key={i} card={c} agent={agent} />
+        ))}
+        {msg.superadmin_takeover && (
+          <div className="bc-takeover-badge">👑 SuperAdmin · {msg.by}</div>
+        )}
         <div className="bc-msg-foot">
           {msg.cost_oros !== undefined && msg.cost_oros > 0 && (
             <span className="bc-msg-cost">-{msg.cost_oros} oros</span>
           )}
           {!isUser && msg.content && (
             <button className="bc-play-btn" onClick={() => onPlay(msg.content, agent?.voice)}
-                    title="Escuchar (15 oros)">🔊</button>
+                    title="Escuchar">🔊</button>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function PaymentCard({ card, agent }) {
+  const accent = agent?.color || "#5fb4ff";
+  return (
+    <div className="rich-card payment-card" data-testid="payment-card" style={{ borderColor: accent }}>
+      <div className="rc-head" style={{ background: `linear-gradient(135deg, ${accent}22, transparent)` }}>
+        <div className="rc-brand">
+          <div className="rc-logo" style={{ background: accent }}>{(card.brand || "L").slice(0, 1)}</div>
+          <div>
+            <div className="rc-brand-name">{card.brand || "Lluvia App Studio"}</div>
+            <div className="rc-brand-sub">Pago seguro · PayPal</div>
+          </div>
+        </div>
+        <div className="rc-amount">${card.amount_usd}<small>USD</small></div>
+      </div>
+      <div className="rc-body">
+        <div className="rc-desc">{card.description}</div>
+        {card.client_name && <div className="rc-client">A nombre de: <strong>{card.client_name}</strong></div>}
+        <div className="rc-order-id">Orden: {(card.order_id || "").slice(0, 12)}...</div>
+      </div>
+      <a href={card.approve_url} target="_blank" rel="noreferrer"
+         className="rc-cta" style={{ background: accent }}
+         data-testid="payment-card-cta">
+        Pagar con PayPal →
+      </a>
+    </div>
+  );
+}
+
+function ServiceCard({ card, agent }) {
+  const accent = agent?.color || "#5fb4ff";
+  return (
+    <div className="rich-card service-card" data-testid="service-card" style={{ borderColor: accent }}>
+      {card.image_url && (
+        <img src={card.image_url} alt={card.title} className="rc-image" />
+      )}
+      <div className="rc-body">
+        <div className="rc-title">{card.title}</div>
+        {card.description && <div className="rc-desc">{card.description}</div>}
+        {card.price_usd && (
+          <div className="rc-price" style={{ color: accent }}>
+            ${card.price_usd}<small> USD</small>
+          </div>
+        )}
+        <button className="rc-cta-soft" style={{ borderColor: accent, color: accent }}>
+          {card.cta_label || "Ver más"}
+        </button>
       </div>
     </div>
   );

@@ -10,11 +10,12 @@ import AgencyView from "./AgencyView";
 import ProposalsTab from "./ProposalsTab";
 import PromosTab from "./PromosTab";
 import CallCenter from "./CallCenter";
+import SuperAdminPanel from "./SuperAdminPanel";
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
   const { branding } = useBranding();
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState("super");
   const [network, setNetwork] = useState(null);
   const [affiliates, setAffiliates] = useState([]);
   const [sales, setSales] = useState([]);
@@ -72,6 +73,7 @@ export default function AdminDashboard() {
 
       <div className="tabs" data-testid="admin-tabs">
         {[
+          ["super", "👑 SuperAdmin"],
           ["overview", "Vision general"],
           ["console", "Boss Console"],
           ["callcenter", "📞 Call Center"],
@@ -94,6 +96,7 @@ export default function AdminDashboard() {
         ))}
       </div>
 
+      {tab === "super" && <SuperAdminPanel />}
       {tab === "overview" && <Overview network={network} />}
       {tab === "console" && <BossConsole />}
       {tab === "callcenter" && <CallCenter agents={agents} />}
