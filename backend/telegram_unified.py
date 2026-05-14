@@ -94,11 +94,16 @@ async def run_with_selected_agent(text: str, user_key: str, is_admin: bool) -> s
                                      f"telegram_chat:{aid}"):
         return "Saldo insuficiente. Usa /recargar."
     client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+    from datetime import datetime, timezone
+    now_utc = datetime.now(timezone.utc)
+    weekdays_es = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
+    date_ctx = (f"\n\n[FECHA ACTUAL] {now_utc.strftime('%Y-%m-%d %H:%M')} UTC "
+                f"({weekdays_es[now_utc.weekday()]}). Usa esta fecha como 'hoy'.")
     try:
         resp = await client.chat.completions.create(
             model=config.LLM_MODEL,
             messages=[
-                {"role": "system", "content": agent["system"]},
+                {"role": "system", "content": agent["system"] + date_ctx},
                 {"role": "user", "content": text},
             ],
             temperature=0.3,

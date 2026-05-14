@@ -546,7 +546,19 @@ async def send_message(
         raise HTTPException(status_code=402, detail="Saldo de oros insuficiente. Recarga.")
 
     # 2. Construir mensajes para OpenAI
-    system = agent["system"]
+    # Inyectamos fecha actual del servidor para que el LLM no use su knowledge cutoff
+    now_utc = datetime.now(timezone.utc)
+    weekdays_es = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
+    date_context = (
+        f"\n\n[CONTEXTO TEMPORAL OBLIGATORIO]\n"
+        f"Fecha y hora ACTUAL del servidor: {now_utc.strftime('%Y-%m-%d %H:%M')} UTC "
+        f"({weekdays_es[now_utc.weekday()]}).\n"
+        f"Cuando el cliente dice 'hoy', 'manana', 'el viernes', etc., calcula la fecha "
+        f"a partir de este valor. NUNCA uses fechas del 2023, 2024 ni 2025 a menos que "
+        f"el cliente las mencione explicitamente. Si el cliente no da fecha clara, "
+        f"PREGUNTASELA, no la inventes."
+    )
+    system = (agent.get("system") or "") + date_context
     history = sess.get("messages", [])[-20:]
     messages = [{"role": "system", "content": system}]
     for m in history:

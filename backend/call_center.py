@@ -135,9 +135,13 @@ async def call_turn(
                                      "call_chat", {"session_id": sess["id"]}):
         raise HTTPException(status_code=402, detail="Saldo insuficiente para la respuesta")
 
-    # 6) Construir historial (ultimos 10 turnos)
+    # 6) Construir historial (ultimos 10 turnos) + contexto temporal
+    now_utc = datetime.now(timezone.utc)
+    weekdays_es = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
+    date_ctx = (f"\n\n[FECHA ACTUAL] {now_utc.strftime('%Y-%m-%d %H:%M')} UTC "
+                f"({weekdays_es[now_utc.weekday()]}). Usa esta fecha como 'hoy'.")
     history = sess.get("messages", [])[-10:]
-    messages = [{"role": "system", "content": agent["system"]
+    messages = [{"role": "system", "content": agent["system"] + date_ctx
                  + "\n\nEstas en modo Call Center: respuestas MAX 2 frases, naturales para leer en voz alta."}]
     for m in history:
         if m["role"] in ("user", "assistant") and m.get("content"):
