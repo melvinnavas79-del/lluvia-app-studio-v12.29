@@ -1,132 +1,101 @@
-# PRD - Lluvia App Studio Bot — ENTREGA FINAL
+# PRD - Lluvia App Studio Bot
 
 ## URLs operativas
-- **Panel de control**: https://ai-bot-cost-calc.preview.emergentagent.com
-- **Bot Telegram**: https://t.me/LluviaAppStudioBot
+- Panel: https://ai-bot-cost-calc.preview.emergentagent.com
+- Telegram: https://t.me/LluviaAppStudioBot
+- Tarball v10: `/api/download/lluvia-deploy` → `lluvia-deploy.tar.gz` (3.4 MB)
 
-## Iteraciones completas
-1. Bot core (16 + 6 tests)
-2. White-label + Modo Afiliado MANUAL (25 + 9)
-3. Pantalla Branding + persistencia (16 + 14)
-4. Cierre Lluvia App Studio (18 + 12)
-5. GitHub real + admin gates + identidad oficial
-6. Pipeline `setup-cliente.sh` + parser tolerante
-7. **Comando `/cliente nuevo` desde Telegram** — entrega final
-8. **Modo Operario (anti-ego)** — bot deja de dar planes y ejecuta tools en 1 paso
+## Estado actual: v10 ENTREGADO (Feb 2026)
 
-## Iteración 8 — Modo Operario (Feb 2026)
+### Iteración 10 (Feb 2026) — COMPLETA
 
-### Problema reportado por usuario
-El bot, ante "instala una radio", devolvía un plan numerado de 5 pasos preguntando
-qué lenguaje usar, qué software de streaming, etc. Comportamiento de profesor.
-"Habla demasiado y actúa poco." — Melvin
+**Backend (server.py + nuevos módulos)**
+- `telegram_unified.py` wired en `server.py` y `agent.py`. Comandos `/agente`, `/agente_<id>`, `/miagente`, `/saldo`, `/recargar` enrutados desde Telegram. Mensajes normales se envían al agente seleccionado via `run_with_selected_agent`. Persistencia en `tg_user_pref`.
+- `app_builder` prompt reforzado en `agents_catalog.py`: estructura obligatoria de 7 pantallas (Inicio, Popular, Explorar, Crear, Notificaciones, Perfil, Detalle) estilo TikTok/Bigo.
+- `call_center.py` — endpoint `POST /api/voice/call-center/turn` (multipart audio + agent_id + session_id) que encadena Whisper → GPT → TTS en un solo turno. Cobra oros por capa (audio in + chat + audio out). Persiste sesión en `chat_sessions`. Límite 8 MB/turno.
+- `rate_limit.py` con `slowapi`:
+  - `/api/auth/login` 8/min/IP
+  - `/api/paypal/create-order` 15/h/IP
+  - `/api/paypal/webhook` 60/min/IP
+  - `/api/voice/transcribe`, `/tts` 30/min/IP
+  - `/api/voice/call-center/turn` 20/min/IP
+- `paypal_integration.py`: nuevo `POST /api/paypal/webhook` con `_verify_paypal_signature` (API oficial PayPal `verify-webhook-signature`). Rechaza 403 si `PAYPAL_WEBHOOK_ID` no configurado. Acreditación idempotente.
+- `promos.py` ya integrado con `/api/paypal/packs` aplicando descuento dinámico (mayor % activo).
+- `proposals.py` con handlers seguros por tipo (`branding_update`, `promo_create`, `agent_create`, `agent_update`, `pricing_update`). JAMÁS ejecuta código arbitrario.
+- Fix bug `voice.py`: `_client()` no instanciaba antes de Whisper.
 
-### Cambios aplicados
-- `backend/ai.py`:
-  - `SYSTEM_MESSAGE_BASE` reescrito en modo Operario: prohíbe planes numerados,
-    "Pasos a seguir", explicaciones de backend/frontend, preguntas de framework,
-    markdown decorativo. Stack Lluvia asumido por defecto.
-  - `temperature=0.2`, `max_tokens=400` para forzar respuestas cortas.
-  - Nueva tool `provision_client_quick(display_name, admin_email?, app_type?)`:
-    despliega un cliente end-to-end con defaults Lluvia en una sola orden.
-- `backend/actions/client_provisioning.py`:
-  - Nueva función `quick_provision()` para aprovisionamiento de 1 disparo
-    (sin state machine de 6 preguntas) — usada por la tool del bot.
+**Frontend (3 tabs nuevos en AdminDashboard)**
+- `ProposalsTab.js` — lista propuestas, botones Aprobar/Rechazar, muestra payload JSON, autor y estado.
+- `PromosTab.js` — CRUD reglas de descuento, picker dias de semana, dias de mes.
+- `CallCenter.js` — selector de agente, botón "Llamar/Colgar", loop continuo MediaRecorder (4.5s/turno) → backend → reproduce TTS → graba de nuevo. Muestra transcripción turno por turno con badge de oros restantes.
+- CSS nuevo en `App.css` (proposals-list, cc-transcript, cc-bubble, status-* chips).
 
-### Verificación E2E (curl)
-- "instala una radio para Pedro Martinez" → Despliega + URL + pass (3 líneas)
-- "instala una tienda para Acme Corp" → Despliega + URL + pass (3 líneas)
-- "crea una radio con donaciones" → "¿Nombre del cliente?" (1 línea)
-- Sin vincular → "Vinculate primero: /vincular-admin <password>." (1 línea)
-- "dame la RAM" → output real de `free -h`
+**Seguridad — blindaje total**
+- JWT 8h con bcrypt, `seed_admin` idempotente
+- Rate limit en 6 endpoints sensibles
+- Webhook PayPal con firma criptográfica obligatoria
+- `is_command_safe` blacklist + `is_admin_chat` gate en Telegram
+- CORS sin credentials para bloquear CSRF
+- Aislamiento Mongo+JWT por cliente desplegado
+- Detalles completos en `SECURITY.md`
 
-## Iteración 7 — Despliegue desde el chat
+**Documentación entregada**
+- `LICENSE` — licencia propietaria 100% Melvin Navas, clausula work-for-hire
+- `MIGRATION.md` — guía VPS paso a paso (Docker, Caddy, PayPal webhook, backups)
+- `SECURITY.md` — documentación técnica del blindaje
+- `PRD.md` — este archivo
 
-### Funcionalidades nuevas
-- Comando `/cliente nuevo` (alias: `cliente nuevo`, `/nuevocliente`) inicia un flujo conversacional
-- State machine con 6 pasos: nombre → logo → primario → acento → email → confirmación
-- Validaciones in-line (hex colors, email, URLs)
-- `cancelar` aborta el flujo en cualquier momento
-- Al confirmar: ejecuta `setup-cliente.sh` con `LLUVIA_NI=1` (no interactivo) vía subprocess
-- Devuelve URL + email + password en el mismo chat de Telegram
-- Defensa: solo admin (chat_id vinculado) puede iniciar el flujo
-- Dry-run mode automático cuando Docker no está disponible (preview env) — útil para demo
+### Testing v10 (iteración 5 del job actual)
+- **26/26 pytest cases PASSED** sobre URL pública
+- 0 issues found, 0 blockers
+- Cubre: auth+rate-limit, promos CRUD, proposals end-to-end, PayPal packs con promo, PayPal webhook 403 sin firma, Telegram unified completo, Call Center con 413/400/502 controlados, branding extendido, /info v10, endpoints v9 intactos.
 
-### Cambios técnicos
-- `setup-cliente.sh` ahora soporta:
-  - Modo no interactivo via env vars `LLUVIA_DISPLAY`, `LLUVIA_PRIMARY`, etc.
-  - `LLUVIA_DRY_RUN=1` salta Docker/Caddy y solo genera archivos
-  - Output JSON parseable: `LLUVIA_RESULT_JSON_BEGIN ... END`
-- `actions/client_provisioning.py` (180 líneas):
-  - `_sessions` dict in-memory por chat_id
-  - `start()`, `handle()`, `cancel()`, `has_session()`
-  - Ejecución asíncrona del script con timeout de 5 min
-- `agent.py`: si hay sesión activa, todos los mensajes del chat van al state machine
+## Iteraciones anteriores
+1-8: bot core, white-label, branding, GitHub real, setup-cliente, modo operario, /cliente nuevo
+9: 7 agentes especializados, voz Whisper+TTS, PayPal Checkout, Agency View, Arquitecto UI
 
-### Verificado en runtime
-- Vinculación admin OK
-- `/cliente nuevo` inicia flujo
-- Validación rechaza colores inválidos
-- Resumen muestra todos los datos antes de confirmar
-- Confirmación ejecuta el script y devuelve credenciales formateadas
-- Archivos generados correctamente (backend.env aislado, JWT único, MongoDB DB nombrada `bot_<slug>`, Caddyfile con SSL automático, branding.json con colores del cliente)
-- Cancelación funciona en cualquier paso
-
-## Estructura final del repositorio
+## Stack
 
 ```
 /app/
 ├── backend/
-│   ├── server.py              FastAPI + supervisor
-│   ├── auth.py                JWT + bcrypt + seed migratorio
-│   ├── affiliates.py          /auth, /affiliates, /sales, /stats
-│   ├── branding.py            /branding (público/admin)
-│   ├── ai.py                  OpenAI directo + system prompt blindado
-│   ├── agent.py               Intent dispatcher + state machine awareness
-│   ├── memory.py
-│   ├── security.py            Blacklist anti-catastrofe
-│   ├── models.py
-│   ├── config.py
-│   └── actions/
-│       ├── github.py          Crear/listar repos
-│       ├── server.py          run_command con safety
-│       ├── apps.py
-│       ├── business.py        greeting/help/auto_reply oficial
-│       ├── affiliate_stats.py /mi-rendimiento
-│       ├── admin_link.py      /vincular-admin <password>
-│       └── client_provisioning.py  /cliente nuevo (state machine)
-├── frontend/
-│   └── src/  React + tema dark + branding dinámico CSS vars
-└── scripts/
-    ├── setup-cliente.sh       Despliegue por cliente
-    ├── infra-init.sh          Caddy global one-shot
-    ├── README.md              Guía 5 pasos
-    └── templates/             Dockerfiles + compose + nginx + Caddy
+│   ├── server.py            FastAPI + slowapi middleware
+│   ├── agent.py             dispatcher con telegram_unified hook
+│   ├── telegram_unified.py  menu /agente + persistencia agent seleccionado
+│   ├── telegram_poller.py   long-polling background
+│   ├── call_center.py       Whisper -> GPT -> TTS por turno
+│   ├── promos.py            CRUD descuentos
+│   ├── proposals.py         auto-update propuesto + admin approve
+│   ├── paypal_integration.py packs+orders+webhook firmado
+│   ├── voice.py             transcribe + tts
+│   ├── rate_limit.py        slowapi limiter por IP
+│   ├── auth.py              JWT + bcrypt + seed_admin
+│   ├── agents_catalog.py    8 agentes built-in
+│   ├── agent_builder.py     custom_agents CRUD
+│   ├── agency_view.py       MRR + lista clientes desplegados
+│   └── actions/             github, server (shell), client_provisioning
+├── frontend/src/components/
+│   ├── BossConsole.js       chat texto multi-agente
+│   ├── CallCenter.js        loop voz continuo (v10)
+│   ├── ProposalsTab.js      aprobar cambios propuestos (v10)
+│   ├── PromosTab.js         CRUD reglas descuento (v10)
+│   ├── BrandingTab.js       white-label extendido
+│   ├── AgencyView.js        MRR + clientes
+│   ├── AgentBuilder.js      crear agentes custom
+│   └── AdminDashboard.js    tabs orquestador
+└── scripts/                 setup-cliente.sh, infra-init.sh, templates
 ```
 
-## Listo para vender ✅
+## Backlog futuro (v11+)
 
-### Para tu Telegram personal:
-1. Abre @LluviaAppStudioBot
-2. `/vincular-admin Admin#2026`
-3. `/cliente nuevo`
-4. Sigue las preguntas → confirma → recibes URL + credenciales
+P1:
+- Backups automáticos Mongo por cliente (cron + S3/Backblaze)
+- Dashboard central que liste todos los clientes con métricas en tiempo real
+- Stripe Connect para pagos automáticos por copia desplegada
+- Edición remota de cliente desde panel maestro
 
-### Para producción real (no preview):
-1. Quita `LLUVIA_DRY_RUN=1` de `backend/.env` cuando estés en VPS con Docker
-2. Setea `LLUVIA_HOME=/opt/lluvia` y copia el código a `/opt/lluvia/source/`
-3. Ejecuta `infra-init.sh` una vez
-4. Desde tu Telegram: `/cliente nuevo` cuantas veces quieras
-
-### Pendientes obligatorios antes de la primera venta
-- Rotar TELEGRAM_TOKEN, GITHUB_TOKEN, OPENAI_API_KEY, JWT_SECRET (todos compartidos en chat)
-- Comprar dominio `lluvia.app` y configurar wildcard DNS
-- Provisionar VPS con Docker + Docker Compose v2
-
-## Backlog post-lanzamiento
-- Backups automáticos de volúmenes Mongo
-- Dashboard central que liste todos los clientes desplegados
-- Edición remota de un cliente (`/cliente <slug> editar branding`)
+P2:
 - Métricas Prometheus + Grafana global
-- Pago automático Stripe Connect por copia
-- Función calling de OpenAI (decide qué shell ejecutar)
+- Marketing Agent UI con sugerencias automáticas de copys
+- Función calling de OpenAI decide qué shell ejecutar (parser tools)
+- Soporte WhatsApp Cloud API + Instagram DM con polling unificado
