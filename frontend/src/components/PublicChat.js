@@ -1,11 +1,13 @@
 /* PublicChat - Landing premium con foco comercial real:
    Plataforma multi-cara (TikTok/Kwai/Likee, radios live) + Agentes IA
-   personalizados para negocios tradicionales (peluquerías, WhatsApp, etc). */
+   personalizados para negocios tradicionales (peluquerías, WhatsApp, etc).
+   Contenido editable via /api/site/content (Site Content 2.0). */
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { useBranding } from "../BrandingContext";
 import { ThemeToggle } from "../ThemeContext";
 import AgentAvatar from "./AgentAvatar";
+import * as LucideIcons from "lucide-react";
 import {
   Video, Bot, Radio, Sparkles, Calendar, CreditCard,
   Mic, Github, Smartphone,
@@ -13,19 +15,41 @@ import {
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
+// Mapea string -> componente lucide para los pillars editables
+function pillarIcon(name) {
+  const C = LucideIcons[name];
+  if (C) return <C size={28} strokeWidth={1.6} />;
+  return <Sparkles size={28} strokeWidth={1.6} />;
+}
+
 export default function PublicChat({ onLoginClick, onRegisterClick }) {
   const { branding } = useBranding();
   const [agents, setAgents] = useState([]);
+  const [site, setSite] = useState(null);
 
   useEffect(() => {
     axios
       .get(`${API}/public/agents`)
       .then((r) => setAgents(r.data.agents || []))
       .catch(() => {});
+    axios
+      .get(`${API}/site/content`)
+      .then((r) => setSite(r.data))
+      .catch(() => {});
   }, []);
 
   const brandName = branding?.product_name || branding?.company_name || "Lluvia App Studio";
   const heroBots = agents.slice(0, 5);
+  const pillars = site?.pillars || [];
+  const social = site?.social || {};
+  const socialLinks = [
+    ["tiktok", "TikTok", "https://tiktok.com"],
+    ["instagram", "Instagram", "https://instagram.com"],
+    ["facebook", "Facebook", "https://facebook.com"],
+    ["youtube", "YouTube", "https://youtube.com"],
+    ["twitter", "Twitter / X", "https://x.com"],
+    ["linkedin", "LinkedIn", "https://linkedin.com"],
+  ].filter(([k]) => social[k]);
 
   return (
     <div className="landing" data-testid="public-chat-page">
@@ -58,15 +82,14 @@ export default function PublicChat({ onLoginClick, onRegisterClick }) {
       </header>
 
       <section className="landing-hero">
-          <span className="hero-tag">★ Apps multimedia + Agentes IA · Lanza en minutos</span>
+          <span className="hero-tag">{site?.hero_tag || "★ Apps multimedia + Agentes IA · Lanza en minutos"}</span>
           <h1>
-            Crea Aplicaciones Profesionales y <span>Agentes de IA que trabajan por ti 24/7</span>
+            {site?.hero_title || "Crea Aplicaciones Profesionales y"}{" "}
+            <span>{site?.hero_title_accent || "Agentes de IA que trabajan por ti 24/7"}</span>
           </h1>
           <p className="landing-sub">
-            Lanza plataformas completas con interfaces avanzadas al estilo de TikTok, Kwai o
-            sistemas de radio en vivo, mientras configuras agentes de IA especializados para
-            automatizar peluquerías, tiendas o soporte por WhatsApp. Todo programado,
-            desplegado y gestionado por IA sin tocar una sola línea de código.
+            {site?.hero_sub ||
+              "Lanza plataformas completas con interfaces avanzadas al estilo de TikTok, Kwai o sistemas de radio en vivo, mientras configuras agentes de IA especializados para automatizar peluquerías, tiendas o soporte por WhatsApp. Todo programado, desplegado y gestionado por IA sin tocar una sola línea de código."}
           </p>
         <div className="landing-cta">
           <button
@@ -74,14 +97,14 @@ export default function PublicChat({ onLoginClick, onRegisterClick }) {
             onClick={onRegisterClick}
             data-testid="hero-register-btn"
           >
-            Empezar gratis con 50 oros →
+            {site?.hero_cta_primary || "Empezar gratis con 50 oros →"}
           </button>
           <button
             className="cta-secondary"
             onClick={onLoginClick}
             data-testid="hero-login-btn"
           >
-            Ya tengo cuenta
+            {site?.hero_cta_secondary || "Ya tengo cuenta"}
           </button>
         </div>
         <p className="landing-mini">
@@ -107,58 +130,32 @@ export default function PublicChat({ onLoginClick, onRegisterClick }) {
           Tú eliges cuál lanzar — la IA lo construye y lo opera.
         </p>
         <div className="pillars-grid">
-          <article className="pillar-card pillar-1" data-testid="pillar-apps-multimedia">
-            <div className="pillar-icon">
-              <Video size={28} strokeWidth={1.6} />
-            </div>
-            <span className="pillar-tag">01 · Multimedia</span>
-            <h3>Apps complejas y multimedia</h3>
-            <p>
-              Desarrolla aplicaciones profesionales con feeds de video corto, salas de
-              streaming en vivo y perfiles dinámicos inspirados en plataformas como
-              TikTok o Likee.
-            </p>
-            <ul className="pillar-bullets">
-              <li>Feeds verticales tipo TikTok / Kwai</li>
-              <li>Streaming en vivo + chats de sala</li>
-              <li>Perfiles, follows y monetización</li>
-            </ul>
-          </article>
-
-          <article className="pillar-card pillar-2" data-testid="pillar-agentes-negocios">
-            <div className="pillar-icon">
-              <Bot size={28} strokeWidth={1.6} />
-            </div>
-            <span className="pillar-tag">02 · Negocios</span>
-            <h3>Agentes personalizados para negocios</h3>
-            <p>
-              Clona empleados virtuales inteligentes entrenados para cualquier nicho:
-              agendar citas en peluquerías, cerrar ventas, dar soporte y automatizar
-              tu WhatsApp.
-            </p>
-            <ul className="pillar-bullets">
-              <li>Citas reales en base de datos</li>
-              <li>Cobros con PayPal en automático</li>
-              <li>WhatsApp · Telegram · DM Web</li>
-            </ul>
-          </article>
-
-          <article className="pillar-card pillar-3" data-testid="pillar-radio-live">
-            <div className="pillar-icon">
-              <Radio size={28} strokeWidth={1.6} />
-            </div>
-            <span className="pillar-tag">03 · Audio Live</span>
-            <h3>Sistemas de radio y audio live</h3>
-            <p>
-              Monta emisoras digitales y plataformas de streaming de audio completas,
-              monitoreadas y administradas por IA en tiempo real.
-            </p>
-            <ul className="pillar-bullets">
-              <li>Emisora 24/7 con DJ-IA</li>
-              <li>Programación, anuncios y jingles</li>
-              <li>Estadísticas en vivo y moderación</li>
-            </ul>
-          </article>
+          {(pillars.length > 0 ? pillars : [
+            { icon: "Video", tag: "01 · Multimedia", title: "Apps complejas y multimedia",
+              description: "Desarrolla aplicaciones profesionales con feeds de video corto, salas de streaming en vivo y perfiles dinámicos inspirados en plataformas como TikTok o Likee.",
+              bullets: ["Feeds verticales tipo TikTok / Kwai", "Streaming en vivo + chats de sala", "Perfiles, follows y monetización"],
+              accent: "#EC4899" },
+            { icon: "Bot", tag: "02 · Negocios", title: "Agentes personalizados para negocios",
+              description: "Clona empleados virtuales inteligentes entrenados para cualquier nicho: agendar citas en peluquerías, cerrar ventas, dar soporte y automatizar tu WhatsApp.",
+              bullets: ["Citas reales en base de datos", "Cobros con PayPal en automático", "WhatsApp · Telegram · DM Web"],
+              accent: "#10B981" },
+            { icon: "Radio", tag: "03 · Audio Live", title: "Sistemas de radio y audio live",
+              description: "Monta emisoras digitales y plataformas de streaming de audio completas, monitoreadas y administradas por IA en tiempo real.",
+              bullets: ["Emisora 24/7 con DJ-IA", "Programación, anuncios y jingles", "Estadísticas en vivo y moderación"],
+              accent: "#F59E0B" },
+          ]).map((p, idx) => (
+            <article key={idx} className={`pillar-card pillar-${idx + 1}`}
+                     data-testid={`pillar-${idx}`}
+                     style={p.accent ? { "--pillar-accent": p.accent } : {}}>
+              <div className="pillar-icon">{pillarIcon(p.icon)}</div>
+              <span className="pillar-tag">{p.tag}</span>
+              <h3>{p.title}</h3>
+              <p>{p.description}</p>
+              <ul className="pillar-bullets">
+                {(p.bullets || []).map((b, j) => <li key={j}>{b}</li>)}
+              </ul>
+            </article>
+          ))}
         </div>
       </section>
 
@@ -227,6 +224,17 @@ export default function PublicChat({ onLoginClick, onRegisterClick }) {
       </section>
 
       <footer className="pc-footer">
+        {socialLinks.length > 0 && (
+          <div style={{ marginBottom: "0.75rem", display: "flex", gap: "1rem", justifyContent: "center", flexWrap: "wrap" }}>
+            {socialLinks.map(([k, label]) => (
+              <a key={k} href={social[k]} target="_blank" rel="noreferrer"
+                 style={{ color: "var(--text-secondary)", textDecoration: "none", fontWeight: 500 }}
+                 data-testid={`social-${k}`}>
+                {label}
+              </a>
+            ))}
+          </div>
+        )}
         <div style={{ marginBottom: "0.5rem" }}>
           <a href="/api/legal/terms" target="_blank" rel="noreferrer" style={{ color: "var(--text-muted)", marginRight: "1rem" }}
              data-testid="footer-terms-link">Términos</a>

@@ -39,6 +39,7 @@ from actions import admin_link as admin_link_module
 import memory
 import telegram_poller
 import telegram_unified
+import telegram_unified as telegram_unified_module
 import credits as credits_module
 import console as console_module
 import paypal_integration
@@ -407,6 +408,7 @@ api_router.include_router(legal_module.router)
 api_router.include_router(gmail_module.router)
 api_router.include_router(gmail_maestro_module.router)
 api_router.include_router(site_content_module.router)
+api_router.include_router(telegram_unified_module.router_link)
 app.include_router(api_router)
 
 app.add_middleware(

@@ -386,6 +386,85 @@ function SettingsTab() {
           Guardar configuracion
         </button>
       </form>
+
+      <TelegramLinkCard />
+    </div>
+  );
+}
+
+function TelegramLinkCard() {
+  const [code, setCode] = useState("");
+  const [linked, setLinked] = useState([]);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = () => {
+    api.get("/me/telegram/status").then((r) => setLinked(r.data.linked_chats || [])).catch(() => {});
+  };
+  useEffect(() => { refresh(); }, []);
+
+  const gen = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.post("/me/telegram/code");
+      setCode(data.code);
+    } finally { setBusy(false); }
+  };
+
+  const unlink = async (chatId) => {
+    if (!window.confirm("¿Desvincular este chat de Telegram?")) return;
+    await api.delete(`/me/telegram/unlink/${chatId}`);
+    refresh();
+  };
+
+  return (
+    <div className="form-card" style={{ marginTop: "1.5rem" }} data-testid="telegram-link-card">
+      <h3>Vincular Telegram</h3>
+      <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem", margin: "0 0 1rem" }}>
+        Conecta tu chat de Telegram con esta cuenta para que el bot use tus oros y pueda
+        ejecutar tools reales (push a GitHub, agendar citas, etc).
+      </p>
+      <button className="login-btn" type="button" onClick={gen} disabled={busy}
+              data-testid="telegram-gen-code"
+              style={{ width: "auto", padding: "0.65rem 1.25rem", marginTop: 0 }}>
+        {busy ? "Generando..." : "Generar código de vinculación"}
+      </button>
+      {code && (
+        <div style={{ marginTop: "1rem", padding: "1rem",
+                      background: "var(--surface-warm)",
+                      border: "1px solid var(--border)", borderRadius: 8 }}>
+          <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "0.3rem" }}>
+            Tu código (válido 15 min):
+          </div>
+          <code style={{ fontSize: "1.75rem", fontWeight: 700, letterSpacing: "0.1em",
+                         color: "var(--brand-primary)", fontFamily: "var(--font-display)" }}
+                data-testid="telegram-code-display">
+            {code}
+          </code>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: "0.6rem 0 0" }}>
+            En Telegram, abrí tu bot y envía: <code style={{ background: "var(--surface)" }}>/vincular {code}</code>
+          </p>
+        </div>
+      )}
+      {linked.length > 0 && (
+        <div style={{ marginTop: "1rem" }}>
+          <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "0.5rem" }}>
+            Chats vinculados: {linked.length}
+          </div>
+          {linked.map((l) => (
+            <div key={l.chat_id} style={{ display: "flex", justifyContent: "space-between",
+                                          alignItems: "center", padding: "0.5rem 0",
+                                          borderBottom: "1px solid var(--border)" }}>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.85rem" }}>
+                chat_id: {l.chat_id}
+              </span>
+              <button className="copy-btn" onClick={() => unlink(l.chat_id)}
+                      data-testid={`telegram-unlink-${l.chat_id}`}>
+                Desvincular
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

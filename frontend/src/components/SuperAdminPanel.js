@@ -21,6 +21,7 @@ export default function SuperAdminPanel() {
           ["users", "👥 Usuarios"],
           ["backup", "📦 Push & Backup"],
           ["integrations", "🔗 Integraciones"],
+          ["content", "📝 Contenido del Sitio"],
         ].map(([k, label]) => (
           <button
             key={k}
@@ -38,6 +39,161 @@ export default function SuperAdminPanel() {
       {tab === "users" && <UsersPanel />}
       {tab === "backup" && <BackupPanel />}
       {tab === "integrations" && <IntegrationsPanel />}
+      {tab === "content" && <SiteContentPanel />}
+    </div>
+  );
+}
+
+function SiteContentPanel() {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState("");
+  const [ok, setOk] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = () => api.get("/site/content").then((r) => setData(r.data)).catch((e) => setErr(formatError(e)));
+  useEffect(() => { load(); }, []);
+
+  const update = (path, value) => {
+    setData((prev) => {
+      const next = JSON.parse(JSON.stringify(prev || {}));
+      const parts = path.split(".");
+      let cur = next;
+      for (let i = 0; i < parts.length - 1; i++) {
+        const p = parts[i];
+        if (cur[p] == null) cur[p] = isNaN(parseInt(parts[i + 1])) ? {} : [];
+        cur = cur[p];
+      }
+      cur[parts[parts.length - 1]] = value;
+      return next;
+    });
+  };
+
+  const save = async () => {
+    setBusy(true); setErr(""); setOk("");
+    try {
+      const payload = {
+        hero_tag: data.hero_tag,
+        hero_title: data.hero_title,
+        hero_title_accent: data.hero_title_accent,
+        hero_sub: data.hero_sub,
+        hero_cta_primary: data.hero_cta_primary,
+        hero_cta_secondary: data.hero_cta_secondary,
+        pillars: data.pillars,
+        streaming: data.streaming,
+        social: data.social,
+      };
+      const { data: saved } = await api.put("/site/content", payload);
+      setData(saved);
+      setOk("✓ Cambios guardados. Recarga la landing para verlos en vivo.");
+    } catch (e) {
+      setErr(formatError(e));
+    } finally { setBusy(false); }
+  };
+
+  if (err) return <div className="alert">{err}</div>;
+  if (!data) return <div className="empty">Cargando contenido...</div>;
+
+  const inp = { padding: "0.7rem", background: "var(--surface)", border: "1px solid var(--border-strong)",
+                borderRadius: "var(--r-md)", color: "var(--text-primary)", fontFamily: "var(--font-body)",
+                fontSize: "0.92rem", width: "100%" };
+
+  return (
+    <div data-testid="site-content-panel" style={{ marginTop: "1.5rem" }}>
+      <div className="form-card">
+        <h3 style={{ fontFamily: "var(--font-display)", margin: "0 0 1rem" }}>Hero principal</h3>
+        <label style={{ display: "block", fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: "0.3rem" }}>Tag superior</label>
+        <input style={inp} value={data.hero_tag || ""} onChange={(e) => update("hero_tag", e.target.value)} data-testid="content-hero-tag"/>
+        <label style={{ display: "block", fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "0.75rem", marginBottom: "0.3rem" }}>Título</label>
+        <input style={inp} value={data.hero_title || ""} onChange={(e) => update("hero_title", e.target.value)} data-testid="content-hero-title"/>
+        <label style={{ display: "block", fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "0.75rem", marginBottom: "0.3rem" }}>Título (parte italic resaltada)</label>
+        <input style={inp} value={data.hero_title_accent || ""} onChange={(e) => update("hero_title_accent", e.target.value)} data-testid="content-hero-accent"/>
+        <label style={{ display: "block", fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "0.75rem", marginBottom: "0.3rem" }}>Subtítulo</label>
+        <textarea style={{ ...inp, minHeight: 90 }} value={data.hero_sub || ""} onChange={(e) => update("hero_sub", e.target.value)} data-testid="content-hero-sub"/>
+        <div className="form-row" style={{ marginTop: "0.75rem" }}>
+          <div>
+            <label style={{ display: "block", fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: "0.3rem" }}>Botón CTA primario</label>
+            <input style={inp} value={data.hero_cta_primary || ""} onChange={(e) => update("hero_cta_primary", e.target.value)} data-testid="content-cta-primary"/>
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: "0.3rem" }}>Botón CTA secundario</label>
+            <input style={inp} value={data.hero_cta_secondary || ""} onChange={(e) => update("hero_cta_secondary", e.target.value)} data-testid="content-cta-secondary"/>
+          </div>
+        </div>
+      </div>
+
+      <div className="form-card">
+        <h3 style={{ fontFamily: "var(--font-display)", margin: "0 0 1rem" }}>Tres pilares</h3>
+        {(data.pillars || []).map((p, i) => (
+          <div key={i} style={{ marginBottom: "1.25rem", paddingBottom: "1rem", borderBottom: "1px solid var(--border)" }}>
+            <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+              <input style={{ ...inp, flex: 1 }} placeholder="Tag (ej 01 · Multimedia)"
+                     value={p.tag || ""} onChange={(e) => update(`pillars.${i}.tag`, e.target.value)}
+                     data-testid={`content-pillar-${i}-tag`}/>
+              <input style={{ ...inp, width: 100 }} placeholder="Color hex" value={p.accent || ""}
+                     onChange={(e) => update(`pillars.${i}.accent`, e.target.value)}
+                     data-testid={`content-pillar-${i}-accent`}/>
+              <input style={{ ...inp, width: 120 }} placeholder="Icono lucide" value={p.icon || ""}
+                     onChange={(e) => update(`pillars.${i}.icon`, e.target.value)}
+                     data-testid={`content-pillar-${i}-icon`}/>
+            </div>
+            <input style={inp} placeholder="Título" value={p.title || ""}
+                   onChange={(e) => update(`pillars.${i}.title`, e.target.value)}
+                   data-testid={`content-pillar-${i}-title`}/>
+            <textarea style={{ ...inp, minHeight: 60, marginTop: "0.5rem" }} placeholder="Descripción"
+                      value={p.description || ""}
+                      onChange={(e) => update(`pillars.${i}.description`, e.target.value)}
+                      data-testid={`content-pillar-${i}-desc`}/>
+            <textarea style={{ ...inp, minHeight: 60, marginTop: "0.5rem" }}
+                      placeholder="Bullets (una por línea)"
+                      value={(p.bullets || []).join("\n")}
+                      onChange={(e) => update(`pillars.${i}.bullets`, e.target.value.split("\n"))}
+                      data-testid={`content-pillar-${i}-bullets`}/>
+          </div>
+        ))}
+      </div>
+
+      <div className="form-card">
+        <h3 style={{ fontFamily: "var(--font-display)", margin: "0 0 1rem" }}>Redes sociales (footer)</h3>
+        {["tiktok", "instagram", "facebook", "youtube", "twitter", "linkedin"].map((k) => (
+          <div key={k} style={{ marginBottom: "0.5rem" }}>
+            <label style={{ display: "block", fontSize: "0.78rem", color: "var(--text-muted)", textTransform: "capitalize", marginBottom: "0.2rem" }}>{k}</label>
+            <input style={inp} placeholder={`URL completa de ${k}`}
+                   value={data.social?.[k] || ""}
+                   onChange={(e) => update(`social.${k}`, e.target.value)}
+                   data-testid={`content-social-${k}`}/>
+          </div>
+        ))}
+      </div>
+
+      <div className="form-card">
+        <h3 style={{ fontFamily: "var(--font-display)", margin: "0 0 1rem" }}>Streaming (radio / video live)</h3>
+        <label style={{ display: "block", fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: "0.3rem" }}>URL del stream de radio (HLS/Icecast)</label>
+        <input style={inp} value={data.streaming?.radio_stream_url || ""}
+               onChange={(e) => update("streaming.radio_stream_url", e.target.value)}
+               data-testid="content-radio-url"/>
+        <label style={{ display: "block", fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "0.75rem", marginBottom: "0.3rem" }}>URL "now playing" (metadata)</label>
+        <input style={inp} value={data.streaming?.radio_now_playing_url || ""}
+               onChange={(e) => update("streaming.radio_now_playing_url", e.target.value)}
+               data-testid="content-radio-meta-url"/>
+        <label style={{ display: "block", fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "0.75rem", marginBottom: "0.3rem" }}>URL del video live (YouTube/Twitch/HLS)</label>
+        <input style={inp} value={data.streaming?.video_live_url || ""}
+               onChange={(e) => update("streaming.video_live_url", e.target.value)}
+               data-testid="content-video-url"/>
+        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.75rem", cursor: "pointer" }}>
+          <input type="checkbox" checked={!!data.streaming?.enabled}
+                 onChange={(e) => update("streaming.enabled", e.target.checked)}
+                 data-testid="content-streaming-enabled"/>
+          <span>Activar streaming en la landing</span>
+        </label>
+      </div>
+
+      <button className="login-btn" onClick={save} disabled={busy}
+              data-testid="content-save-btn"
+              style={{ width: "auto", padding: "0.8rem 1.75rem", marginTop: 0 }}>
+        {busy ? "Guardando..." : "💾 Guardar todos los cambios"}
+      </button>
+      {ok && <div className="success" style={{ marginTop: "0.75rem" }} data-testid="content-save-ok">{ok}</div>}
+      {err && <div className="alert" style={{ marginTop: "0.75rem" }} data-testid="content-save-err">{err}</div>}
     </div>
   );
 }
