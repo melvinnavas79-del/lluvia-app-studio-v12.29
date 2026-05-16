@@ -3,7 +3,7 @@ import { useAuth } from "../AuthContext";
 import { useBranding } from "../BrandingContext";
 import { formatError } from "../api";
 
-export default function Login() {
+export default function Login({ onBack }) {
   const { login } = useAuth();
   const { branding } = useBranding();
   const [email, setEmail] = useState("");
@@ -80,6 +80,20 @@ export default function Login() {
           <p style={{ marginTop: "1.25rem", fontSize: "0.75rem", color: "#6c7280", textAlign: "center" }}>
             Soporte: {branding.support_email}
           </p>
+        )}
+
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            data-testid="login-back-public"
+            style={{
+              marginTop: "0.75rem", background: "transparent", border: "none",
+              color: "#9ca3af", fontSize: "0.8rem", cursor: "pointer", width: "100%",
+            }}
+          >
+            ← Volver al chat publico
+          </button>
         )}
       </form>
     </div>

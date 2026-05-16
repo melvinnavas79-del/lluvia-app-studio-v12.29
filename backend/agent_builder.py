@@ -101,6 +101,27 @@ async def delete_custom_agent(agent_id: str, user: dict = Depends(get_current_us
     return {"deleted": res.deleted_count}
 
 
+class PublicToggleIn(BaseModel):
+    is_public: bool
+
+
+@router.patch("/{agent_id}/visibility")
+async def toggle_public(agent_id: str, data: PublicToggleIn,
+                        user: dict = Depends(get_current_user)):
+    """Marca un agente como publico (visible en /chat sin login) o privado."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="solo admin")
+    db = _db_ref["db"]
+    res = await db.custom_agents.update_one(
+        {"id": agent_id},
+        {"$set": {"is_public": bool(data.is_public),
+                  "updated_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="agente no encontrado")
+    return {"ok": True, "is_public": data.is_public}
+
+
 @router.get("/available-tools")
 async def list_tools(_=Depends(get_current_user)):
     return {"tools": [{"id": t, "cost_oros": c} for t, c in agents_catalog.TOOL_NAMES.items()],
