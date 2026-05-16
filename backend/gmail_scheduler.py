@@ -44,6 +44,14 @@ async def _poll_loop(interval_seconds: int = 300):
                             f"[{datetime.now(timezone.utc).isoformat()}] "
                             f"user={uid[:8]} new={r['newly_processed']} unread={r.get('total_unread', 0)}"
                         )
+                    elif not r.get("ok"):
+                        # No fallar silencioso: si la Gmail API esta dando error
+                        # (token expirado, API disabled, quota, etc) lo logueamos
+                        # bien visible asi el admin lo ve en /var/log/supervisor.
+                        err = str(r.get("error", "unknown"))[:300]
+                        logger.warning(
+                            f"Gmail poll FAIL user={uid[:8]} error={err}"
+                        )
                     # Bitacora en DB para visualizar en panel
                     await db.gmail_poll_log.insert_one({
                         "user_id": uid,
