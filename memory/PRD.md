@@ -5,7 +5,35 @@
 - Producción: https://lluvia-app-studio.lluvia-live.com (Emergent Native Deploy)
 - Telegram: https://t.me/LluviaAppStudioBot
 
-## Estado actual: v12.19 — App Builder Pro + Audio Room template (Feb 2026)
+## Estado actual: v12.20 — Live Demo público + emoji badges + auto-create GitHub repo (Feb 2026)
+
+### Iteración 12.20 — Demo público de Audio Room + UX polish (HECHO)
+**🌐 Demo público de Audio Room en `/api/demo/audio-room-static/`**
+- Nuevo módulo `/app/backend/demo_audio_room.py`: sirve el template Audio Room con datos canned (6 salas, 5 creadores) para que cualquier visitante toque y vea las 4 pantallas reales antes de registrarse. Banner púrpura "DEMO PÚBLICO · Esta app la ensambla App Builder Pro en 30 segundos" siempre visible.
+- StaticFiles mount en `server.py` bajo `/api/demo/audio-room-static/` (respeta content-types text/javascript, text/css, text/html).
+- Canned API endpoints bajo `/api/demo/audio-room/api/*`: `users/anonymous`, `users/top`, `users/{id}`, `rooms`, `rooms/{id}`, `rooms/{id}/purchase`.
+- Las 4 pantallas (Inicio · Tendencias · Salas · Perfil) renderizan con datos reales (creadores con followers, salas con listeners 33-412, badges PREMIUM, categorías).
+
+**🎬 Landing CTA "Live Demo"**
+- Botón pill nuevo en `PublicChat.js` (`data-testid='hero-live-demo-btn'`) con dot rojo pulsante: "🎙 Probá una Audio Room en vivo — armada por App Builder Pro en 30 seg". Abre el demo en nueva pestaña. Convertir visitor → "wow" → registro: el flujo que el cliente pidió.
+
+**🐛 Bug crítico fixeado en el template Audio Room**
+- `app.js:161` tenía `\\'` (escape inválido de comilla simple en JS); causaba `SyntaxError: Unexpected string` y pantalla en blanco en el browser. Fix: `\'`. Verificado con `node --check` antes/después. Este bug habría roto la app de TODOS los clientes que hicieran push del template, así que es un win extra.
+
+**🚀 AgentAvatar: emoji badge superpuesto**
+- `AgentAvatar.js` ahora overlay del `agent.emoji` como badge circular abajo-derecha del bot dicebear (size: 50% del avatar, font: 70% del badge, color de fondo: `agent.color`, sombra blanca para destacarse). El cohete 🚀 de App Builder Pro y los emojis de todos los agentes ya son visibles en el picker y en los headers de chat. By-design del rebrand v12 preservado.
+
+**🛠 Auto-create de repo de GitHub en `user_workspace.do_push`**
+- Si `validate_github_token` devuelve `repo_access='not_found'` y el token tiene scope `repo`, ahora hacemos `POST /user/repos` (o `/orgs/{org}/repos`) automáticamente con descripción "Generado por Lluvia App Studio · workspace de {email}". Antes el push fallaba con "repo no existe"; ahora el cliente solo pasa `owner/nombre-cualquiera` y el sistema crea + pushea en un solo paso. UX 10x mejor.
+
+**Verificado E2E (iteration_18.json)**: backend 12/14 (los 2 fallos son por rate-limit anti-abuse de registro, no bugs); frontend Playwright 100% (CTA landing, demo público, emoji badges); 1 push real a GitHub en `melvinnavas79-del/lluvia-audio-room-demo` con commit "e2e test iteration_18"; cero regresión en iteration_17 (7/7 verde).
+
+**Demo en vivo**: https://ai-bot-cost-calc.preview.emergentagent.com/api/demo/audio-room-static/
+**Repo de muestra**: https://github.com/melvinnavas79-del/lluvia-audio-room-demo
+
+
+
+## Estado anterior: v12.19 — App Builder Pro + Audio Room template (Feb 2026)
 
 ### Iteración 12.19 — App Builder Pro: apps deployables reales en 30 seg (HECHO)
 **🚀 Nuevo agente `app_builder_pro` (emoji 🚀, color #5B8DEF, voice onyx)**
