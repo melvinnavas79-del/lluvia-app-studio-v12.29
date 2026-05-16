@@ -1,11 +1,7 @@
 """
-Generación de videos cortos con Sora 2 (OpenAI Video Generation) vía
-emergentintegrations + EMERGENT_LLM_KEY.
-
-Estrategia: los videos tardan 2-5 minutos en generar, así que la tool
-encola un job en MongoDB (collection: video_jobs), lanza la generación
-en background con asyncio.create_task, y el frontend hace polling al
-endpoint GET /api/console/video-jobs/{id} hasta status=ready|error.
+Generación de videos con Sora 2 usando OpenAI SDK DIRECTO (cuenta del admin).
+NO depende de EMERGENT_LLM_KEY: usa OPENAI_API_KEY del admin para que el
+costo se cargue a SU billing de OpenAI (no al Universal Key de Emergent).
 """
 
 import os
@@ -17,14 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from emergentintegrations.llm.openai.video_generation import OpenAIVideoGeneration
-
-# Patch del whitelist del SDK: la API real solo acepta 720x1280 y 1280x720,
-# pero el SDK local valida contra una lista antigua. Reescribimos SIZES.
-OpenAIVideoGeneration.SIZES = {
-    "720x1280": {"width": 720, "height": 1280},
-    "1280x720": {"width": 1280, "height": 720},
-}
+from openai import OpenAI
 
 logger = logging.getLogger("video_gen")
 
@@ -37,13 +26,10 @@ ALLOWED_SIZES = {"720x1280", "1280x720"}
 DEFAULT_SIZE = "720x1280"  # vertical 9:16 ideal para TikTok/Reels/Shorts
 DEFAULT_DURATION = 8
 
-# Tarifa en oros segun duracion (cobramos al cliente cubriendo el costo + margen)
+# Tarifa en oros segun duracion (cubre costo OpenAI + margen del admin)
 COST_BY_DURATION = {4: 30, 8: 40, 12: 55}
 
 _db_ref: dict = {"db": None}
-
-# Mantenemos referencia a tasks activos para evitar que el GC los mate
-# (asyncio.create_task con fire-and-forget puede ser recolectado).
 _ACTIVE_TASKS: set = set()
 
 
@@ -51,27 +37,50 @@ def set_db(db) -> None:
     _db_ref["db"] = db
 
 
+def _openai_client() -> OpenAI:
+    """Crea cliente OpenAI usando la API key del admin (NO la Universal Key)."""
+    key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError("OPENAI_API_KEY no configurada en backend/.env")
+    return OpenAI(api_key=key)
+
+
 def _sync_generate(prompt: str, model: str, size: str, duration: int, output_path: str) -> Optional[str]:
-    """Llamada bloqueante a Sora 2. Se ejecuta en asyncio.to_thread."""
-    api_key = os.environ.get("EMERGENT_LLM_KEY")
-    if not api_key:
-        raise RuntimeError("EMERGENT_LLM_KEY no configurada")
-    video_gen = OpenAIVideoGeneration(api_key=api_key)
-    video_bytes = video_gen.text_to_video(
-        prompt=prompt,
+    """Llamada bloqueante a Sora 2 via OpenAI SDK directo. Hace polling cada
+    5 seg hasta status=completed|failed. Descarga el mp4 al disco."""
+    client = _openai_client()
+    # Crear video job
+    video = client.videos.create(
         model=model,
+        prompt=prompt,
+        seconds=str(duration),
         size=size,
-        duration=duration,
-        max_wait_time=900 if duration >= 12 else 600,
     )
-    if not video_bytes:
-        return None
-    video_gen.save_video(video_bytes, output_path)
+    job_id = video.id
+    logger.info(f"Sora 2 job created: {job_id} status={video.status}")
+    # Polling
+    deadline = time.time() + (900 if duration >= 12 else 600)
+    while video.status in ("queued", "in_progress"):
+        if time.time() > deadline:
+            raise RuntimeError(f"Sora 2 timeout despues de {int(time.time()-deadline+600)}s")
+        time.sleep(6)
+        video = client.videos.retrieve(job_id)
+    if video.status != "completed":
+        err = getattr(video, "error", None) or "Sora 2 status=" + video.status
+        raise RuntimeError(f"Sora 2 fallo: {err}")
+    # Descargar el contenido (devuelve binary)
+    content = client.videos.download_content(job_id, variant="video")
+    # `content` es un HttpxBinaryResponseContent: usar write_to_file
+    if hasattr(content, "write_to_file"):
+        content.write_to_file(output_path)
+    else:
+        # Fallback por si el SDK devuelve bytes
+        with open(output_path, "wb") as f:
+            f.write(content.content if hasattr(content, "content") else content)
     return output_path
 
 
 async def _run_job(job_id: str, prompt: str, model: str, size: str, duration: int) -> None:
-    """Worker async que actualiza el job en mongo: queued -> generating -> ready/error."""
     db = _db_ref["db"]
     fname = f"{job_id}.mp4"
     fpath = UPLOAD_DIR / fname
@@ -83,7 +92,7 @@ async def _run_job(job_id: str, prompt: str, model: str, size: str, duration: in
         )
         await asyncio.to_thread(_sync_generate, prompt, model, size, duration, str(fpath))
         if not fpath.exists() or fpath.stat().st_size < 1024:
-            raise RuntimeError("Sora 2 no devolvio video (archivo vacio)")
+            raise RuntimeError("OpenAI no devolvio video (archivo vacio)")
         await db.video_jobs.update_one(
             {"id": job_id},
             {"$set": {
@@ -97,29 +106,35 @@ async def _run_job(job_id: str, prompt: str, model: str, size: str, duration: in
         logger.info(f"video_job {job_id} READY ({fpath.stat().st_size} bytes)")
     except Exception as e:
         logger.exception(f"video_job {job_id} FAILED: {e}")
-        # Detectar mensaje de budget agotado para dar feedback claro al admin
         err_text = str(e)
-        if "budget" in err_text.lower() or "exceeded" in err_text.lower():
+        if "insufficient_quota" in err_text.lower() or "billing" in err_text.lower():
             err_text = (
-                "Presupuesto del Universal Key (EMERGENT_LLM_KEY) agotado. "
-                "Recarga saldo en Emergent → Profile → Universal Key → Add Balance. "
-                "Detalle: " + str(e)[:200]
+                "Tu cuenta de OpenAI no tiene saldo o no tiene acceso a Sora 2. "
+                "Recargá en https://platform.openai.com/settings/organization/billing. "
+                "Detalle: " + err_text[:200]
             )
-        # Refund automatico al usuario: si Sora 2 falla, no le cobramos.
-        # Buscamos cuanto se cobro para devolverselo.
+        elif "model_not_found" in err_text.lower() or "does not have access" in err_text.lower():
+            err_text = (
+                "Tu cuenta de OpenAI no tiene acceso a Sora 2 todavía. "
+                "Pedí acceso en https://platform.openai.com/. "
+                "Detalle: " + err_text[:200]
+            )
+        # Refund automatico
         try:
             import credits as credits_mod
-            job_doc = await db.video_jobs.find_one({"id": job_id}, {"_id": 0, "charged_oros": 1, "user_id": 1})
+            job_doc = await db.video_jobs.find_one(
+                {"id": job_id}, {"_id": 0, "charged_oros": 1, "user_id": 1}
+            )
             charged = int((job_doc or {}).get("charged_oros") or 0)
             uid = (job_doc or {}).get("user_id")
             refunded = False
             if charged > 0 and uid:
-                new_bal = await credits_mod.refund(
+                await credits_mod.refund(
                     uid, charged, "sora2_failed",
                     {"job_id": job_id, "error": err_text[:200]},
                 )
                 refunded = True
-                logger.info(f"video_job {job_id} REFUNDED {charged} oros -> balance {new_bal}")
+                logger.info(f"video_job {job_id} REFUNDED {charged} oros")
         except Exception as re:
             logger.exception(f"video_job {job_id} REFUND FAILED: {re}")
             refunded = False
@@ -142,7 +157,6 @@ async def enqueue_video(
     model: str = "sora-2",
     charged_oros: int = 0,
 ) -> dict:
-    """Encola un job de video, lo dispara en background y retorna metadatos."""
     db = _db_ref["db"]
     if duration not in ALLOWED_DURATIONS:
         duration = DEFAULT_DURATION
@@ -166,8 +180,6 @@ async def enqueue_video(
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.video_jobs.insert_one(doc)
-    # Disparar background (no await). Guardamos referencia para que el GC no
-    # mate el task antes de que termine la generación.
     task = asyncio.create_task(_run_job(job_id, prompt, model, size, duration))
     _ACTIVE_TASKS.add(task)
     task.add_done_callback(_ACTIVE_TASKS.discard)
@@ -182,7 +194,6 @@ async def enqueue_video(
 
 
 async def get_job(user_id: str, job_id: str) -> Optional[dict]:
-    """Obtiene el estado del job (solo para el dueño)."""
     db = _db_ref["db"]
     doc = await db.video_jobs.find_one({"id": job_id, "user_id": user_id}, {"_id": 0})
     return doc

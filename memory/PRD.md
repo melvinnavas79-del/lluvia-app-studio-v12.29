@@ -5,7 +5,28 @@
 - Producción: https://lluvia-app-studio.lluvia-live.com (Emergent Native Deploy)
 - Telegram: https://t.me/LluviaAppStudioBot
 
-## Estado actual: v12.16 — PayPal capture arreglado + trial 15 oros + anti-farming (Feb 2026)
+## Estado actual: v12.17 — Migración total a OpenAI directo (sin Universal Key) (Feb 2026)
+
+### Iteración 12.17 — API key del admin para TODO + composer Emergent (HECHO)
+**🔑 Cero dependencia de Universal Key Emergent**
+- `video_gen.py` reescrito con `OpenAI SDK 2.37.0` nativo (`client.videos.create/retrieve/download_content`). Usa `OPENAI_API_KEY` del admin → el costo de Sora 2 se carga a su billing de OpenAI, no al Universal Key.
+- `image_gen.py` reescrito con `client.images.edit(model='gpt-image-1', image, prompt, size='1024x1024')` para Before/After del Estilista Visual. Reemplaza la dependencia de Gemini Nano Banana.
+- `gmail_maestro.py`: clasificación/draft de correos ahora prioriza `OPENAI_API_KEY` sobre `EMERGENT_LLM_KEY`. Si OpenAI key existe, NO usa el `base_url` de Emergent (llamada directa a api.openai.com).
+- `requirements.txt`: `openai>=2.37.0` (era 1.99.9, pinneado por emergentintegrations).
+- Mensajes de error claros si la cuenta OpenAI no tiene saldo / acceso a Sora 2.
+
+**Verificado E2E con la API key del admin**:
+- Sora 2 (`sora-2`, 4s, 720x1280) → video real generado en 70s, 2.1 MB ✅
+- Image edit (`gpt-image-1`, 1024x1024) → before/after generado para foto Unsplash, 1.3 MB ✅
+- Refund automático en error sigue funcionando.
+
+**🎨 Composer estilo Emergent al 100%**
+- Botón `+` (data-testid='bc-attach-btn') abre menú flotante con: 🖼 Subir desde galería · 📷 Tomar foto · ⬆ Push a GitHub.
+- Quitado el botón de cámara separado.
+- Click-outside cierra el menú automáticamente.
+- Push a GitHub ahora accesible desde 2 lugares: el `+` del composer y el botón superior del chat.
+
+
 
 ### Iteración 12.16 — Pago real + economia sustentable (HECHO)
 **💳 Bug crítico PayPal RESUELTO**

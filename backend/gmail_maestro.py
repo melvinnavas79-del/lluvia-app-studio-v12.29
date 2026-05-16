@@ -121,13 +121,18 @@ def _header(headers: list, name: str) -> str:
 async def _classify_and_draft(subject: str, from_addr: str, body: str) -> dict:
     """Devuelve {category, confidence, reply_draft, reasoning}."""
     from openai import AsyncOpenAI
-    api_key = os.environ.get("EMERGENT_LLM_KEY") or os.environ.get("OPENAI_API_KEY")
+    # Priorizar la API key propia del admin (no depender del Universal Key)
+    api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("EMERGENT_LLM_KEY")
     if not api_key:
         return {"category": "soporte", "confidence": 0.0,
                 "reply_draft": "(LLM key no configurada)",
                 "reasoning": "Sin LLM"}
-    base_url = os.environ.get("EMERGENT_LLM_BASE_URL", "https://integrations.emergentagent.com/llm")
-    client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+    # Si usamos OPENAI_API_KEY directo, NO usar el base_url de Emergent.
+    if os.environ.get("OPENAI_API_KEY"):
+        client = AsyncOpenAI(api_key=api_key)
+    else:
+        base_url = os.environ.get("EMERGENT_LLM_BASE_URL", "https://integrations.emergentagent.com/llm")
+        client = AsyncOpenAI(api_key=api_key, base_url=base_url)
 
     body_short = (body or "")[:3000]
     sys_prompt = (

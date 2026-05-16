@@ -20,6 +20,7 @@ export default function BossConsole() {
   const [dragOver, setDragOver] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraErr, setCameraErr] = useState("");
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
   const scrollRef = useRef(null);
   const mediaRef = useRef(null);
   const chunksRef = useRef([]);
@@ -288,6 +289,18 @@ export default function BossConsole() {
     uploadImage(file);
   };
 
+  // Cerrar el menu de adjuntos al clickear fuera
+  useEffect(() => {
+    if (!showAttachMenu) return;
+    const onClick = (e) => {
+      if (!e.target.closest(".bc-attach-menu") && !e.target.closest(".bc-attach-btn")) {
+        setShowAttachMenu(false);
+      }
+    };
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
+  }, [showAttachMenu]);
+
   // Limpiar el stream al desmontar (evita el clasico "pantalla negra" en reintentos)
   useEffect(() => {
     return () => {
@@ -551,29 +564,44 @@ export default function BossConsole() {
               />
               <button
                 className="bc-attach-btn"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => setShowAttachMenu((v) => !v)}
                 data-testid="bc-attach-btn"
-                title="Adjuntar imagen de la galería"
+                title="Adjuntar"
                 disabled={sending}
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
                      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                  <path d="M12 5v14M5 12h14"/>
                 </svg>
               </button>
-              <button
-                className="bc-camera-btn"
-                onClick={openCamera}
-                data-testid="bc-camera-btn"
-                title="Tomar foto con la cámara"
-                disabled={sending}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-                     stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-                  <circle cx="12" cy="13" r="4"/>
-                </svg>
-              </button>
+              {showAttachMenu && (
+                <div className="bc-attach-menu" data-testid="bc-attach-menu" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    className="bc-attach-menu-item"
+                    onClick={() => { setShowAttachMenu(false); fileInputRef.current?.click(); }}
+                    data-testid="bc-attach-gallery"
+                  >
+                    <span className="bc-attach-menu-icon">🖼</span>
+                    <span>Subir desde galería</span>
+                  </button>
+                  <button
+                    className="bc-attach-menu-item"
+                    onClick={() => { setShowAttachMenu(false); openCamera(); }}
+                    data-testid="bc-attach-camera"
+                  >
+                    <span className="bc-attach-menu-icon">📷</span>
+                    <span>Tomar foto</span>
+                  </button>
+                  <button
+                    className="bc-attach-menu-item"
+                    onClick={() => { setShowAttachMenu(false); pushNow(); }}
+                    data-testid="bc-attach-github"
+                  >
+                    <span className="bc-attach-menu-icon">⬆</span>
+                    <span>Push a GitHub</span>
+                  </button>
+                </div>
+              )}
               <textarea
                 ref={textareaRef}
                 value={input}
