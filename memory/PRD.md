@@ -5,7 +5,39 @@
 - Producción: https://lluvia-app-studio.lluvia-live.com (Emergent Native Deploy)
 - Telegram: https://t.me/LluviaAppStudioBot
 
-## Estado actual: v12.18 — Pre-validación GitHub + refund push + UI admin clara (Feb 2026)
+## Estado actual: v12.19 — App Builder Pro + Audio Room template (Feb 2026)
+
+### Iteración 12.19 — App Builder Pro: apps deployables reales en 30 seg (HECHO)
+**🚀 Nuevo agente `app_builder_pro` (emoji 🚀, color #5B8DEF, voice onyx)**
+- Objetivo: cumplir la promesa de la landing — entregar apps multi-pantalla deployables, no juguetes single-page.
+- Arquitectura clave: **NO genera código con el LLM** (costoso + lento + propenso a APIs inventadas). En su lugar, copia un **template pre-construido y testeado** al workspace del usuario, reemplazando `{{APP_NAME}}` y `{{BRAND_COLOR}}`.
+- System prompt corto y duro: pregunta solo 2 datos (nombre + color) y dispara la tool en el mismo turno.
+
+**🎙 Template `audio_room` (Clubhouse / Twitter Spaces clone)**
+- `/app/backend/app_templates/audio_room/`:
+  - **Backend** (`backend/server.py`): FastAPI + python-socketio + SQLite. JWT propio, registro anónimo, modelos User/Room/Follow/RoomAccess. Endpoints `/api/users/anonymous|top|{id}|{id}/follow`, `/api/rooms` CRUD, `/api/rooms/{id}/purchase`. Socket.IO eventos: `join-room`, `leave-room`, `offer`/`answer`/`ice-candidate` (signaling WebRTC), `request-speak`, `promote-speaker`, `reaction`. Cero deps externas obligatorias.
+  - **Frontend** (`frontend/{index.html, css/styles.css, js/{api.js, webrtc.js, app.js}}`): SPA con hash router puro vanilla JS. 4 pantallas: Inicio (categorías + salas live), Tendencias (top creadores + más escuchadas), Sala Activa (hosts/speakers/listeners con mute/raise-hand/reacciones), Perfil (stats + follow + suscripción premium). Bonus: Crear Sala con monetización free/premium.
+  - **README.md** completo con instrucciones de deploy a Railway/Render en 5 min.
+  - **.env.example** + **.gitignore** listos.
+- Monetización ya cableada: `room.monetization='premium'` + `price_credits` + endpoint `purchase_access` que valida server-side antes de dar acceso.
+
+**🛠 Nueva tool `generate_audio_room_app` (40 oros fijos)**
+- Definida en `console.py:259` (OPENAI_TOOLS) y ejecutada en `_exec_tool` (rama ~línea 670).
+- Implementación reusable en `/app/backend/app_builder.py` con `list_templates()` y `materialize_template(template_id, target_dir, app_name, brand_color)` — copia recursiva del template a `{LLUVIA_HOME}/user_apps/{user_id}/{slug}/` con reemplazo de placeholders.
+- Skip de binarios runtime (`data.db`, `.pyc`, `__pycache__`, `.git`).
+- Refund automático de 40 oros si la materialización falla.
+
+**🎴 Rich Card `AppBuiltCard` en `BossConsole.js`**
+- Renderiza badge verde 'App ensamblada', stack chip, app_name destacado, grid 2×2 de los 4 screens, next_step (sugerencia de push GitHub). En error: badge rojo + mensaje + aviso de refund.
+- `data-testid='app-built-card'`.
+
+**Verificación E2E (iteration_17.json)**: backend 7/7 pytest verde, frontend Playwright verde. El agente dispara la tool confiablemente en español, la materialización copia 10 archivos (52 KB) con placeholders reemplazados, re-invocación falla limpia, admin no pierde oros (admin_free), endpoints existentes intactos. Test reusable en `/app/backend/tests/test_iteration_17_app_builder_pro.py`.
+
+**Nit conocido (LOW, by-design)**: el emoji 🚀 del agente no se ve en el agent-picker del BossConsole porque `AgentAvatar` usa dicebear bot SVG por el rebrand v12 enterprise. El 🚀 sí aparece dentro de la `AppBuiltCard` final.
+
+
+
+## Estado anterior: v12.18 — Pre-validación GitHub + refund push + UI admin clara (Feb 2026)
 
 ### Iteración 12.18 — Fix de raíz del push fallido (HECHO)
 **🐛 Causa raíz del frustrante "-51 oros y push falla"**
@@ -232,7 +264,7 @@ Telegram unificado, App Builder multi-página, Call Center, Promos, Proposals, B
 ## Backlog futuro
 
 **P0 (próximo)**:
-- Validar el flujo completo Registro → Dashboard → Chat con trial → Push GitHub via testing_agent_v3_fork (pendiente aprobación visual del usuario antes de testear).
+- Templates adicionales para App Builder Pro: Radio Online (streaming continuo + DJ-AI), Feed Vertical estilo TikTok (videos + likes + follows), Landing Peluquería (1 pager + servicios + booking inline), Ecommerce simple (catálogo + carrito + Stripe).
 
 **P1**:
 - Gmail OAuth2 — agente "Soporte Lluvia" auto-responder. Requiere Google Cloud (client_id + secret + redirect_uri).
