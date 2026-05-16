@@ -11,17 +11,35 @@ import ProposalsTab from "./ProposalsTab";
 import PromosTab from "./PromosTab";
 import CallCenter from "./CallCenter";
 import SuperAdminPanel from "./SuperAdminPanel";
+import SettingsTab from "./SettingsTab";
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
   const { branding } = useBranding();
-  const [tab, setTab] = useState("super");
+  const ALLOWED_TABS = ["super","overview","console","callcenter","agency","builder","proposals","promos","affiliates","sales","branding","settings"];
+  const hashToTab = (h) => {
+    const key = (h || "").replace(/^#\/?/, "").trim();
+    return ALLOWED_TABS.includes(key) ? key : "super";
+  };
+  const [tab, setTab] = useState(() => hashToTab(window.location.hash));
   const [network, setNetwork] = useState(null);
   const [affiliates, setAffiliates] = useState([]);
   const [sales, setSales] = useState([]);
   const [agents, setAgents] = useState([]);
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    const onHash = () => setTab(hashToTab(window.location.hash));
+    const onGoSettings = () => { window.location.hash = "#/settings"; setTab("settings"); };
+    window.addEventListener("hashchange", onHash);
+    window.addEventListener("lluvia:goto-settings", onGoSettings);
+    return () => {
+      window.removeEventListener("hashchange", onHash);
+      window.removeEventListener("lluvia:goto-settings", onGoSettings);
+    };
+  }, []);
+  const goTab = (k) => { setTab(k); window.location.hash = `#/${k}`; };
 
   const refresh = async () => {
     setErr("");
@@ -84,11 +102,12 @@ export default function AdminDashboard() {
           ["affiliates", "Afiliados"],
           ["sales", "Ventas"],
           ["branding", "Branding"],
+          ["settings", "Mi Cuenta"],
         ].map(([k, label]) => (
           <button
             key={k}
             className={`tab ${tab === k ? "active" : ""}`}
-            onClick={() => setTab(k)}
+            onClick={() => goTab(k)}
             data-testid={`tab-${k}`}
           >
             {label}
@@ -122,6 +141,7 @@ export default function AdminDashboard() {
         />
       )}
       {tab === "branding" && <BrandingTab />}
+      {tab === "settings" && <SettingsTab />}
     </div>
   );
 }

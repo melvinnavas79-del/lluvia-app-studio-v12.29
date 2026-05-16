@@ -251,10 +251,11 @@ export default function BossConsole() {
       }
     } catch (e) {
       const detail = e?.response?.data?.detail || formatError(e);
-      if (detail && detail.toLowerCase().includes("configura")) {
-        if (window.confirm("Aún no configuraste tu GitHub. ¿Ir a Settings ahora?")) {
-          window.location.hash = "#/settings";
-          window.location.reload();
+      if (detail && (detail.toLowerCase().includes("configura") || detail.toLowerCase().includes("token"))) {
+        if (window.confirm("Todavía no configuraste tu GitHub (token + repo). ¿Ir a 'Mi Cuenta' ahora para configurarlo?")) {
+          // Disparar evento que el Dashboard (Admin o Client) escucha para
+          // saltar al tab "settings" sin recargar la página.
+          window.dispatchEvent(new CustomEvent("lluvia:goto-settings"));
         }
       } else {
         alert(`✕ ${detail}`);
@@ -417,13 +418,6 @@ export default function BossConsole() {
                   <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
                 </svg>
               </button>
-              <button
-                className={`bc-mic-btn ${recording ? "rec" : ""}`}
-                onClick={toggleRecord}
-                data-testid="bc-mic-btn"
-                title="Hablar al agente">
-                {recording ? "⏹" : "🎙"}
-              </button>
               <textarea
                 ref={textareaRef}
                 value={input}
@@ -435,13 +429,31 @@ export default function BossConsole() {
                 data-testid="bc-input"
                 disabled={sending} />
               <button
+                className={`bc-mic-btn ${recording ? "rec" : ""}`}
+                onClick={toggleRecord}
+                data-testid="bc-mic-btn"
+                title={recording ? "Detener grabación" : "Hablar al agente"}>
+                {recording ? (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                    <line x1="12" y1="19" x2="12" y2="23"/>
+                    <line x1="8" y1="23" x2="16" y2="23"/>
+                  </svg>
+                )}
+              </button>
+              <button
                 className="bc-send-btn"
                 onClick={() => send()}
                 disabled={(!input.trim() && attachments.filter(a => a.url).length === 0) || sending || attachments.some(a => a.uploading)}
                 data-testid="bc-send-btn">
-                {sending ? "..." : (
+                {sending ? (
+                  <span className="bc-send-spinner"/>
+                ) : (
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M5 12l14-7-4 14-3-5-7-2z"/>
+                    <path d="M12 19V5M5 12l7-7 7 7"/>
                   </svg>
                 )}
               </button>
