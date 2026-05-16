@@ -186,7 +186,7 @@ function GitHubTab() {
 
       {!configured && (
         <div className="warn-card" data-testid="github-not-configured">
-          ⚠️ Falta configurar tu GitHub. Anda a <strong>Mi Cuenta → GitHub</strong> y pega:
+          ⚠️ Falta configurar tu GitHub. Ve a <strong>Mi Cuenta → GitHub</strong> y pega:
           <ul>
             <li>Tu <strong>GITHUB_TOKEN</strong> (Personal Access Token, scope `repo`)</li>
             <li>El <strong>repositorio destino</strong> formato: <code>tu-usuario/nombre-del-repo</code></li>
@@ -242,7 +242,7 @@ function GitHubTab() {
 
       <h3 style={{ marginTop: "2rem" }}>Apps generadas en tu workspace</h3>
       {apps.length === 0 ? (
-        <div className="empty">Sin apps todavia. Crea una pidiendole al agente "App Builder" en el chat.</div>
+        <div className="empty">Sin apps todavia. Crea una pidiéndole al agente "App Builder" en el chat.</div>
       ) : (
         <table className="ag-table">
           <thead><tr><th>Nombre</th><th>Tamaño</th><th>Modificado</th></tr></thead>

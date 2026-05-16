@@ -114,7 +114,7 @@ export default function PublicChat({ onLoginClick, onRegisterClick }) {
             <span className="pillar-tag">01 · Multimedia</span>
             <h3>Apps complejas y multimedia</h3>
             <p>
-              Desarrollá aplicaciones profesionales con feeds de video corto, salas de
+              Desarrolla aplicaciones profesionales con feeds de video corto, salas de
               streaming en vivo y perfiles dinámicos inspirados en plataformas como
               TikTok o Likee.
             </p>
@@ -150,7 +150,7 @@ export default function PublicChat({ onLoginClick, onRegisterClick }) {
             <span className="pillar-tag">03 · Audio Live</span>
             <h3>Sistemas de radio y audio live</h3>
             <p>
-              Montá emisoras digitales y plataformas de streaming de audio completas,
+              Monta emisoras digitales y plataformas de streaming de audio completas,
               monitoreadas y administradas por IA en tiempo real.
             </p>
             <ul className="pillar-bullets">

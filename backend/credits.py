@@ -24,10 +24,11 @@ async def get_balance(user_id: str) -> int:
     db = _db_ref["db"]
     doc = await db.credits.find_one({"user_id": user_id}, {"_id": 0})
     if not doc:
-        # Bootstrapping: admin arranca con 10000 oros, otros con 100
+        # Admin arranca con 10000 oros (acceso libre); usuario nuevo arranca en 0
+        # (el bono de trial lo asigna explicitamente /api/auth/register via topup).
         from auth import _db_ref as auth_db
         user = await auth_db["db"].users.find_one({"id": user_id}, {"_id": 0, "role": 1})
-        initial = 10000 if (user and user.get("role") == "admin") else 100
+        initial = 10000 if (user and user.get("role") == "admin") else 0
         await db.credits.insert_one({
             "user_id": user_id,
             "balance": initial,

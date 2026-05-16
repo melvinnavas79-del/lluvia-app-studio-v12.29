@@ -134,7 +134,7 @@ export default function BrandingTab() {
               })}
             </div>
             <small style={{ color: "var(--text-muted)", marginTop: "0.4rem", display: "block" }}>
-              Define qué tema verán los visitantes la primera vez. Si toggle-an manualmente, se respeta su elección.
+              Define qué tema verán los visitantes la primera vez. Si lo cambian manualmente, se respeta su elección.
             </small>
           </div>
 

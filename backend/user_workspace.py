@@ -185,6 +185,10 @@ async def my_github_push(data: PushIn, user: dict = Depends(get_current_user)):
 
     steps = []
     _run(["git", "init"])
+    # Forzar el nombre de la rama local que va a coincidir con la rama destino.
+    # En git nuevo init crea 'main' por defecto, pero en algunas distros sigue
+    # creando 'master' — sin esto, el push -u origin {branch} fallaria.
+    _run(["git", "checkout", "-B", branch])
     _run(["git", "config", "user.email", user.get("email", "user@lluvia.app")])
     _run(["git", "config", "user.name", user.get("name", "Lluvia User")])
 
@@ -198,7 +202,11 @@ async def my_github_push(data: PushIn, user: dict = Depends(get_current_user)):
 
     rc, out = _run(["git", "commit", "-m", commit_msg])
     steps.append({"step": "commit", "rc": rc, "out": out[-200:]})
+    # Si commit falla porque no hay nada que commitear, igual intentamos push
+    # (puede ser un re-push de algo ya commiteado antes en el mismo workspace).
 
+    # Asegurar que el push sube la rama correcta aunque git init haya creado 'master'.
+    _run(["git", "branch", "-M", branch])
     rc, out = _run(["git", "push", "-u", "origin", branch, "--force"])
     steps.append({"step": "push", "rc": rc, "out": out[-300:]})
 
