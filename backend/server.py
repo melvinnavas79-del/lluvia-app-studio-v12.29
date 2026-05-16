@@ -55,6 +55,8 @@ import user_workspace as user_workspace_module
 import legal as legal_module
 import gmail_integration as gmail_module
 import gmail_maestro as gmail_maestro_module
+import gmail_scheduler as gmail_scheduler_module
+import site_content as site_content_module
 from rate_limit import limiter, rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -91,6 +93,8 @@ public_chat_module.set_db(db)
 user_workspace_module.set_db(db)
 gmail_module.set_db(db)
 gmail_maestro_module.set_db(db)
+gmail_scheduler_module.set_db(db)
+site_content_module.set_db(db)
 
 
 # ----------------------- APP -----------------------
@@ -119,6 +123,14 @@ async def on_startup():
     if os.environ.get("TELEGRAM_POLLING", "0") == "1" and config.TELEGRAM_TOKEN:
         telegram_poller.start()
         logger.info("Telegram polling activado")
+
+    # Gmail Maestro autopoll (cada 5 min). Activar con GMAIL_MAESTRO_AUTOPOLL=1
+    gmail_scheduler_module.start_scheduler()
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    gmail_scheduler_module.stop_scheduler()
 
 
 # ============================================================
@@ -394,6 +406,7 @@ api_router.include_router(user_workspace_module.router)
 api_router.include_router(legal_module.router)
 api_router.include_router(gmail_module.router)
 api_router.include_router(gmail_maestro_module.router)
+api_router.include_router(site_content_module.router)
 app.include_router(api_router)
 
 app.add_middleware(

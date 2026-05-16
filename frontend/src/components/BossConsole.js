@@ -159,6 +159,29 @@ export default function BossConsole() {
   const getAgent = (id) => agents.find((a) => a.id === id);
   const currentAgent = activeSession ? getAgent(activeSession.agent_id) : null;
 
+  const pushNow = async () => {
+    const msg = prompt("Mensaje del commit (opcional):", `Push desde Lluvia ${new Date().toLocaleString()}`);
+    if (msg === null) return; // canceló
+    try {
+      const { data } = await api.post("/me/github/push", { commit_message: msg });
+      if (data.ok) {
+        alert(`✅ Push exitoso!\n\nRepo: ${data.repo}\nRama: ${data.branch}\n\nVer en GitHub: ${data.repo_url || `https://github.com/${data.repo}`}`);
+      } else {
+        alert(`⚠ Push falló:\n\n${(data.steps || []).slice(-1)[0]?.out || "ver consola"}`);
+      }
+    } catch (e) {
+      const detail = e?.response?.data?.detail || formatError(e);
+      if (detail && detail.toLowerCase().includes("configura")) {
+        if (window.confirm("Aún no configuraste tu GitHub. ¿Ir a Settings ahora?")) {
+          window.location.hash = "#/settings";
+          window.location.reload();
+        }
+      } else {
+        alert(`✕ ${detail}`);
+      }
+    }
+  };
+
   return (
     <div className="boss-console" data-testid="boss-console">
       <aside className="bc-sidebar">
@@ -205,6 +228,14 @@ export default function BossConsole() {
             ) : <div className="bc-header-tag">Elige un agente para empezar</div>}
           </div>
           <div className="bc-header-right">
+            <button className="bc-shop-btn" onClick={pushNow} data-testid="bc-push-github"
+                    title="Push de tu workspace a GitHub"
+                    style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M12 .297a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.02c-3.34.72-4.04-1.61-4.04-1.61-.55-1.4-1.35-1.78-1.35-1.78-1.1-.75.08-.74.08-.74 1.22.09 1.86 1.25 1.86 1.25 1.09 1.86 2.85 1.32 3.54 1.01.11-.79.42-1.32.77-1.62-2.66-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.31-.54-1.53.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.65.25 2.87.12 3.18.78.84 1.24 1.91 1.24 3.22 0 4.61-2.81 5.62-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.83.58A12 12 0 0 0 12 .297z"/>
+              </svg>
+              Push
+            </button>
             <button className="bc-shop-btn" onClick={() => setShowShop(true)} data-testid="bc-shop-btn">
               + Recargar
             </button>
