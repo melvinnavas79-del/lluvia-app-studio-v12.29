@@ -18,11 +18,15 @@ export default function BossConsole() {
   const [packsConfigured, setPacksConfigured] = useState(false);
   const [attachments, setAttachments] = useState([]); // [{url, name, preview, uploading}]
   const [dragOver, setDragOver] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraErr, setCameraErr] = useState("");
   const scrollRef = useRef(null);
   const mediaRef = useRef(null);
   const chunksRef = useRef([]);
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
+  const cameraVideoRef = useRef(null);
+  const cameraStreamRef = useRef(null);
   const backendBase = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/$/, "");
 
   // Auto-resize del textarea estilo ChatGPT
@@ -161,6 +165,95 @@ export default function BossConsole() {
       imgs.slice(0, 4).forEach(uploadImage);
     }
   };
+
+  // ---- CAMARA: abrir modal con getUserMedia y capturar foto a canvas
+  const openCamera = async () => {
+    setCameraErr("");
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraErr("Tu navegador no soporta camara. Usá el botón de adjuntar.");
+      return;
+    }
+    setCameraOpen(true);
+    // Esperar al siguiente tick para que el <video> exista
+    await new Promise((r) => setTimeout(r, 60));
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 1280 } },
+        audio: false,
+      });
+      cameraStreamRef.current = stream;
+      if (cameraVideoRef.current) {
+        cameraVideoRef.current.srcObject = stream;
+        try { await cameraVideoRef.current.play(); } catch (_) {}
+      }
+    } catch (e) {
+      const msg = e?.name === "NotAllowedError"
+        ? "Permitime el acceso a la camara desde la configuración del navegador."
+        : e?.name === "NotFoundError"
+        ? "No detecté ninguna cámara. Probá adjuntar desde la galería."
+        : `No pude abrir la cámara: ${e?.message || e}`;
+      setCameraErr(msg);
+    }
+  };
+
+  const closeCamera = () => {
+    const stream = cameraStreamRef.current;
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    cameraStreamRef.current = null;
+    if (cameraVideoRef.current) cameraVideoRef.current.srcObject = null;
+    setCameraOpen(false);
+  };
+
+  const flipCamera = async () => {
+    // Alterna entre front/rear apagando y volviendo a abrir con facingMode contrario.
+    const current = cameraStreamRef.current?.getVideoTracks?.()[0]?.getSettings?.()?.facingMode;
+    const newFacing = current === "user" ? "environment" : "user";
+    closeCamera();
+    setCameraOpen(true);
+    await new Promise((r) => setTimeout(r, 60));
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: newFacing }, width: { ideal: 1280 }, height: { ideal: 1280 } },
+        audio: false,
+      });
+      cameraStreamRef.current = stream;
+      if (cameraVideoRef.current) {
+        cameraVideoRef.current.srcObject = stream;
+        try { await cameraVideoRef.current.play(); } catch (_) {}
+      }
+    } catch (e) {
+      setCameraErr(`No pude cambiar de cámara: ${e?.message || e}`);
+    }
+  };
+
+  const capturePhoto = async () => {
+    const video = cameraVideoRef.current;
+    if (!video || !video.videoWidth) {
+      setCameraErr("La cámara aún no tiene video. Esperá un segundo y reintentá.");
+      return;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.92));
+    if (!blob) {
+      setCameraErr("No pude capturar la foto. Reintentá.");
+      return;
+    }
+    const file = new File([blob], `camara_${Date.now()}.jpg`, { type: "image/jpeg" });
+    closeCamera();
+    uploadImage(file);
+  };
+
+  // Limpiar el stream al desmontar (evita el clasico "pantalla negra" en reintentos)
+  useEffect(() => {
+    return () => {
+      const s = cameraStreamRef.current;
+      if (s) s.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
 
   const delSession = async (id) => {
     if (!window.confirm("Borrar este hilo?")) return;
@@ -410,12 +503,25 @@ export default function BossConsole() {
                 className="bc-attach-btn"
                 onClick={() => fileInputRef.current?.click()}
                 data-testid="bc-attach-btn"
-                title="Adjuntar imagen"
+                title="Adjuntar imagen de la galería"
                 disabled={sending}
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
                      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                </svg>
+              </button>
+              <button
+                className="bc-camera-btn"
+                onClick={openCamera}
+                data-testid="bc-camera-btn"
+                title="Tomar foto con la cámara"
+                disabled={sending}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                  <circle cx="12" cy="13" r="4"/>
                 </svg>
               </button>
               <textarea
@@ -512,6 +618,47 @@ export default function BossConsole() {
           </div>
         </div>
       )}
+
+      {/* Modal: Cámara nativa (getUserMedia) */}
+      {cameraOpen && (
+        <div className="bc-modal-overlay bc-camera-overlay" onClick={closeCamera}>
+          <div className="bc-camera-modal" onClick={(e) => e.stopPropagation()} data-testid="bc-camera-modal">
+            <div className="bc-camera-stage">
+              <video
+                ref={cameraVideoRef}
+                className="bc-camera-video"
+                autoPlay
+                playsInline
+                muted
+                data-testid="bc-camera-video"
+              />
+              {cameraErr && (
+                <div className="bc-camera-err" data-testid="bc-camera-err">{cameraErr}</div>
+              )}
+            </div>
+            <div className="bc-camera-controls">
+              <button className="bc-camera-secondary" onClick={closeCamera} data-testid="bc-camera-cancel">
+                Cancelar
+              </button>
+              <button
+                className="bc-camera-shutter"
+                onClick={capturePhoto}
+                disabled={!!cameraErr}
+                data-testid="bc-camera-shutter"
+                aria-label="Capturar foto"
+              >
+                <span className="bc-camera-shutter-inner"/>
+              </button>
+              <button className="bc-camera-secondary" onClick={flipCamera} data-testid="bc-camera-flip" title="Voltear cámara">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 12a9 9 0 0 1 14.85-6.85L20 7M21 12a9 9 0 0 1-14.85 6.85L4 17"/>
+                  <path d="M4 4v3h3M20 20v-3h-3"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -527,7 +674,7 @@ function Message({ msg, agent, onPlay, backendBase }) {
   // Extraer rich cards desde tool_calls
   const RICH_CARD_TOOLS = [
     "paypal_invoice_card", "service_card", "push_to_my_github",
-    "generate_haircut_preview", "video_script_card",
+    "generate_haircut_preview", "video_script_card", "generate_promo_video",
   ];
   const cards = (msg.tool_calls || []).map((tc) => {
     if (!RICH_CARD_TOOLS.includes(tc.name)) return null;
@@ -573,6 +720,7 @@ function Message({ msg, agent, onPlay, backendBase }) {
           if (c.card_type === "github_push") return <GitHubPushCard key={i} card={c} />;
           if (c.card_type === "before_after") return <BeforeAfterCard key={i} card={c} agent={agent} backendBase={backendBase} />;
           if (c.card_type === "video_script") return <VideoScriptCard key={i} card={c} agent={agent} />;
+          if (c.card_type === "video_job") return <VideoJobCard key={i} card={c} agent={agent} backendBase={backendBase} />;
           return <ServiceCard key={i} card={c} agent={agent} />;
         })}
         {msg.superadmin_takeover && (
@@ -855,3 +1003,124 @@ function VideoScriptCard({ card, agent }) {
   );
 }
 
+
+
+function VideoJobCard({ card, agent, backendBase }) {
+  const [job, setJob] = useState({
+    status: card.status || "queued",
+    video_url: null,
+    error: null,
+    duration: card.duration,
+  });
+  const accent = agent?.color || "#f59e0b";
+  const startedRef = useRef(Date.now());
+  const [elapsed, setElapsed] = useState(0);
+
+  // Polling cada 6s mientras esta queued/generating
+  useEffect(() => {
+    if (job.status === "ready" || job.status === "error") return;
+    const tick = async () => {
+      try {
+        const r = await api.get(`/console/video-jobs/${card.job_id}`);
+        setJob(r.data);
+      } catch (_) {}
+    };
+    tick();
+    const i = setInterval(tick, 6000);
+    return () => clearInterval(i);
+  }, [card.job_id, job.status]);
+
+  // Cronometro mientras se genera
+  useEffect(() => {
+    if (job.status === "ready" || job.status === "error") return;
+    const i = setInterval(() => setElapsed(Math.floor((Date.now() - startedRef.current) / 1000)), 1000);
+    return () => clearInterval(i);
+  }, [job.status]);
+
+  const absUrl = (u) => {
+    if (!u) return u;
+    if (u.startsWith("http")) return u;
+    return (backendBase || "") + u;
+  };
+
+  const isReady = job.status === "ready" && job.video_url;
+  const isError = job.status === "error";
+  const isWorking = !isReady && !isError;
+
+  const eta = card.estimated_wait_sec || (card.duration === 4 ? 180 : (card.duration === 8 ? 300 : 480));
+  const progress = isWorking ? Math.min(95, Math.round((elapsed / eta) * 100)) : (isReady ? 100 : 0);
+
+  return (
+    <div className="rich-card video-job-card" data-testid="video-job-card" style={{ borderColor: accent }}>
+      <div className="rc-head" style={{ background: `linear-gradient(135deg, ${accent}22, transparent)` }}>
+        <div className="rc-brand">
+          <div className="rc-logo" style={{ background: accent }}>🎥</div>
+          <div>
+            <div className="rc-brand-name">Sora 2 · Video {card.duration}s</div>
+            <div className="rc-brand-sub">
+              {card.model || "sora-2"} · {card.size || ""} · {card.aspect}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="vj-body">
+        {card.prompt && (
+          <div className="vj-prompt">
+            <span className="vj-label">PROMPT</span>
+            <div>{card.prompt}</div>
+          </div>
+        )}
+
+        {isWorking && (
+          <div className="vj-progress-wrap" data-testid="vj-progress">
+            <div className="vj-status">
+              <span className="vj-spinner" style={{ borderTopColor: accent }} />
+              <span>
+                {job.status === "queued" ? "En cola..." : "Generando con Sora 2..."}
+                <strong style={{ marginLeft: 8 }}>{elapsed}s</strong>
+                <span style={{ color: "var(--text-muted)" }}> / ~{eta}s</span>
+              </span>
+            </div>
+            <div className="vj-progress">
+              <div className="vj-progress-fill"
+                   style={{ width: `${progress}%`, background: accent }} />
+            </div>
+            <div className="vj-hint">
+              Podés cerrar el chat, el video sigue generándose. Te notificamos al volver.
+            </div>
+          </div>
+        )}
+
+        {isReady && (
+          <div className="vj-video-wrap" data-testid="vj-video-wrap">
+            <video
+              controls
+              playsInline
+              className="vj-video"
+              data-testid="vj-video"
+              src={absUrl(job.video_url)}
+              style={{ aspectRatio: card.aspect === "horizontal" ? "16/9" : (card.aspect === "square" ? "1/1" : "9/16") }}
+            />
+            <div className="vj-actions">
+              <a
+                href={absUrl(job.video_url)}
+                download={`lluvia-sora2-${card.job_id}.mp4`}
+                className="vj-download"
+                style={{ background: accent }}
+                data-testid="vj-download"
+              >
+                ⬇ Descargar MP4
+              </a>
+            </div>
+          </div>
+        )}
+
+        {isError && (
+          <div className="vj-error" data-testid="vj-error">
+            ✕ {job.error || "La generación falló. Reintentá con otro prompt."}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

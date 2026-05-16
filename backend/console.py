@@ -221,6 +221,42 @@ OPENAI_TOOLS = [
         }, "required": ["look_description", "look_name"]},
     }},
     {"type": "function", "function": {
+        "name": "generate_promo_video",
+        "description": (
+            "Genera un VIDEO real con Sora 2 a partir de un prompt cinematografico. "
+            "El video se genera en background (2-5 minutos) y la rich card del frontend "
+            "hace polling automatico hasta tenerlo listo. Usar SOLO despues de haber "
+            "consensuado con el cliente: a) el prompt detallado en INGLES, b) la duracion "
+            "(4, 8 o 12 segundos), c) el formato (vertical 9:16 para TikTok/Reels/Shorts, "
+            "horizontal 16:9 para YouTube, o cuadrado). El prompt debe ser visual y "
+            "cinematografico (ej: 'A professional barber shop, slow motion close-up of "
+            "scissors cutting hair, warm golden light, depth of field, 4k commercial style'). "
+            "AVISO al cliente: la generacion cuesta 30-55 oros segun duracion y tarda "
+            "varios minutos. Confirmar antes de llamar la tool."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "prompt": {
+                "type": "string",
+                "description": "Prompt cinematografico en INGLES, 50-1500 chars. Describe vision, accion, luz, camara, estilo."
+            },
+            "duration": {
+                "type": "integer",
+                "enum": [4, 8, 12],
+                "description": "Duracion en segundos. 4=fast (30 oros), 8=medium (40 oros), 12=long (55 oros)."
+            },
+            "aspect": {
+                "type": "string",
+                "enum": ["vertical", "horizontal"],
+                "description": "vertical=720x1280 (TikTok/Reels/Shorts/IG), horizontal=1280x720 (YouTube). Sora 2 solo soporta estos dos."
+            },
+            "quality": {
+                "type": "string",
+                "enum": ["standard", "pro"],
+                "description": "standard=sora-2 (mas rapido), pro=sora-2-pro (mas calidad, mas lento)."
+            },
+        }, "required": ["prompt", "duration", "aspect"]},
+    }},
+    {"type": "function", "function": {
         "name": "video_script_card",
         "description": (
             "Genera una rich card visual con el GUION COMPLETO para grabar un video corto de "
@@ -585,6 +621,38 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
                 "music_suggestion": (args.get("music_suggestion") or "").strip(),
                 "cta": (args.get("cta") or "").strip(),
             }
+        elif name == "generate_promo_video":
+            import video_gen
+            duration = int(args.get("duration") or 8)
+            if duration not in (4, 8, 12):
+                duration = 8
+            aspect = (args.get("aspect") or "vertical").lower()
+            size = {
+                "vertical": "720x1280",
+                "horizontal": "1280x720",
+                "square": "720x1280",  # Sora 2 no soporta square; usamos vertical
+            }.get(aspect, "720x1280")
+            quality = "sora-2-pro" if (args.get("quality") or "").lower() == "pro" else "sora-2"
+            # Cost dinamico por duracion (sobrescribe el del catalogo)
+            cost = video_gen.COST_BY_DURATION.get(duration, 40)
+            job = await video_gen.enqueue_video(
+                user_id=user_id,
+                prompt=args.get("prompt", ""),
+                duration=duration,
+                size=size,
+                model=quality,
+            )
+            data = {
+                "card_type": "video_job",
+                "job_id": job["id"],
+                "status": job["status"],
+                "model": job["model"],
+                "aspect": aspect,
+                "size": job["size"],
+                "duration": job["duration"],
+                "estimated_wait_sec": job["estimated_wait_sec"],
+                "prompt": args.get("prompt", "")[:300],
+            }
         else:
             return json.dumps({"error": f"Tool desconocida: {name}"}), 0
         return json.dumps(data, ensure_ascii=False)[:30000], cost
@@ -704,6 +772,17 @@ async def delete_session(session_id: str, user: dict = Depends(get_current_user)
     db = _db_ref["db"]
     res = await db.chat_sessions.delete_one({"id": session_id, "user_id": user["id"]})
     return {"deleted": res.deleted_count}
+
+
+@router.get("/video-jobs/{job_id}")
+async def get_video_job(job_id: str, user: dict = Depends(get_current_user)):
+    """Polling endpoint del frontend para conocer el estado del video Sora 2.
+    Devuelve {id, status, video_url?, error?, duration, size, prompt}."""
+    import video_gen
+    doc = await video_gen.get_job(user["id"], job_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Video job no encontrado")
+    return doc
 
 
 @router.post("/sessions/{session_id}/upload-image")

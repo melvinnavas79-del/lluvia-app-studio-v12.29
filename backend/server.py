@@ -59,6 +59,7 @@ import gmail_integration as gmail_module
 import gmail_maestro as gmail_maestro_module
 import gmail_scheduler as gmail_scheduler_module
 import site_content as site_content_module
+import video_gen as video_gen_module
 from rate_limit import limiter, rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -97,6 +98,7 @@ gmail_module.set_db(db)
 gmail_maestro_module.set_db(db)
 gmail_scheduler_module.set_db(db)
 site_content_module.set_db(db)
+video_gen_module.set_db(db)
 
 
 # ----------------------- APP -----------------------
