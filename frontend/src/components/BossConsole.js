@@ -417,15 +417,19 @@ export default function BossConsole() {
       const { data } = await api.post("/me/github/push", { commit_message: msg });
       if (data.ok) {
         alert(`✅ Push exitoso!\n\nRepo: ${data.repo}\nRama: ${data.branch}\n\nVer en GitHub: ${data.repo_url || `https://github.com/${data.repo}`}`);
+      } else if (data.export_locked) {
+        // Modal premium: el visitor armó la app pero no tiene oros para llevársela.
+        const go = window.confirm(
+          `🔒 ${data.message}\n\n¿Querés ir a recargar oros ahora?`
+        );
+        if (go) window.location.hash = "#/recharge";
       } else {
-        alert(`⚠ Push falló:\n\n${(data.steps || []).slice(-1)[0]?.out || "ver consola"}`);
+        alert(`⚠ Push falló:\n\n${data.message || (data.steps || []).slice(-1)[0]?.out || "ver consola"}`);
       }
     } catch (e) {
       const detail = e?.response?.data?.detail || formatError(e);
       if (detail && (detail.toLowerCase().includes("configura") || detail.toLowerCase().includes("token"))) {
         if (window.confirm("Todavía no configuraste tu GitHub (token + repo). ¿Ir a 'Mi Cuenta' ahora para configurarlo?")) {
-          // Disparar evento que el Dashboard (Admin o Client) escucha para
-          // saltar al tab "settings" sin recargar la página.
           window.dispatchEvent(new CustomEvent("lluvia:goto-settings"));
         }
       } else {
@@ -912,9 +916,67 @@ function ServiceCard({ card, agent }) {
 function GitHubPushCard({ card }) {
   const isOk = card.ok === true;
   const needsSetup = card.needs_setup === true;
-  const stateColor = isOk ? "#059669" : needsSetup ? "#D97706" : "#DC2626";
-  const stateLabel = isOk ? "Push exitoso" : needsSetup ? "Setup pendiente" : "Push fallido";
-  const stateIcon = isOk ? "✓" : needsSetup ? "!" : "✕";
+  const exportLocked = card.export_locked === true;
+  const stateColor = isOk ? "#059669" : (needsSetup || exportLocked) ? "#D97706" : "#DC2626";
+  const stateLabel = isOk ? "Push exitoso" : exportLocked ? "🔒 Exportación bloqueada" : needsSetup ? "Setup pendiente" : "Push fallido";
+  const stateIcon = isOk ? "✓" : exportLocked ? "🔒" : needsSetup ? "!" : "✕";
+  // Si export_locked, mostramos card premium especial
+  if (exportLocked) {
+    return (
+      <div className="rich-card github-push-card" data-testid="github-push-card-locked"
+           style={{
+             borderColor: "#D97706",
+             background: "linear-gradient(135deg, rgba(245,158,11,0.08), rgba(124,58,237,0.06))",
+             overflow: "hidden",
+           }}>
+        <div className="rc-head" style={{ background: "linear-gradient(135deg, rgba(245,158,11,0.18), rgba(124,58,237,0.10))" }}>
+          <div className="rc-brand">
+            <div className="rc-logo" style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)", fontSize: "1.05rem" }}>🔒</div>
+            <div>
+              <div className="rc-brand-name">Tu app está lista — falta desbloquear la exportación</div>
+              <div className="rc-brand-sub">Vista previa premium · Lluvia App Studio</div>
+            </div>
+          </div>
+        </div>
+        <div className="rc-body">
+          <div style={{ fontSize: "0.92rem", lineHeight: 1.55, color: "var(--text-secondary)" }}>
+            {card.message}
+          </div>
+          <div style={{
+            display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.5rem",
+            marginTop: "0.85rem", padding: "0.75rem", borderRadius: 12,
+            background: "rgba(15,23,42,0.04)", border: "1px solid rgba(15,23,42,0.08)",
+          }}>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Saldo</div>
+              <div style={{ fontSize: "1.35rem", fontWeight: 800, color: "var(--text-primary)" }}>{card.balance ?? 0}</div>
+              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>oros</div>
+            </div>
+            <div style={{ textAlign: "center", borderLeft: "1px solid rgba(15,23,42,0.1)", borderRight: "1px solid rgba(15,23,42,0.1)" }}>
+              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Necesitas</div>
+              <div style={{ fontSize: "1.35rem", fontWeight: 800, color: "#D97706" }}>{card.required ?? 50}</div>
+              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>oros</div>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Te faltan</div>
+              <div style={{ fontSize: "1.35rem", fontWeight: 800, color: "#7C3AED" }}>{card.missing ?? "?"}</div>
+              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>oros</div>
+            </div>
+          </div>
+          {card.refunded_oros > 0 && (
+            <div style={{ marginTop: "0.6rem", color: "#059669", fontWeight: 600, fontSize: "0.85rem" }}>
+              💸 Te devolvimos {card.refunded_oros} oros del intento de push.
+            </div>
+          )}
+        </div>
+        <a href={card.recharge_url || "#/recharge"} className="rc-cta"
+           style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)", display: "block", textAlign: "center" }}
+           data-testid="github-push-card-recharge">
+          Recargar oros y desbloquear exportación →
+        </a>
+      </div>
+    );
+  }
   return (
     <div className="rich-card github-push-card" data-testid="github-push-card"
          style={{ borderColor: stateColor }}>

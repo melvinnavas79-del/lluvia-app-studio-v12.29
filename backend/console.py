@@ -589,16 +589,19 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
                     commit_message=args.get("commit_message"),
                 )
                 # Refund automatico si el push fallo (token mal, repo no existe, etc).
-                # NO refundamos si el cliente solo necesita configurar (needs_setup),
-                # porque en ese caso el cobro tampoco se ejecuto (la tool ni se llamo
-                # de verdad). Si fue invocada y fallo por auth/permisos, devolvemos.
+                # NO refundamos si:
+                #   - El cliente solo necesita configurar (needs_setup): la tool ni se ejecuto.
+                #   - El push esta bloqueado por candado de exportacion (export_locked):
+                #     el cliente no llego a ejecutar push real, refundamos igual para
+                #     que vea el modal y no quede sin oros.
                 refunded_oros = 0
                 if not result.get("ok") and not result.get("needs_setup") and not is_admin:
                     import credits as credits_mod
                     refund_amt = agents_catalog.TOOL_NAMES.get("push_to_my_github", 8)
                     await credits_mod.refund(
                         user_id, refund_amt, "github_push_failed",
-                        {"error": str(result.get("error") or "")[:200]},
+                        {"error": str(result.get("error") or result.get("message") or "")[:200],
+                         "export_locked": bool(result.get("export_locked"))},
                     )
                     refunded_oros = refund_amt
                 # Wrap como rich card para que el frontend lo renderice
@@ -607,6 +610,11 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
                     "ok": result.get("ok", False),
                     "needs_setup": result.get("needs_setup", False),
                     "auth_failed": result.get("auth_failed", False),
+                    "export_locked": result.get("export_locked", False),
+                    "balance": result.get("balance"),
+                    "required": result.get("required"),
+                    "missing": result.get("missing"),
+                    "recharge_url": result.get("recharge_url"),
                     "message": result.get("message"),
                     "repo": result.get("repo"),
                     "repo_url": result.get("repo_url"),
@@ -667,6 +675,9 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
         elif name == "generate_audio_room_app":
             import app_builder
             import user_workspace as uw
+            import pricing as pricing_mod
+            # Precio dinamico desde el panel admin (sobrescribe TOOL_NAMES)
+            cost = await pricing_mod.get_tool_price("generate_audio_room_app")
             app_name_in = (args.get("app_name") or "Mi App").strip()
             brand_color = (args.get("brand_color") or "#5B8DEF").strip()
             app_slug = app_builder._slugify(args.get("app_slug") or app_name_in)
@@ -679,12 +690,11 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
             )
             # Refund automatico si falla la materializacion
             if not result.get("ok") and not is_admin:
-                refund_amt = agents_catalog.TOOL_NAMES.get("generate_audio_room_app", 40)
                 await credits_mod.refund(
-                    user_id, refund_amt, "app_builder_failed",
+                    user_id, cost, "app_builder_failed",
                     {"error": str(result.get("error"))[:200], "template": "audio_room"},
                 )
-                result["refunded_oros"] = refund_amt
+                result["refunded_oros"] = cost
             data = {
                 "card_type": "app_built",
                 "ok": result.get("ok", False),

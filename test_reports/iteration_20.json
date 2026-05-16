@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 20 — Panel admin de precios + PUSH LOCK (candado de exportación). Backend 12/12 PASS (test_iteration_20_pricing_pushlock.py). Frontend: PricingPanel renderiza correcto (header, min_balance, 5 filas, badge SOON x4, audio_room editable, save+persist), edit→25→success→reload persiste→restore 40 OK. Push Lock: juan@test.com (balance=10, threshold=50) → click Push en GitHub tab → export-locked-modal renderiza con grid 3-col (Saldo 10/Necesitas 50/Te faltan 40) y CTA recharge → click redirige a #/recharge. Inyección Mongo en chat_sessions con tool_calls export_locked:true → BossConsole renderiza github-push-card-locked con título 'Tu app está lista — falta desbloquear la exportación', grid 3-col, CTA github-push-card-recharge href=/#/recharge. Todo el contrato del review request quedó verificado E2E.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_20_pricing_pushlock.py",
+    "/app/test_reports/pytest/iteration_20_results.xml"
+  ],
+  "action_items": [
+    "[INFO] Todos los flows pasan. No se requiere acción del main agent.",
+    "[INFO] Backend pricing dinámico verificado: pricing.get_tool_price('generate_audio_room_app') refleja el cambio del panel (40→25→40) — esto es lo que console.py:667-707 lee para el cost de _exec_tool, así que el cost dinámico funciona.",
+    "[INFO] Push Lock con threshold modificado: bajamos min_balance_for_export a 5, user con balance 10 ya no recibe export_locked (test_threshold_modified_unlocks PASS), restaurado a 50."
+  ],
+  "critical_code_review_comments": [
+    "pricing.py:set_pricing — los datetime se persisten como ISO string (línea 136), consistente con el resto del codebase. updated_by toma el email del current_user, OK.",
+    "user_workspace.do_push:212-235 — el push lock check va ANTES del needs_setup check, lo cual es correcto: si el user no tiene saldo, ni siquiera le pedimos configurar GitHub. UX consistente.",
+    "BossConsole.GitHubPushCard — la rama export_locked está bien aislada (líneas 923-980), no contamina el render del happy path. La detección es estricta (=== true) lo cual previene falsos positivos por truthy values.",
+    "ClientDashboard.js:303-336 — el modal export_locked es client-side rendered del response JSON, no hay riesgo de XSS porque se usa interpolación React (no dangerouslySetInnerHTML). OK.",
+    "admin_pricing.py:PricingIn — usa Optional[dict] sin tipado fino para tool_prices. Si quisieras seguridad extra, podrías usar Dict[str, int] pero la lógica de set_pricing ya valida tipos manualmente, no es blocker."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_20_pricing_pushlock.py (NEW — 12 tests, all PASS)"
+  ],
+  "success_rate": {
+    "backend": "100% (12/12 PASS)",
+    "frontend": "100% — Pricing panel + export_locked en ClientDashboard + github-push-card-locked en BossConsole verificados E2E"
+  },
+  "test_credentials": "Admin melvinnavas79@gmail.com/Admin#2026 OK · Affiliate juan@test.com/test1234 OK (role=affiliate, no admin → push lock aplicable)",
+  "seed_data_creation": "Inyectado y limpiado: chat_sessions doc title='TEST export_locked' para juan@test.com con tool_calls.result_preview JSON {card_type:'github_push',export_locked:true,balance:10,required:50,missing:40}. Cleanup ejecutado (deleted_count=1). Settings de juan: github_token/repo fake configurados para que el push-lock branch del do_push se evalue antes del needs_setup. Balance de juan dejado en 10 oros (no es seed crítico, el admin lo puede ajustar via panel).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Pytest: `pytest /app/backend/tests/test_iteration_20_pricing_pushlock.py -v` desde /app/backend con env loaded. Las assertions automatic restauran threshold y precios al final de cada test. Si hay que retestear export_locked en BossConsole frontend, inyectar manualmente en `chat_sessions` collection un doc con `messages[].tool_calls[].name='push_to_my_github'` y `result_preview` JSON string con `export_locked:true` (la collection es chat_sessions, NO sessions; los messages van EMBEBIDOS dentro del doc, no en una collection separada — esto es importante, lo aprendí en este iteration).",
+  "rca of the issue": "NO HAY BUGS. Implementación correcta de extremo a extremo: pricing module + admin endpoints + UI panel + push lock backend + UI export_locked rendering en ambos componentes (BossConsole rich card y ClientDashboard modal). Cobertura E2E completa con backend pytest + UI Playwright + Mongo injection."
+}

@@ -413,6 +413,10 @@ api_router.include_router(gmail_maestro_module.router)
 api_router.include_router(site_content_module.router)
 import demo_audio_room as demo_ar_module
 api_router.include_router(demo_ar_module.router)
+import pricing as pricing_module
+pricing_module.set_db(db)
+import admin_pricing as admin_pricing_module
+api_router.include_router(admin_pricing_module.router)
 api_router.include_router(telegram_unified_module.router_link)
 app.include_router(api_router)
 

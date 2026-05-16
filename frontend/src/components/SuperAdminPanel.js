@@ -22,6 +22,7 @@ export default function SuperAdminPanel() {
           ["backup", "📦 Push & Backup"],
           ["integrations", "🔗 Integraciones"],
           ["content", "📝 Contenido del Sitio"],
+          ["pricing", "💰 Precios de Templates"],
         ].map(([k, label]) => (
           <button
             key={k}
@@ -40,6 +41,7 @@ export default function SuperAdminPanel() {
       {tab === "backup" && <BackupPanel />}
       {tab === "integrations" && <IntegrationsPanel />}
       {tab === "content" && <SiteContentPanel />}
+      {tab === "pricing" && <PricingPanel />}
     </div>
   );
 }
@@ -696,3 +698,153 @@ function BackupPanel() {
     </div>
   );
 }
+
+
+// =====================================================================
+// PRICING PANEL — control admin de precios de templates + threshold de export
+// =====================================================================
+function PricingPanel() {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState("");
+  const [ok, setOk] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = () =>
+    api.get("/admin/pricing")
+      .then((r) => setData(r.data))
+      .catch((e) => setErr(formatError(e)));
+  useEffect(() => { load(); }, []);
+
+  const updatePrice = (toolId, value) => {
+    setData((prev) => ({
+      ...prev,
+      tool_prices: { ...prev.tool_prices, [toolId]: value },
+    }));
+  };
+
+  const save = async () => {
+    setBusy(true); setErr(""); setOk("");
+    try {
+      const r = await api.put("/admin/pricing", {
+        tool_prices: data.tool_prices,
+        min_balance_for_export: Number(data.min_balance_for_export),
+      });
+      setData(r.data);
+      setOk("✓ Precios actualizados. Los cambios se aplican en el próximo ensamble.");
+      setTimeout(() => setOk(""), 4000);
+    } catch (e) {
+      setErr(formatError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!data) return <div style={{ padding: "1.5rem" }}>Cargando precios…</div>;
+
+  const knownIds = Object.keys(data.tool_prices || {});
+
+  return (
+    <div className="sa-section" data-testid="pricing-panel" style={{ padding: "1rem" }}>
+      <h3 style={{ marginTop: 0 }}>💰 Control de precios y candado de exportación</h3>
+      <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", lineHeight: 1.5 }}>
+        Acá decidís cuánto cobrar por cada template que ensambla App Builder Pro y
+        cuál es el saldo mínimo que un usuario debe tener para exportar el código a su GitHub.
+        Los curiosos pueden ver la preview dentro de Lluvia, pero solo descargan el código si tienen oros.
+      </p>
+
+      {err && <div className="msg-error" style={{ marginTop: 12 }}>{err}</div>}
+      {ok && <div className="msg-success" style={{ marginTop: 12 }}>{ok}</div>}
+
+      <div style={{ marginTop: "1.4rem", padding: "1rem 1.1rem", background: "var(--surface-elevated, #0F172A0A)", borderRadius: 12, border: "1px solid var(--border, rgba(0,0,0,0.08))" }}>
+        <h4 style={{ marginTop: 0, fontSize: "1rem" }}>🔒 Candado de exportación</h4>
+        <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "0.6rem" }}>
+          Saldo mínimo (oros) para desbloquear el push a GitHub. Si está por debajo, el usuario ve un modal premium en lugar de descargar.
+        </p>
+        <input
+          type="number" min="0" max="10000"
+          value={data.min_balance_for_export ?? 50}
+          onChange={(e) => setData((p) => ({ ...p, min_balance_for_export: e.target.value }))}
+          data-testid="pricing-min-balance"
+          style={{ width: 120, padding: "0.55rem 0.7rem", fontSize: "1rem", borderRadius: 8, border: "1px solid var(--border, #ddd)", background: "var(--surface, #fff)", color: "var(--text-primary, #000)" }}
+        />
+        <span style={{ marginLeft: 10, color: "var(--text-muted)", fontSize: "0.88rem" }}>oros</span>
+      </div>
+
+      <div style={{ marginTop: "1.4rem" }}>
+        <h4 style={{ fontSize: "1rem", marginBottom: "0.6rem" }}>📦 Precio por template</h4>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+          {(data.templates || []).map((tpl) => {
+            const isKnown = knownIds.includes(tpl.tool_id);
+            const isComing = tpl.coming_soon;
+            return (
+              <div
+                key={tpl.tool_id}
+                data-testid={`pricing-row-${tpl.tool_id}`}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 140px",
+                  gap: "0.8rem",
+                  padding: "0.85rem 1rem",
+                  background: isComing ? "rgba(148,163,184,0.08)" : "var(--surface-elevated, #0F172A05)",
+                  borderRadius: 12,
+                  border: "1px solid var(--border, rgba(0,0,0,0.08))",
+                  alignItems: "center",
+                  opacity: isComing ? 0.7 : 1,
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: "0.96rem" }}>
+                    {tpl.name}
+                    {isComing && <span style={{ marginLeft: 8, fontSize: "0.7rem", padding: "2px 7px", borderRadius: 4, background: "#94a3b8", color: "#fff", fontWeight: 600 }}>SOON</span>}
+                  </div>
+                  <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: 4 }}>
+                    {tpl.stack} · {tpl.screens.join(" · ")}
+                  </div>
+                </div>
+                <div>
+                  <input
+                    type="number" min="0" max="10000"
+                    disabled={!isKnown || isComing}
+                    value={data.tool_prices[tpl.tool_id] ?? tpl.default_price}
+                    onChange={(e) => updatePrice(tpl.tool_id, e.target.value)}
+                    data-testid={`pricing-input-${tpl.tool_id}`}
+                    style={{
+                      width: "100%", padding: "0.55rem 0.7rem", fontSize: "1rem",
+                      borderRadius: 8, border: "1px solid var(--border, #ddd)",
+                      background: "var(--surface, #fff)", color: "var(--text-primary, #000)",
+                      textAlign: "right",
+                    }}
+                  />
+                  <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", textAlign: "right", marginTop: 2 }}>
+                    oros · default {tpl.default_price}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ marginTop: "1.4rem", display: "flex", gap: "0.6rem", alignItems: "center" }}>
+        <button
+          onClick={save} disabled={busy}
+          className="btn-primary"
+          data-testid="pricing-save-btn"
+          style={{
+            padding: "0.7rem 1.3rem", borderRadius: 10, fontWeight: 700,
+            background: "linear-gradient(135deg, #2563EB, #7C3AED)", color: "#fff", border: 0, cursor: busy ? "wait" : "pointer",
+            opacity: busy ? 0.6 : 1,
+          }}
+        >
+          {busy ? "Guardando..." : "Guardar precios"}
+        </button>
+        {data.updated_at && (
+          <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
+            Última edición: {new Date(data.updated_at).toLocaleString()} · {data.updated_by}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+

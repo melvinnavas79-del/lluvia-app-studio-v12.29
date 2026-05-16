@@ -204,6 +204,35 @@ async def do_push(user: dict, app_name: Optional[str] = None,
     o repo configurados devuelve ok=False con 'needs_setup': True (no lanza
     HTTPException, asi la tool puede sugerir la accion al cliente)."""
     db = _db_ref["db"]
+    # PUSH LOCK: candado de exportacion. Si el saldo del usuario esta por
+    # debajo del threshold configurable, no puede llevarse el codigo a
+    # GitHub. Admin bypasea el candado siempre. Asi el visitor que viene
+    # del demo puede CONSTRUIR la app y ver la preview, pero solo puede
+    # EXPORTAR si paga oros. La cifra la maneja el admin desde su panel.
+    if user.get("role") != "admin":
+        try:
+            import pricing as pricing_mod
+            import credits as credits_mod
+            threshold = await pricing_mod.get_min_balance_for_export()
+            balance_doc = await db.credits.find_one({"user_id": user["id"]}, {"_id": 0, "balance": 1})
+            balance = int((balance_doc or {}).get("balance", 0))
+            if balance < threshold:
+                return {
+                    "ok": False,
+                    "export_locked": True,
+                    "balance": balance,
+                    "required": threshold,
+                    "missing": threshold - balance,
+                    "message": (
+                        f"Has creado tu app con éxito. Para exportar el código fuente "
+                        f"completo a tu GitHub y activar el backend para producción, "
+                        f"adquiere un paquete de oros. Saldo actual: {balance} oros · "
+                        f"Necesitas al menos {threshold} oros para desbloquear la exportación."
+                    ),
+                    "recharge_url": "/#/recharge",
+                }
+        except Exception as e:
+            logger.warning(f"Push-lock check skipped por error: {e}")
     settings = await db.user_settings.find_one({"user_id": user["id"]}, {"_id": 0})
     if not settings or not settings.get("github_token") or not settings.get("github_repo"):
         return {

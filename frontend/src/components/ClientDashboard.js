@@ -300,7 +300,41 @@ function GitHubTab() {
       )}
 
       {err && <div className="alert" style={{ marginTop: "1rem" }}>{err}</div>}
-      {result && (
+      {result && result.export_locked && (
+        <div className="form-card" data-testid="export-locked-modal" style={{
+          marginTop: "1rem", padding: "1.4rem 1.3rem",
+          background: "linear-gradient(135deg, rgba(245,158,11,0.10), rgba(124,58,237,0.08))",
+          border: "1px solid #F59E0B", borderRadius: 14,
+        }}>
+          <h3 style={{ margin: 0, fontSize: "1.15rem" }}>🔒 Exportación bloqueada</h3>
+          <p style={{ margin: "0.6rem 0 0.9rem", lineHeight: 1.55, fontSize: "0.95rem" }}>
+            {result.message}
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.5rem",
+                        padding: "0.75rem", borderRadius: 10, background: "rgba(15,23,42,0.04)",
+                        border: "1px solid rgba(15,23,42,0.08)", marginBottom: "0.9rem" }}>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Saldo</div>
+              <div style={{ fontSize: "1.4rem", fontWeight: 800 }}>{result.balance ?? 0}</div>
+            </div>
+            <div style={{ textAlign: "center", borderLeft: "1px solid rgba(15,23,42,0.1)", borderRight: "1px solid rgba(15,23,42,0.1)" }}>
+              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Necesitas</div>
+              <div style={{ fontSize: "1.4rem", fontWeight: 800, color: "#D97706" }}>{result.required ?? 50}</div>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Te faltan</div>
+              <div style={{ fontSize: "1.4rem", fontWeight: 800, color: "#7C3AED" }}>{result.missing ?? "?"}</div>
+            </div>
+          </div>
+          <button onClick={() => { window.location.hash = "#/recharge"; }}
+                  data-testid="export-locked-recharge-btn"
+                  className="login-btn"
+                  style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)", border: 0, color: "#fff" }}>
+            Recargar oros y desbloquear →
+          </button>
+        </div>
+      )}
+      {result && !result.export_locked && (
         <div className={`form-card ${result.ok ? "success-card" : "fail-card"}`} style={{ marginTop: "1rem" }}>
           <strong>{result.ok ? "✅ Push exitoso" : "❌ Push fallo"}</strong>
           <div style={{ fontSize: "0.85em" }}>Repo: <code>{result.repo}</code></div>
