@@ -5,7 +5,42 @@
 - Producción: https://lluvia-app-studio.lluvia-live.com (Emergent Native Deploy)
 - Telegram: https://t.me/LluviaAppStudioBot
 
-## Estado actual: v12.20 — Live Demo público + emoji badges + auto-create GitHub repo (Feb 2026)
+## Estado actual: v12.21 — Funnel cerrado dentro del demo + español neutro (Feb 2026)
+
+### Iteración 12.21 — Demo → CTA → Registro → App Builder Pro automático (HECHO)
+**🎯 CTA flotante de conversión dentro del demo público**
+- Inyectado en `demo_audio_room.py::_build_demo_cta()` solo en modo demo (el template original NO incluye este código, sigue limpio para clientes que pushean).
+- Pill flotante abajo-derecha con dot rojo pulsante: *"¿Te gusta? Ármala con TU marca → 40 oros"*. Animación CSS suave de pulso.
+- Click → modal full-screen con campos: Nombre app, Color (hex + color-picker swatch), Email, Contraseña. Línea verde de transparencia de precios: *"15 oros gratis al crear cuenta · La app cuesta 40 oros · Sin tarjeta"*.
+
+**📡 Endpoint `/api/demo/audio-room/api/convert`**
+- Delegación a `affiliates.register` (mismo flujo de registro principal con trial 15 oros + anti-abuse rate-limit por IP).
+- Response: `{access_token, user, seed: {app_name, brand_color}, next_url}`.
+- Frontend setea `localStorage.bot_admin_token` + `localStorage.lluvia_demo_seed` y redirige a `/#/chat` después de 700ms.
+
+**🪄 Auto-trigger en `BossConsole.js`**
+- useEffect detecta `localStorage.lluvia_demo_seed` cuando `agents.length > 0`. Acción atomic:
+  1. `localStorage.removeItem` ANTES de la creación de sesión (idempotente, a prueba de doble-fire).
+  2. `POST /console/sessions {agent_id: 'app_builder_pro'}`.
+  3. `setActiveId` y, 800ms después, dispatch `lluvia:compose-message` con `{text, send: true}` que envía: *"Llamala \"{app_name}\" y usá color {brand_color}. Generala ya."*
+- App Builder Pro recibe el mensaje, dispara la tool `generate_audio_room_app`, y aparece la rich card `AppBuiltCard` con el resumen.
+
+**🇪🇸 Voseos eliminados del backend (español neutro profesional)**
+- `app_templates/audio_room/backend/server.py:206` → "No puedes seguirte a ti mismo".
+- `app_templates/audio_room/backend/server.py:323` → "Necesitas N oros. Tienes M oros."
+- `affiliates.py` → mensaje de rate-limit ahora dice "Espera 24 horas o contáctanos".
+- `user_workspace.py` → "Verifica que eres owner".
+- `console.py` → tool `app_built.next_step` → "Aprieta + → ⬆ Push a GitHub..." (typo + voseo fix).
+
+**Verificación (iteration_19.json)**: backend 5/5 PASS + 1 SKIP (rate-limit anti-abuse esperado, NO bug); frontend 100% — CTA visible, modal con todos los campos, localStorage correctamente seteado, redirect a /#/chat funciona, useEffect en BossConsole verificado por code review (idempotente con `agents.length` y `removeItem` antes del fetch). Cero regresión en iteration_17 y iteration_18.
+
+**Flujo completo verificado**: Visitor entra a `/api/demo/audio-room-static/` → navega las 4 pantallas → click CTA → llena modal → submit → registrado con trial 15 oros → redirigido a /#/chat → BossConsole crea sesión con App Builder Pro → mensaje pre-rellenado se envía solo → si tiene saldo suficiente, rich card AppBuilt aparece y app queda en su workspace lista para push a GitHub.
+
+**Limitación conocida (esperada)**: Trial = 15 oros, tool = 40 oros → el visitor debe recargar 25+ oros para terminar el ensamble. El mensaje "saldo insuficiente" del agente lo dirige al tab Recharge. Esto es deseado para evitar farming.
+
+
+
+## Estado anterior: v12.20 — Live Demo público + emoji badges + auto-create GitHub repo (Feb 2026)
 
 ### Iteración 12.20 — Demo público de Audio Room + UX polish (HECHO)
 **🌐 Demo público de Audio Room en `/api/demo/audio-room-static/`**

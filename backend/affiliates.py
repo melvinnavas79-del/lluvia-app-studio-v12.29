@@ -115,7 +115,7 @@ async def register(request: Request, payload: RegisterIn):
     if same_ip_count >= 3:
         raise HTTPException(
             status_code=429,
-            detail="Demasiados registros desde tu red. Esperá 24h o contactanos.",
+            detail="Demasiados registros desde tu red. Espera 24 horas o contáctanos.",
         )
 
     # Cantidad de oros del trial: configurable desde site_content (default 15)

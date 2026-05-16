@@ -697,7 +697,7 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
                 "bytes_written": result.get("bytes_written", 0),
                 "screens": ["Inicio", "Tendencias", "Sala Activa", "Perfil"],
                 "stack": "FastAPI + Socket.IO + SQLite + Vanilla JS",
-                "next_step": "Apreta + → ⬆ Push a GitHub en el composer para subirlo a tu repo. El README tiene los pasos de deploy a Railway/Render.",
+                "next_step": "Aprieta + → ⬆ Push a GitHub en el composer para subirlo a tu repo. El README tiene los pasos de deploy a Railway/Render.",
                 "error": result.get("error"),
                 "refunded_oros": result.get("refunded_oros", 0),
             }

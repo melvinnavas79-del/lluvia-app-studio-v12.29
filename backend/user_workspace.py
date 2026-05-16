@@ -237,7 +237,7 @@ async def do_push(user: dict, app_name: Optional[str] = None,
             "auth_failed": True,
             "error": (
                 f"El token funciona pero NO tiene permisos de escritura sobre "
-                f"{repo}. Verifica que sos owner o que el token tiene scope 'repo'."
+                f"{repo}. Verifica que eres owner o que el token tiene scope 'repo'."
             ),
             "help_url": "https://github.com/settings/tokens/new?scopes=repo",
         }
