@@ -25,6 +25,7 @@ load_dotenv(ROOT_DIR / ".env")
 
 from fastapi import FastAPI, APIRouter, Request, HTTPException
 from fastapi.responses import PlainTextResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -410,6 +411,11 @@ api_router.include_router(gmail_maestro_module.router)
 api_router.include_router(site_content_module.router)
 api_router.include_router(telegram_unified_module.router_link)
 app.include_router(api_router)
+
+# Servir archivos subidos (imagenes de chat). Accesibles via /api/uploads/...
+UPLOADS_DIR = ROOT_DIR / "uploads"
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/api/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
 app.add_middleware(
     CORSMiddleware,

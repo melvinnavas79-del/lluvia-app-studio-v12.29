@@ -5,12 +5,14 @@ CHAT MULTI-AGENTE CON TOOLS Y CREDITOS (v9)
 """
 
 import json
+import os
 import uuid
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from pathlib import Path
+from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
@@ -499,6 +501,15 @@ class SessionCreateIn(BaseModel):
 
 class MessageIn(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
+    image_urls: Optional[List[str]] = None  # Lista de URLs de imagenes adjuntas (max 4)
+
+
+# Constantes para uploads de imagenes
+UPLOAD_DIR = Path(__file__).parent / "uploads" / "chat_images"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+MAX_IMAGE_BYTES = 8 * 1024 * 1024  # 8 MB
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"}
+COST_VISION_IMAGE = 3  # oros adicionales por imagen analizada con GPT-4o vision
 
 
 # ============================================================
@@ -594,6 +605,62 @@ async def delete_session(session_id: str, user: dict = Depends(get_current_user)
     return {"deleted": res.deleted_count}
 
 
+@router.post("/sessions/{session_id}/upload-image")
+async def upload_chat_image(
+    session_id: str,
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    """Sube una imagen para usarla como adjunto en el siguiente mensaje del chat.
+    Devuelve la URL publica (servida bajo /api/uploads/chat_images/...).
+    El cobro de oros por vision se hace al enviar el mensaje, no aqui.
+    """
+    db = _db_ref["db"]
+    sess = await db.chat_sessions.find_one(
+        {"id": session_id, "user_id": user["id"]}, {"_id": 0, "messages": 0}
+    )
+    if not sess:
+        raise HTTPException(status_code=404, detail="Sesion no encontrada")
+
+    ctype = (file.content_type or "").lower()
+    if ctype not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tipo de imagen no soportado ({ctype}). Usa JPG, PNG, GIF o WebP.",
+        )
+
+    # Lectura por chunks para no romper proxies y limitar tamaño
+    raw = bytearray()
+    while True:
+        chunk = await file.read(64 * 1024)
+        if not chunk:
+            break
+        raw.extend(chunk)
+        if len(raw) > MAX_IMAGE_BYTES:
+            raise HTTPException(status_code=413, detail="Imagen demasiado grande (max 8MB)")
+
+    if len(raw) < 16:
+        raise HTTPException(status_code=400, detail="Archivo vacio o invalido")
+
+    ext_map = {
+        "image/jpeg": ".jpg", "image/jpg": ".jpg",
+        "image/png": ".png", "image/gif": ".gif", "image/webp": ".webp",
+    }
+    ext = ext_map.get(ctype, ".bin")
+    fname = f"{user['id']}_{uuid.uuid4().hex}{ext}"
+    fpath = UPLOAD_DIR / fname
+    fpath.write_bytes(bytes(raw))
+
+    # Construir URL publica accesible desde el frontend (servida con prefijo /api/uploads)
+    public_url = f"/api/uploads/chat_images/{fname}"
+    return {
+        "url": public_url,
+        "filename": fname,
+        "size": len(raw),
+        "content_type": ctype,
+    }
+
+
 @router.post("/sessions/{session_id}/messages")
 async def send_message(
     session_id: str,
@@ -633,7 +700,47 @@ async def send_message(
     for m in history:
         if m["role"] in ("user", "assistant") and m.get("content"):
             messages.append({"role": m["role"], "content": m["content"]})
-    messages.append({"role": "user", "content": data.text})
+
+    # Construir el mensaje del usuario: si hay imagenes adjuntas, usar formato multimodal
+    image_urls = (data.image_urls or [])[:4]  # max 4 imagenes por mensaje
+    # Resolver URL relativa a absoluta para que OpenAI pueda descargar la imagen
+    public_base = (os.environ.get("PUBLIC_BASE_URL") or "").rstrip("/")
+    resolved_image_urls: list[str] = []
+    for u in image_urls:
+        if not u:
+            continue
+        if u.startswith("http://") or u.startswith("https://"):
+            resolved_image_urls.append(u)
+        elif u.startswith("/api/uploads/"):
+            if public_base:
+                resolved_image_urls.append(public_base + u)
+            else:
+                # Sin PUBLIC_BASE_URL, OpenAI no puede descargar. Convertir a base64.
+                try:
+                    fname = u.rsplit("/", 1)[-1]
+                    fpath = UPLOAD_DIR / fname
+                    if fpath.exists():
+                        import base64
+                        import mimetypes
+                        mime = mimetypes.guess_type(str(fpath))[0] or "image/jpeg"
+                        b64 = base64.b64encode(fpath.read_bytes()).decode("ascii")
+                        resolved_image_urls.append(f"data:{mime};base64,{b64}")
+                except Exception:
+                    pass
+
+    if resolved_image_urls:
+        content_parts = [{"type": "text", "text": data.text}]
+        for url in resolved_image_urls:
+            content_parts.append({"type": "image_url", "image_url": {"url": url, "detail": "auto"}})
+        messages.append({"role": "user", "content": content_parts})
+        # Cobrar visión adicional (3 oros por imagen)
+        vision_cost = COST_VISION_IMAGE * len(resolved_image_urls)
+        if not await credits_mod.charge(user["id"], vision_cost,
+                                         "vision_image", {"session_id": session_id, "count": len(resolved_image_urls)}):
+            raise HTTPException(status_code=402, detail="Saldo insuficiente para analizar imagenes.")
+    else:
+        messages.append({"role": "user", "content": data.text})
+        vision_cost = 0
 
     is_admin = user.get("role") == "admin"
     agent_tools = agent.get("tools") or []
@@ -708,6 +815,8 @@ async def send_message(
     # 4. Persistir mensajes
     now = datetime.now(timezone.utc).isoformat()
     user_msg = {"id": str(uuid.uuid4()), "role": "user", "content": data.text, "ts": now}
+    if image_urls:
+        user_msg["image_urls"] = image_urls  # guardamos las URLs publicas relativas
     assistant_msg = {
         "id": str(uuid.uuid4()),
         "role": "assistant",
@@ -715,7 +824,7 @@ async def send_message(
         "ts": now,
         "agent_id": agent["id"],
         "tool_calls": tool_calls_made,
-        "cost_oros": agents_catalog.COST_CHAT_MESSAGE + extra_cost,
+        "cost_oros": agents_catalog.COST_CHAT_MESSAGE + extra_cost + vision_cost,
     }
     await db.chat_sessions.update_one(
         {"id": session_id},
@@ -729,6 +838,6 @@ async def send_message(
     return {
         "user_message": user_msg,
         "assistant_message": assistant_msg,
-        "cost_oros": agents_catalog.COST_CHAT_MESSAGE + extra_cost,
+        "cost_oros": agents_catalog.COST_CHAT_MESSAGE + extra_cost + vision_cost,
         "balance": new_balance,
     }

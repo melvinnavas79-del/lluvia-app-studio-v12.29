@@ -16,9 +16,22 @@ export default function BossConsole() {
   const [showShop, setShowShop] = useState(false);
   const [packs, setPacks] = useState({});
   const [packsConfigured, setPacksConfigured] = useState(false);
+  const [attachments, setAttachments] = useState([]); // [{url, name, preview, uploading}]
+  const [dragOver, setDragOver] = useState(false);
   const scrollRef = useRef(null);
   const mediaRef = useRef(null);
   const chunksRef = useRef([]);
+  const fileInputRef = useRef(null);
+  const textareaRef = useRef(null);
+  const backendBase = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/$/, "");
+
+  // Auto-resize del textarea estilo ChatGPT
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
+  }, [input]);
 
   const refreshAll = async () => {
     try {
@@ -62,16 +75,28 @@ export default function BossConsole() {
 
   const send = async (overrideText) => {
     const text = (overrideText ?? input).trim();
-    if (!text || !activeId || sending) return;
+    const readyImages = attachments.filter((a) => a.url && !a.uploading);
+    if ((!text && readyImages.length === 0) || !activeId || sending) return;
     setInput("");
     setSending(true);
     setErr("");
+    const imageUrls = readyImages.map((a) => a.url);
+    setAttachments([]);
     setActiveSession((p) => p ? {
       ...p,
-      messages: [...(p.messages || []), { id: "tmp" + Date.now(), role: "user", content: text, ts: new Date().toISOString() }],
+      messages: [...(p.messages || []), {
+        id: "tmp" + Date.now(),
+        role: "user",
+        content: text,
+        image_urls: imageUrls,
+        ts: new Date().toISOString(),
+      }],
     } : p);
     try {
-      const r = await api.post(`/console/sessions/${activeId}/messages`, { text });
+      const r = await api.post(`/console/sessions/${activeId}/messages`, {
+        text: text || "(imagen)",
+        image_urls: imageUrls.length ? imageUrls : undefined,
+      });
       setBalance(r.data.balance);
       const fresh = await api.get(`/console/sessions/${activeId}`);
       setActiveSession(fresh.data);
@@ -80,6 +105,61 @@ export default function BossConsole() {
     } catch (e) {
       setErr(formatError(e));
     } finally { setSending(false); }
+  };
+
+  // ---- IMAGENES: subir archivo y adjuntar al proximo mensaje
+  const uploadImage = async (file) => {
+    if (!file || !activeId) return;
+    if (!file.type.startsWith("image/")) {
+      setErr("Solo se permiten imagenes (JPG, PNG, GIF, WebP)");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setErr("Imagen demasiado grande (max 8MB)");
+      return;
+    }
+    const previewUrl = URL.createObjectURL(file);
+    const tmpId = "att" + Date.now() + Math.random();
+    setAttachments((prev) => [...prev, { id: tmpId, preview: previewUrl, name: file.name, uploading: true }]);
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const r = await api.post(`/console/sessions/${activeId}/upload-image`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setAttachments((prev) => prev.map((a) =>
+        a.id === tmpId ? { ...a, url: r.data.url, uploading: false } : a
+      ));
+    } catch (e) {
+      setAttachments((prev) => prev.filter((a) => a.id !== tmpId));
+      setErr(formatError(e));
+    }
+  };
+
+  const onFilePick = (e) => {
+    const files = Array.from(e.target.files || []);
+    files.slice(0, 4).forEach(uploadImage);
+    if (e.target) e.target.value = "";
+  };
+
+  const removeAttachment = (id) => {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  };
+
+  const onDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const files = Array.from(e.dataTransfer.files || []).filter((f) => f.type.startsWith("image/"));
+    files.slice(0, 4).forEach(uploadImage);
+  };
+
+  const onPaste = (e) => {
+    const items = Array.from(e.clipboardData?.items || []);
+    const imgs = items.filter((i) => i.type.startsWith("image/")).map((i) => i.getAsFile()).filter(Boolean);
+    if (imgs.length) {
+      e.preventDefault();
+      imgs.slice(0, 4).forEach(uploadImage);
+    }
   };
 
   const delSession = async (id) => {
@@ -249,7 +329,18 @@ export default function BossConsole() {
 
         {err && <div className="alert" data-testid="bc-error">{err}</div>}
 
-        <div className="bc-chat" ref={scrollRef}>
+        <div
+          className={`bc-chat ${dragOver ? "bc-drag-over" : ""}`}
+          ref={scrollRef}
+          onDragOver={(e) => { if (activeSession) { e.preventDefault(); setDragOver(true); } }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={onDrop}
+        >
+          {dragOver && activeSession && (
+            <div className="bc-drop-hint" data-testid="bc-drop-hint">
+              <span>📷 Soltá la imagen para enviarla</span>
+            </div>
+          )}
           {!activeSession && (
             <div className="bc-welcome">
               <h2>Elige tu agente</h2>
@@ -273,7 +364,7 @@ export default function BossConsole() {
           )}
 
           {activeSession?.messages?.map((m) => (
-            <Message key={m.id} msg={m} agent={currentAgent} onPlay={playTts} />
+            <Message key={m.id} msg={m} agent={currentAgent} onPlay={playTts} backendBase={backendBase} />
           ))}
 
           {sending && (
@@ -287,22 +378,77 @@ export default function BossConsole() {
         </div>
 
         {activeSession && (
-          <div className="bc-composer">
-            <button
-              className={`bc-mic-btn ${recording ? "rec" : ""}`}
-              onClick={toggleRecord}
-              data-testid="bc-mic-btn"
-              title="Hablar al agente">
-              {recording ? "⏹" : "🎙"}
-            </button>
-            <textarea value={input} onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }}}
-              placeholder={`Escribele a ${currentAgent?.name}...`}
-              rows={2} data-testid="bc-input" disabled={sending} />
-            <button className="bc-send-btn" onClick={() => send()} disabled={!input.trim() || sending}
-                    data-testid="bc-send-btn">
-              {sending ? "..." : "Enviar"}
-            </button>
+          <div className="bc-composer-wrap">
+            {attachments.length > 0 && (
+              <div className="bc-attachments-row" data-testid="bc-attachments-row">
+                {attachments.map((a) => (
+                  <div key={a.id} className="bc-attachment-chip" data-testid="bc-attachment-chip">
+                    <img src={a.preview} alt={a.name} />
+                    {a.uploading && <div className="bc-attachment-uploading">…</div>}
+                    <button
+                      className="bc-attachment-remove"
+                      onClick={() => removeAttachment(a.id)}
+                      data-testid="bc-attachment-remove"
+                      title="Quitar"
+                    >×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="bc-composer">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+                multiple
+                style={{ display: "none" }}
+                onChange={onFilePick}
+                data-testid="bc-file-input"
+              />
+              <button
+                className="bc-attach-btn"
+                onClick={() => fileInputRef.current?.click()}
+                data-testid="bc-attach-btn"
+                title="Adjuntar imagen"
+                disabled={sending}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                </svg>
+              </button>
+              <button
+                className={`bc-mic-btn ${recording ? "rec" : ""}`}
+                onClick={toggleRecord}
+                data-testid="bc-mic-btn"
+                title="Hablar al agente">
+                {recording ? "⏹" : "🎙"}
+              </button>
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onPaste={onPaste}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }}}
+                placeholder={`Escribile a ${currentAgent?.name}...`}
+                rows={1}
+                data-testid="bc-input"
+                disabled={sending} />
+              <button
+                className="bc-send-btn"
+                onClick={() => send()}
+                disabled={(!input.trim() && attachments.filter(a => a.url).length === 0) || sending || attachments.some(a => a.uploading)}
+                data-testid="bc-send-btn">
+                {sending ? "..." : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M5 12l14-7-4 14-3-5-7-2z"/>
+                  </svg>
+                )}
+              </button>
+            </div>
+            <div className="bc-composer-hint">
+              GPT-4o vision · 3 oros por imagen · arrastrá o pegá fotos
+            </div>
           </div>
         )}
       </main>
@@ -358,8 +504,14 @@ export default function BossConsole() {
   );
 }
 
-function Message({ msg, agent, onPlay }) {
+function Message({ msg, agent, onPlay, backendBase }) {
   const isUser = msg.role === "user";
+  const imageUrls = msg.image_urls || [];
+  const absUrl = (u) => {
+    if (!u) return u;
+    if (u.startsWith("http") || u.startsWith("blob:") || u.startsWith("data:")) return u;
+    return (backendBase || "") + u;
+  };
   // Extraer rich cards desde tool_calls (paypal_invoice_card / service_card / push_to_my_github)
   const cards = (msg.tool_calls || []).map((tc) => {
     if (!["paypal_invoice_card", "service_card", "push_to_my_github"].includes(tc.name)) return null;
@@ -387,6 +539,15 @@ function Message({ msg, agent, onPlay }) {
                 <span className="bc-tool-name">⚙ {tc.name}</span>
                 <span className="bc-tool-args">{JSON.stringify(tc.args).slice(0, 80)}</span>
               </div>
+            ))}
+          </div>
+        )}
+        {imageUrls.length > 0 && (
+          <div className={`bc-msg-images ${imageUrls.length > 1 ? "multi" : ""}`} data-testid="bc-msg-images">
+            {imageUrls.map((u, i) => (
+              <a key={i} href={absUrl(u)} target="_blank" rel="noreferrer" className="bc-msg-image-link">
+                <img src={absUrl(u)} alt={`adjunto ${i+1}`} className="bc-msg-image" loading="lazy" />
+              </a>
             ))}
           </div>
         )}
