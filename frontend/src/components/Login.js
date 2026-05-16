@@ -118,8 +118,8 @@ export default function Login({ mode = "login", onBack }) {
           data-testid="login-toggle-mode"
         >
           {isRegister
-            ? "¿Ya tenés cuenta? Iniciá sesión"
-            : "¿Sos nuevo? Crear cuenta (50 oros)"}
+            ? "¿Ya tienes cuenta? Inicia sesión"
+            : "¿Eres nuevo? Crear cuenta (50 oros)"}
         </button>
 
         {branding?.support_email && (

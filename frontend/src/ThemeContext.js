@@ -44,18 +44,34 @@ export function ThemeProvider({ children }) {
     try { return localStorage.getItem(STORAGE_KEY) || "light"; }
     catch { return "light"; }
   });
+  const [userOverride, setUserOverride] = useState(() => {
+    try { return localStorage.getItem(STORAGE_KEY) !== null; }
+    catch { return false; }
+  });
 
   useEffect(() => {
     apply(mode);
-    try { localStorage.setItem(STORAGE_KEY, mode); } catch {}
-  }, [mode]);
+    if (userOverride) {
+      try { localStorage.setItem(STORAGE_KEY, mode); } catch {}
+    }
+  }, [mode, userOverride]);
 
   const toggle = useCallback(() => {
     setMode((m) => (m === "dark" ? "light" : "dark"));
+    setUserOverride(true);
   }, []);
 
+  /* applyDefault: usado por BrandingContext para que admin elija tema por defecto.
+     Solo aplica si el usuario aún no toggleó manualmente (sin entry en localStorage). */
+  const applyDefault = useCallback((defaultMode) => {
+    if (userOverride) return;
+    if (defaultMode === "light" || defaultMode === "dark") {
+      setMode(defaultMode);
+    }
+  }, [userOverride]);
+
   return (
-    <ThemeCtx.Provider value={{ mode, toggle, setMode }}>
+    <ThemeCtx.Provider value={{ mode, toggle, setMode, applyDefault }}>
       {children}
     </ThemeCtx.Provider>
   );

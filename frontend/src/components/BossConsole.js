@@ -202,7 +202,7 @@ export default function BossConsole() {
                   <div className="bc-header-tag">{currentAgent.tagline}</div>
                 </div>
               </>
-            ) : <div className="bc-header-tag">Elegí un agente para empezar</div>}
+            ) : <div className="bc-header-tag">Elige un agente para empezar</div>}
           </div>
           <div className="bc-header-right">
             <button className="bc-shop-btn" onClick={() => setShowShop(true)} data-testid="bc-shop-btn">
@@ -221,7 +221,7 @@ export default function BossConsole() {
         <div className="bc-chat" ref={scrollRef}>
           {!activeSession && (
             <div className="bc-welcome">
-              <h2>Elegí tu agente</h2>
+              <h2>Elige tu agente</h2>
               <p>{agents.length} agentes con herramientas reales · voz · cobros · agendamiento</p>
               <div className="bc-agent-grid">
                 {agents.map((a) => (
@@ -280,7 +280,7 @@ export default function BossConsole() {
       {showPicker && (
         <div className="bc-modal-overlay" onClick={() => setShowPicker(false)}>
           <div className="bc-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Elegí un agente</h3>
+            <h3>Elige un agente</h3>
             <div className="bc-agent-grid">
               {agents.map((a) => (
                 <button key={a.id} className="bc-agent-card"

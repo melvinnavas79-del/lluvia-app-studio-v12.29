@@ -101,10 +101,10 @@ function RechargeTab({ onTopup }) {
 
   return (
     <div className="recharge-tab" data-testid="recharge-tab">
-      <h2>Recargá tu cuenta</h2>
+      <h2>Recarga tu cuenta</h2>
       <p className="hero-sub">
-        Los oros se descuentan por cada mensaje, voz o acción que pedís a los agentes.
-        Sin caducidad, sin suscripción. Pagás solo cuando los necesitás.
+        Los oros se descuentan por cada mensaje, voz o acción que pides a los agentes.
+        Sin caducidad, sin suscripción. Pagas solo cuando los necesitas.
       </p>
       {activePromo && (
         <div className="promo-banner" data-testid="active-promo">

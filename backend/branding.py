@@ -31,11 +31,12 @@ def _db():
 
 DEFAULT_BRANDING = {
     "product_name": "Lluvia App Studio",
-    "tagline": "Agentes inteligentes que trabajan por vos 24/7.",
+    "tagline": "Agentes inteligentes que trabajan por ti 24/7.",
     "primary_color": "#0f172a",      # charcoal navy premium
     "accent_color": "#2563eb",       # azul corporativo
     "background_color": "#fdfbf7",   # warm off-white premium
     "text_color": "#111827",         # texto charcoal
+    "default_theme": "light",        # tema por defecto (light | dark)
     "logo_data_url": "",
     "company_name": "Lluvia App Studio",
     "support_email": "melvinnavas79@gmail.com",
@@ -49,6 +50,7 @@ class BrandingIn(BaseModel):
     accent_color: Optional[str] = Field(default=None, max_length=20)
     background_color: Optional[str] = Field(default=None, max_length=20)
     text_color: Optional[str] = Field(default=None, max_length=20)
+    default_theme: Optional[str] = Field(default=None, max_length=10)
     logo_data_url: Optional[str] = Field(default=None, max_length=2_000_000)  # ~1.5MB base64
     company_name: Optional[str] = Field(default=None, max_length=120)
     support_email: Optional[str] = Field(default=None, max_length=120)
@@ -61,6 +63,15 @@ class BrandingIn(BaseModel):
         if not HEX_RE.match(v):
             raise ValueError("Color invalido. Usa formato #RRGGBB (6 dig hex)")
         return v.lower()
+
+    @field_validator("default_theme")
+    @classmethod
+    def validate_theme(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":
+            return v
+        if v not in ("light", "dark"):
+            raise ValueError("default_theme debe ser 'light' o 'dark'")
+        return v
 
 
 async def _get_branding_doc() -> dict:

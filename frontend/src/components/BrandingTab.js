@@ -106,6 +106,38 @@ export default function BrandingTab() {
             <ColorField label="Texto" value={form.text_color} onChange={(v) => change("text_color", v)} testid="color-text" />
           </div>
 
+          <div className="field" style={{ marginTop: "1rem" }}>
+            <label>Tema por defecto al abrir la app</label>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              {["light", "dark"].map((t) => {
+                const active = (form.default_theme || "light") === t;
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => change("default_theme", t)}
+                    data-testid={`theme-default-${t}`}
+                    style={{
+                      flex: 1, padding: "0.7rem 1rem",
+                      background: active ? "var(--brand-primary)" : "var(--surface)",
+                      color: active ? "#fff" : "var(--text-primary)",
+                      border: `1px solid ${active ? "var(--brand-primary)" : "var(--border-strong)"}`,
+                      borderRadius: "var(--r-md)",
+                      cursor: "pointer", fontWeight: 600,
+                      textTransform: "capitalize",
+                      transition: "all .15s",
+                    }}
+                  >
+                    {t === "light" ? "☀ Claro Premium" : "🌙 Oscuro Premium"}
+                  </button>
+                );
+              })}
+            </div>
+            <small style={{ color: "var(--text-muted)", marginTop: "0.4rem", display: "block" }}>
+              Define qué tema verán los visitantes la primera vez. Si toggle-an manualmente, se respeta su elección.
+            </small>
+          </div>
+
           <div className="form-row">
             <div className="field">
               <label>Empresa (opcional)</label>

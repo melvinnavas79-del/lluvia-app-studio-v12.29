@@ -1,15 +1,17 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { api } from "./api";
+import { useTheme } from "./ThemeContext";
 
 const BrandingCtx = createContext(null);
 
 const FALLBACK = {
   product_name: "Lluvia App Studio",
-  tagline: "Agentes inteligentes que trabajan por vos 24/7.",
+  tagline: "Agentes inteligentes que trabajan por ti 24/7.",
   primary_color: "#0F172A",
   accent_color: "#2563EB",
   background_color: "#FDFBF7",
   text_color: "#111827",
+  default_theme: "light",
   logo_data_url: "",
   company_name: "",
   support_email: "",
@@ -25,23 +27,35 @@ function applyTheme(b) {
 
 export function BrandingProvider({ children }) {
   const [branding, setBranding] = useState(FALLBACK);
+  const themeCtx = useTheme();
 
   const refresh = useCallback(async () => {
     try {
       const { data } = await api.get("/branding");
       setBranding(data);
       applyTheme(data);
+      if (data.default_theme && themeCtx?.applyDefault) {
+        themeCtx.applyDefault(data.default_theme);
+      }
     } catch {
       applyTheme(FALLBACK);
     }
-  }, []);
+  }, [themeCtx]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
 
   return (
-    <BrandingCtx.Provider value={{ branding, refresh, setBranding: (b) => { setBranding(b); applyTheme(b); } }}>
+    <BrandingCtx.Provider value={{
+      branding,
+      refresh,
+      setBranding: (b) => {
+        setBranding(b);
+        applyTheme(b);
+        if (b?.default_theme && themeCtx?.applyDefault) themeCtx.applyDefault(b.default_theme);
+      },
+    }}>
       {children}
     </BrandingCtx.Provider>
   );

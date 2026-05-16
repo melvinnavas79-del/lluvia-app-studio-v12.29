@@ -58,16 +58,16 @@ export default function PublicChat({ onLoginClick, onRegisterClick }) {
       </header>
 
       <section className="landing-hero">
-        <span className="hero-tag">★ Apps multimedia + Agentes IA · Lanzá en minutos</span>
-        <h1>
-          Creá Aplicaciones Profesionales y <span>Agentes de IA que trabajan por vos 24/7</span>
-        </h1>
-        <p className="landing-sub">
-          Lanzá plataformas completas con interfaces avanzadas al estilo de TikTok, Kwai o
-          sistemas de radio en vivo, mientras configurás agentes de IA especializados para
-          automatizar peluquerías, tiendas o soporte por WhatsApp. Todo programado,
-          desplegado y gestionado por IA sin tocar una sola línea de código.
-        </p>
+          <span className="hero-tag">★ Apps multimedia + Agentes IA · Lanza en minutos</span>
+          <h1>
+            Crea Aplicaciones Profesionales y <span>Agentes de IA que trabajan por ti 24/7</span>
+          </h1>
+          <p className="landing-sub">
+            Lanza plataformas completas con interfaces avanzadas al estilo de TikTok, Kwai o
+            sistemas de radio en vivo, mientras configuras agentes de IA especializados para
+            automatizar peluquerías, tiendas o soporte por WhatsApp. Todo programado,
+            desplegado y gestionado por IA sin tocar una sola línea de código.
+          </p>
         <div className="landing-cta">
           <button
             className="cta-primary"
@@ -104,7 +104,7 @@ export default function PublicChat({ onLoginClick, onRegisterClick }) {
         <h2>Tres motores en una sola plataforma</h2>
         <p className="landing-pillars-sub">
           Construimos los tres tipos de productos digitales más rentables del mercado actual.
-          Vos elegís cuál lanzar — la IA lo construye y lo opera.
+          Tú eliges cuál lanzar — la IA lo construye y lo opera.
         </p>
         <div className="pillars-grid">
           <article className="pillar-card pillar-1" data-testid="pillar-apps-multimedia">
@@ -132,7 +132,7 @@ export default function PublicChat({ onLoginClick, onRegisterClick }) {
             <span className="pillar-tag">02 · Negocios</span>
             <h3>Agentes personalizados para negocios</h3>
             <p>
-              Cloná empleados virtuales inteligentes entrenados para cualquier nicho:
+              Clona empleados virtuales inteligentes entrenados para cualquier nicho:
               agendar citas en peluquerías, cerrar ventas, dar soporte y automatizar
               tu WhatsApp.
             </p>
@@ -169,7 +169,7 @@ export default function PublicChat({ onLoginClick, onRegisterClick }) {
           <div className="feature-card">
             <div className="feature-icon"><Sparkles size={20} /></div>
             <h3>Arquitecto de agentes</h3>
-            <p>Pedile a la IA un agente para tu rubro y lo crea con personalidad, voz y tools.</p>
+            <p>Pídele a la IA un agente para tu rubro y lo crea con personalidad, voz y tools.</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon"><Calendar size={20} /></div>
@@ -189,7 +189,7 @@ export default function PublicChat({ onLoginClick, onRegisterClick }) {
           <div className="feature-card">
             <div className="feature-icon"><Github size={20} /></div>
             <h3>Push a tu GitHub</h3>
-            <p>Empujá todo el código generado a TU repositorio. Tu trabajo, tu propiedad.</p>
+            <p>Empuja todo el código generado a TU repositorio. Tu trabajo, tu propiedad.</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon"><Smartphone size={20} /></div>
@@ -216,7 +216,7 @@ export default function PublicChat({ onLoginClick, onRegisterClick }) {
 
       <section className="landing-cta-final">
         <h2>¿Listo para construir tu próxima plataforma?</h2>
-        <p>50 oros gratis te alcanzan para ~50 mensajes de prueba. Cuando los consumas, recargás lo que necesites.</p>
+        <p>50 oros gratis te alcanzan para ~50 mensajes de prueba. Cuando los consumas, recargas lo que necesites.</p>
         <button
           className="cta-primary"
           onClick={onRegisterClick}
