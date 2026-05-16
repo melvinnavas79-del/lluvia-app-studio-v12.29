@@ -5,7 +5,26 @@
 - Producción: https://lluvia-app-studio.lluvia-live.com (Emergent Native Deploy)
 - Telegram: https://t.me/LluviaAppStudioBot
 
-## Estado actual: v12.17 — Migración total a OpenAI directo (sin Universal Key) (Feb 2026)
+## Estado actual: v12.18 — Pre-validación GitHub + refund push + UI admin clara (Feb 2026)
+
+### Iteración 12.18 — Fix de raíz del push fallido (HECHO)
+**🐛 Causa raíz del frustrante "-51 oros y push falla"**
+- `do_push` invocaba `git push` con el token **sin validar primero**. Si GitHub rechazaba el token, el error técnico ("Invalid username or token") se mostraba en crudo al usuario.
+- El cobro de oros se contabilizaba aunque el push fallara, sin refund.
+- Para admin, se mostraba `cost_oros=51` aunque el `credits.charge` retorna sin descontar (admin_free), lo que confundía al usuario haciéndole creer que perdió oros.
+
+**🛡 Fixes aplicados (todos testeados 7/7 backend + E2E frontend)**:
+1. **Pre-validación GitHub via API REST** (`user_workspace._validate_github_token`): consulta `api.github.com/user` con el token antes de gastar git. Si rechazado → mensaje claro en español con link a tokens/new.
+2. **Nuevo endpoint** `POST /api/me/github/validate` que el usuario puede llamar para probar SIN cobrar.
+3. **Botón "Probar mi token de GitHub"** en SettingsTab (data-testid='github-validate-btn') que muestra ✅/❌ con mensaje claro.
+4. **Errores de git traducidos al español**: "Invalid username or token" → mensaje paso-a-paso con link.
+5. **Refund automático** en console.py cuando push falla (8 oros) para no-admins.
+6. **Admin UI**: separación `cost_oros` (real, 0 para admin) vs `nominal_cost_oros` (display). Frontend muestra "👑 Gratis (admin · sería X oros)" en verde para admin.
+7. **Seguridad**: token enmascarado en los logs `steps` que se persisten en mongo (no más leakage).
+
+**Verificado**: el token actual del admin está rechazado por GitHub. Al hacer click en "Probar mi token" devuelve el mensaje correcto. Ningún oro se descuenta del balance real del admin.
+
+
 
 ### Iteración 12.17 — API key del admin para TODO + composer Emergent (HECHO)
 **🔑 Cero dependencia de Universal Key Emergent**

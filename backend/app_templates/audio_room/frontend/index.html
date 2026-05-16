@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <title>{{APP_NAME}} · Salas de Audio en Vivo</title>
+  <meta name="theme-color" content="{{BRAND_COLOR}}"/>
+  <link rel="stylesheet" href="css/styles.css"/>
+</head>
+<body>
+  <nav class="bottom-nav">
+    <a href="#/" data-route="/" class="nav-item"><span class="ico">🏠</span><span>Inicio</span></a>
+    <a href="#/trending" data-route="/trending" class="nav-item"><span class="ico">🔥</span><span>Tendencias</span></a>
+    <a href="#/create" data-route="/create" class="nav-item fab"><span class="ico">+</span></a>
+    <a href="#/rooms" data-route="/rooms" class="nav-item"><span class="ico">🎙</span><span>Salas</span></a>
+    <a href="#/profile" data-route="/profile" class="nav-item"><span class="ico">👤</span><span>Perfil</span></a>
+  </nav>
+  <main id="app-view"></main>
+  <div id="toast"></div>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/webrtc.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

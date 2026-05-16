@@ -260,6 +260,11 @@ async def do_push(user: dict, app_name: Optional[str] = None,
 
     commit_msg = commit_message or f"backup {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}"
     remote_url = f"https://x-access-token:{token}@github.com/{repo}.git"
+    # Mascara para nunca loggear el token en los steps que se persisten en mongo
+    def _mask(s: str) -> str:
+        if not s:
+            return s
+        return s.replace(token, "***").replace(remote_url, f"https://x-access-token:***@github.com/{repo}.git")
 
     def _run(cmd: list[str]) -> tuple[int, str]:
         try:
@@ -279,17 +284,17 @@ async def do_push(user: dict, app_name: Optional[str] = None,
     rc, out = _run(["git", "remote", "set-url", "origin", remote_url])
     if rc != 0:
         rc, out = _run(["git", "remote", "add", "origin", remote_url])
-    steps.append({"step": "remote", "rc": rc, "out": out[-200:]})
+    steps.append({"step": "remote", "rc": rc, "out": _mask(out)[-200:]})
 
     rc, out = _run(["git", "add", "-A"])
-    steps.append({"step": "add", "rc": rc, "out": out[-200:]})
+    steps.append({"step": "add", "rc": rc, "out": _mask(out)[-200:]})
 
     rc, out = _run(["git", "commit", "-m", commit_msg])
-    steps.append({"step": "commit", "rc": rc, "out": out[-200:]})
+    steps.append({"step": "commit", "rc": rc, "out": _mask(out)[-200:]})
 
     _run(["git", "branch", "-M", branch])
     rc, out = _run(["git", "push", "-u", "origin", branch, "--force"])
-    steps.append({"step": "push", "rc": rc, "out": out[-300:]})
+    steps.append({"step": "push", "rc": rc, "out": _mask(out)[-300:]})
 
     success = steps[-1]["rc"] == 0
     repo_url = f"https://github.com/{repo}"
