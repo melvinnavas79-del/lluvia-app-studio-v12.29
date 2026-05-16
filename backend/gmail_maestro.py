@@ -144,13 +144,27 @@ async def _classify_and_draft(subject: str, from_addr: str, body: str) -> dict:
         "Lluvia App Studio · soporte@lluvia-app-studio.com'.\n\n"
         "Categorias posibles:\n"
         "- lead-caliente: prospecto interesado en comprar, pide demo, precios.\n"
-        "- soporte: cliente existente con duda tecnica o de uso.\n"
+        "- soporte: CLIENTE EXISTENTE con duda tecnica o de uso REAL (no automatica).\n"
         "- comercial: oferta de proveedor, colaboracion, partnership.\n"
         "- spam: irrelevante, scam, masivo.\n"
         "- personal: correos personales no relacionados al negocio.\n\n"
+        "REGLAS IMPORTANTES (no las violes):\n"
+        "1. Toda notificacion AUTOMATICA de redes sociales (Facebook, Instagram, "
+        "TikTok, LinkedIn, Twitter, YouTube), de plataformas (Google, Microsoft, "
+        "Apple, Amazon, GitHub), de newsletters, de marketing masivo, de "
+        "confirmaciones automaticas de login, de 'tienes X notificaciones', de "
+        "ofertas de productos, o cualquier email cuyo remitente termine en "
+        "'@facebookmail.com', '@accounts.google.com', '@noreply', '@no-reply', "
+        "'@mail.instagram.com', '@em.tiktok.com', '@notifications.', '@notify.', "
+        "'@info.', '@newsletter.', '@marketing.': SIEMPRE category='spam', "
+        "reply_draft='', confidence>=0.9. NO clasificar como 'soporte'.\n"
+        "2. 'Soporte' es SOLO cuando un humano real escribe pidiendo ayuda con "
+        "Lluvia App Studio o un cliente nuestro escribe con una duda especifica.\n"
+        "3. Si dudas entre soporte y spam, elige spam (es mas seguro no crear "
+        "drafts innecesarios).\n\n"
         "Devuelve SOLO JSON valido: "
         '{"category": "...", "confidence": 0.0-1.0, "reply_draft": "...", "reasoning": "..."}.\n'
-        'Para spam o personal, reply_draft puede ser cadena vacia "".'
+        'Para spam o personal, reply_draft DEBE ser cadena vacia "".'
     )
     user_prompt = (
         f"De: {from_addr}\nAsunto: {subject}\n\nCuerpo:\n{body_short}"
