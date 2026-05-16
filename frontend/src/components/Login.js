@@ -21,8 +21,7 @@ export default function Login({ mode = "login", onBack }) {
       if (isRegister) {
         const data = await register(email.trim(), password, name.trim() || null);
         if (data?.trial_oros) {
-          // bienvenida con oros de trial
-          alert(`Bienvenido! Te regalamos ${data.trial_oros} oros de trial para que pruebes la plataforma.`);
+          alert(`¡Bienvenido! Te regalamos ${data.trial_oros} oros de trial para que pruebes la plataforma.`);
         }
       } else {
         await login(email.trim(), password);
@@ -34,7 +33,7 @@ export default function Login({ mode = "login", onBack }) {
     }
   };
 
-  const productName = branding?.product_name || "Bot Multiplataforma";
+  const productName = branding?.product_name || "Lluvia App Studio";
   const tagline = branding?.tagline || "";
 
   return (
@@ -48,11 +47,18 @@ export default function Login({ mode = "login", onBack }) {
           )}
           <span data-testid="brand-product-name">{productName.toUpperCase()}</span>
         </div>
-        <h2>{isRegister ? "Crear cuenta gratis" : "Acceso al Panel"}</h2>
+
+        {isRegister && (
+          <span className="trial-badge" data-testid="trial-badge">
+            🎁 50 oros de regalo
+          </span>
+        )}
+
+        <h2>{isRegister ? "Crea tu cuenta" : "Bienvenido de vuelta"}</h2>
         <p className="login-sub">
           {isRegister
-            ? "Te regalamos 50 oros de trial para que pruebes la plataforma sin compromiso."
-            : (tagline || "Ingresa con tu email y password.")}
+            ? "Te regalamos 50 oros de trial. Sin tarjeta, sin compromiso."
+            : (tagline || "Ingresa con tu email y contraseña.")}
         </p>
 
         {isRegister && (
@@ -80,12 +86,12 @@ export default function Login({ mode = "login", onBack }) {
           autoComplete="email"
         />
 
-        <label>Password</label>
+        <label>Contraseña</label>
         <input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder={isRegister ? "Minimo 6 caracteres" : "••••••••"}
+          placeholder={isRegister ? "Mínimo 6 caracteres" : "••••••••"}
           required
           minLength={isRegister ? 6 : 1}
           data-testid="login-password"
@@ -107,22 +113,17 @@ export default function Login({ mode = "login", onBack }) {
 
         <button
           type="button"
-          className="login-toggle"
+          className="login-btn login-toggle"
           onClick={() => { setIsRegister(!isRegister); setErr(""); }}
           data-testid="login-toggle-mode"
-          style={{
-            marginTop: "1rem", background: "transparent", border: "none",
-            color: "#5fb4ff", fontSize: "0.85rem", cursor: "pointer", width: "100%",
-            textDecoration: "underline",
-          }}
         >
           {isRegister
-            ? "Ya tengo cuenta → Entrar"
-            : "Soy nuevo → Crear cuenta gratis (50 oros)"}
+            ? "¿Ya tenés cuenta? Iniciá sesión"
+            : "¿Sos nuevo? Crear cuenta (50 oros)"}
         </button>
 
         {branding?.support_email && (
-          <p style={{ marginTop: "1.25rem", fontSize: "0.75rem", color: "#6c7280", textAlign: "center" }}>
+          <p style={{ marginTop: "1.25rem", fontSize: "0.78rem", color: "var(--text-muted)", textAlign: "center" }}>
             Soporte: {branding.support_email}
           </p>
         )}
@@ -133,8 +134,9 @@ export default function Login({ mode = "login", onBack }) {
             onClick={onBack}
             data-testid="login-back-public"
             style={{
-              marginTop: "0.5rem", background: "transparent", border: "none",
-              color: "#9ca3af", fontSize: "0.8rem", cursor: "pointer", width: "100%",
+              marginTop: "0.4rem", background: "transparent", border: "none",
+              color: "var(--text-muted)", fontSize: "0.82rem", cursor: "pointer", width: "100%",
+              padding: "0.5rem",
             }}
           >
             ← Volver al inicio

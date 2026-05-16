@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { api, formatError } from "../api";
+import AgentAvatar from "./AgentAvatar";
 
 export default function BossConsole() {
   const [agents, setAgents] = useState([]);
@@ -173,9 +174,11 @@ export default function BossConsole() {
             return (
               <div key={s.id} className={`bc-thread ${activeId === s.id ? "active" : ""}`}
                    onClick={() => setActiveId(s.id)} data-testid={`bc-thread-${s.id}`}>
-                <div className="bc-thread-emoji" style={{ background: ag?.color || "#333" }}>
-                  {ag?.emoji || "💬"}
-                </div>
+                {ag ? (
+                  <AgentAvatar agent={ag} size={40} rounded="rounded" />
+                ) : (
+                  <div style={{ width: 40, height: 40, borderRadius: 12, background: "var(--surface-warm)" }} />
+                )}
                 <div className="bc-thread-meta">
                   <div className="bc-thread-title">{s.title}</div>
                   <div className="bc-thread-preview">{s.last_message_preview || "Sin mensajes"}</div>
@@ -193,15 +196,13 @@ export default function BossConsole() {
           <div className="bc-header-left">
             {currentAgent ? (
               <>
-                <span className="bc-header-emoji" style={{ background: currentAgent.color }}>
-                  {currentAgent.emoji}
-                </span>
+                <AgentAvatar agent={currentAgent} size={44} rounded="rounded" />
                 <div>
                   <div className="bc-header-name">{currentAgent.name}</div>
                   <div className="bc-header-tag">{currentAgent.tagline}</div>
                 </div>
               </>
-            ) : <div className="bc-header-tag">Elige un agente para empezar</div>}
+            ) : <div className="bc-header-tag">Elegí un agente para empezar</div>}
           </div>
           <div className="bc-header-right">
             <button className="bc-shop-btn" onClick={() => setShowShop(true)} data-testid="bc-shop-btn">
@@ -220,13 +221,13 @@ export default function BossConsole() {
         <div className="bc-chat" ref={scrollRef}>
           {!activeSession && (
             <div className="bc-welcome">
-              <h2>Boss Console v9</h2>
-              <p>{agents.length} agentes · tools reales · voz · oros</p>
+              <h2>Elegí tu agente</h2>
+              <p>{agents.length} agentes con herramientas reales · voz · cobros · agendamiento</p>
               <div className="bc-agent-grid">
                 {agents.map((a) => (
-                  <button key={a.id} className="bc-agent-card" style={{ borderColor: a.color }}
+                  <button key={a.id} className="bc-agent-card"
                           onClick={() => createSession(a.id)} data-testid={`bc-agent-card-${a.id}`}>
-                    <div className="bc-agent-emoji" style={{ background: a.color }}>{a.emoji}</div>
+                    <AgentAvatar agent={a} size={48} rounded="rounded" />
                     <div className="bc-agent-name">{a.name}</div>
                     <div className="bc-agent-tag">{a.tagline}</div>
                     <div className="bc-agent-foot">
@@ -246,9 +247,7 @@ export default function BossConsole() {
 
           {sending && (
             <div className="bc-msg bc-msg-assistant">
-              <div className="bc-msg-avatar" style={{ background: currentAgent?.color }}>
-                {currentAgent?.emoji}
-              </div>
+              {currentAgent && <AgentAvatar agent={currentAgent} size={36} rounded="circle" />}
               <div className="bc-msg-body">
                 <div className="bc-typing-dots"><span/><span/><span/></div>
               </div>
@@ -281,12 +280,12 @@ export default function BossConsole() {
       {showPicker && (
         <div className="bc-modal-overlay" onClick={() => setShowPicker(false)}>
           <div className="bc-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Elige un agente</h3>
+            <h3>Elegí un agente</h3>
             <div className="bc-agent-grid">
               {agents.map((a) => (
-                <button key={a.id} className="bc-agent-card" style={{ borderColor: a.color }}
+                <button key={a.id} className="bc-agent-card"
                         onClick={() => createSession(a.id)}>
-                  <div className="bc-agent-emoji" style={{ background: a.color }}>{a.emoji}</div>
+                  <AgentAvatar agent={a} size={44} rounded="rounded" />
                   <div className="bc-agent-name">{a.name}</div>
                   <div className="bc-agent-tag">{a.tagline}</div>
                 </button>
@@ -340,15 +339,15 @@ function Message({ msg, agent, onPlay }) {
     return null;
   }).filter(Boolean);
 
-  // Avatar: usa color del agente como circulo con iniciales (estilo Enterprise)
-  const avatarInitial = isUser ? "TU" : (agent?.name || "AI").slice(0, 2).toUpperCase();
-  const avatarBg = isUser ? "linear-gradient(135deg,#2a2a3a,#1a1a2a)" : (agent?.color || "#5fb4ff");
-
   return (
     <div className={`bc-msg ${isUser ? "bc-msg-user" : "bc-msg-assistant"}`} data-testid={`bc-msg-${msg.role}`}>
-      <div className="bc-msg-avatar bc-avatar-circle" style={{ background: avatarBg }}>
-        {avatarInitial}
-      </div>
+      {isUser ? (
+        <div className="bc-msg-avatar" data-testid="msg-user-avatar">TU</div>
+      ) : (
+        agent
+          ? <AgentAvatar agent={agent} size={36} rounded="circle" />
+          : <div className="bc-msg-avatar">AI</div>
+      )}
       <div className="bc-msg-body">
         {msg.tool_calls?.length > 0 && (
           <div className="bc-tool-trace">

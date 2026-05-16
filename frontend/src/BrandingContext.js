@@ -4,12 +4,12 @@ import { api } from "./api";
 const BrandingCtx = createContext(null);
 
 const FALLBACK = {
-  product_name: "Bot Multiplataforma",
-  tagline: "Un bot que entiende, ejecuta y vende.",
-  primary_color: "#f5d76e",
-  accent_color: "#5fdbc4",
-  background_color: "#08090d",
-  text_color: "#e7e9ee",
+  product_name: "Lluvia App Studio",
+  tagline: "Agentes inteligentes que trabajan por vos 24/7.",
+  primary_color: "#0F172A",
+  accent_color: "#2563EB",
+  background_color: "#FDFBF7",
+  text_color: "#111827",
   logo_data_url: "",
   company_name: "",
   support_email: "",

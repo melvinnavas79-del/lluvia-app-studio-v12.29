@@ -31,11 +31,11 @@ def _db():
 
 DEFAULT_BRANDING = {
     "product_name": "Lluvia App Studio",
-    "tagline": "Soluciones inteligentes que llueven sobre tu negocio.",
-    "primary_color": "#5fb4ff",      # azul lluvia
-    "accent_color": "#5fdbc4",       # turquesa
-    "background_color": "#0a1220",   # noche-azul profundo
-    "text_color": "#e7eef8",
+    "tagline": "Agentes inteligentes que trabajan por vos 24/7.",
+    "primary_color": "#0f172a",      # charcoal navy premium
+    "accent_color": "#2563eb",       # azul corporativo
+    "background_color": "#fdfbf7",   # warm off-white premium
+    "text_color": "#111827",         # texto charcoal
     "logo_data_url": "",
     "company_name": "Lluvia App Studio",
     "support_email": "melvinnavas79@gmail.com",

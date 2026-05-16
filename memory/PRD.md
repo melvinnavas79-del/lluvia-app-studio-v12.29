@@ -1,51 +1,61 @@
-# PRD - Lluvia App Studio Bot
+# PRD — Lluvia App Studio
 
 ## URLs operativas
-- Panel: https://ai-bot-cost-calc.preview.emergentagent.com
+- Preview: https://ai-bot-cost-calc.preview.emergentagent.com
+- Producción: https://lluvia-app-studio.lluvia-live.com (Emergent Native Deploy)
 - Telegram: https://t.me/LluviaAppStudioBot
-- Tarball v10: `/api/download/lluvia-deploy` → `lluvia-deploy.tar.gz`
 
-## Estado actual: v11 ENTREGADO (Feb 2026) · 26/26 tests passed
+## Estado actual: v12 — UI/UX Premium Rediseño (Feb 2026)
 
-### Iteración 11 - Modulos nuevos
+### Iteración 12 — Rediseño Premium "Emergent-style" (HECHO)
+Pivot visual completo de aspecto "developer console oscuro" a **enterprise SaaS premium**.
 
-**Backend**
-- `super_admin.py` — `/api/super/{overview, sessions/all, sessions/{id}, sessions/{id}/takeover, users, github/push, github/history}`. Admin-only (futuro flag `is_super_admin`). Bypass de oros heredado del role admin.
-- `appointments.py` — CRUD `/api/appointments` + 4 tool handlers (book, check_availability, list, cancel). Validacion fechas, formato, solapamiento.
-- `console.py` extendido con 6 tools: `book_appointment`, `check_availability`, `list_appointments`, `cancel_appointment`, `paypal_invoice_card` (genera orden PayPal LIVE real), `service_card`. Inyecta `_agent_id` desde sesion.
-- `agents_catalog.py` — Prompt del Arquitecto reforzado: agentes de rubros con citas/cobros llevan automaticamente las tools de appointments + paypal.
-- Fix `create_session` ahora soporta custom agents via `_get_agent_any`.
+**Nuevo sistema de diseño** (`/app/design_guidelines.json` + `/app/frontend/src/App.css`):
+- **Paleta**: Warm off-white `#FDFBF7`, charcoal navy `#0F172A`, azul corporativo `#2563EB`. Reemplaza el dark + gold anterior.
+- **Tipografía**: Cabinet Grotesk (display, italic accents) + Satoshi (body) + Geist Mono (traces). Cero AI-slop fonts.
+- **Avatares de agentes**: `AgentAvatar` nuevo componente que usa **DiceBear bottts-neutral** con seeds deterministas + fondos pastel únicos por agente. Reemplaza emoji-en-cuadrado.
+- **Radios & sombras**: r-xl 22px, sombras ambient suaves, glassmorphism solo donde aplica.
+- Compatibilidad white-label preservada via CSS variables.
 
-**Frontend**
-- `SuperAdminPanel.js` tab principal (default) con 4 sub-tabs: Overview KPIs, Sesiones cross-tenant con takeover, Usuarios+balance, Push & Backup.
-- Rich Cards en `BossConsole.js`: `<PaymentCard>` (logo, monto, descripcion, cliente, order_id, boton "Pagar con PayPal") y `<ServiceCard>` (imagen, titulo, precio, CTA).
-- Avatares circulares enterprise (iniciales sobre color), eliminados emojis grandes.
-- Badge "👑 SuperAdmin" en mensajes de takeover.
+**Componentes rediseñados**:
+- `PublicChat.js` — landing premium con hero italic, strip decorativo de bots, feature grid, agent grid, CTA final navy.
+- `Login.js` — card blanca, trial badge de 50 oros, jerarquía editorial.
+- `ClientDashboard.js` — header sticky con logo navy, tabs limpios sin emojis, balance gold sutil.
+- `BossConsole.js` — chat estilo Linear/Notion, bubbles asimétricos (user navy / agent surface), DiceBear avatars en threads/cards/mensajes/header.
 
-**Integraciones activas**
-- OpenAI GPT/Whisper/TTS — keys validas, respuestas reales.
-- PayPal LIVE — orden real probada (`0LE40408PX...`).
-- Telegram bot @LluviaAppStudioBot — polling activo.
-- GitHub Push — add/commit OK; push pendiente de token valido (rotar antes).
+**Backend**: `branding.py` defaults actualizados al nuevo theme. Branding existente en DB reseteado al theme premium.
 
-**E2E real verificado**
-- Arquitecto crea "Recepcionista Glam Studio" via `create_agent` tool.
-- Agente reserva cita real: `check_availability` + `book_appointment` → persistida en MongoDB.
-- Agente cobra seña: `paypal_invoice_card` → Rich Card visual con approve_url LIVE.
+### Iteración 11 (entregada antes)
+- `super_admin.py` — `/api/super/{overview, sessions/all, sessions/{id}/takeover, users, github/push}`. Admin-only.
+- `appointments.py` — CRUD `/api/appointments` + 4 tool handlers (book, check_availability, list, cancel).
+- `console.py` extendido con 6 tools: book_appointment, check_availability, list_appointments, cancel_appointment, paypal_invoice_card, service_card.
+- `user_workspace.py` — cada usuario puede configurar su GitHub token y hacer push personal.
+- `auth.py` — registro público + 50 oros de trial.
+- Rich Cards (PaymentCard / ServiceCard) en BossConsole.
 
-### Iteracion 10 (entregada antes)
-Telegram unificado, App Builder multi-pagina, Call Center, Promos, Proposals, Branding extendido, blindaje seguridad. 26/26 tests passed.
+**Integraciones activas**: OpenAI GPT/Whisper/TTS · PayPal LIVE · Telegram bot · GitHub Push.
+
+### Iteración 10
+Telegram unificado, App Builder multi-página, Call Center, Promos, Proposals, Branding extendido, blindaje seguridad. 26/26 tests passed.
 
 ## Backlog futuro
 
-P0:
-- **Gmail OAuth2**: agente "Soporte Lluvia" como auto-responder. Requiere proyecto Google Cloud del user (client_id + secret + redirect_uri).
+**P0 (próximo)**:
+- Validar el flujo completo Registro → Dashboard → Chat con trial → Push GitHub via testing_agent_v3_fork (pendiente aprobación visual del usuario antes de testear).
 
-P1:
-- Multi-tenant takeover cross-VPS (panel maestro -> VPS via API key)
-- Backups automaticos Mongo por cliente (cron + S3)
-- Stripe Connect
+**P1**:
+- Gmail OAuth2 — agente "Soporte Lluvia" auto-responder. Requiere Google Cloud (client_id + secret + redirect_uri).
+- Multi-tenant takeover cross-VPS (panel maestro → VPS via API key).
+- Backups automáticos Mongo por cliente (cron + S3).
+- Stripe Connect para split payments con afiliados.
 
-P2:
-- Metricas Prometheus + Grafana
-- WhatsApp Cloud API + Instagram DM
+**P2**:
+- WhatsApp Cloud API + Instagram DM.
+- Métricas Prometheus + Grafana.
+
+## Archivos clave de referencia
+- `/app/frontend/src/App.css` (sistema de diseño v12)
+- `/app/frontend/src/components/AgentAvatar.js` (nuevo — bots DiceBear)
+- `/app/frontend/src/components/PublicChat.js`, `Login.js`, `ClientDashboard.js`, `BossConsole.js` (rediseñados)
+- `/app/backend/branding.py` (defaults nuevos)
+- `/app/design_guidelines.json` (blueprint completo del rediseño)

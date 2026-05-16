@@ -20,16 +20,13 @@ export default function ClientDashboard() {
     return () => clearInterval(t);
   }, []);
 
-  const brandColor = branding?.primary_color || "#5fb4ff";
   const brandName = branding?.product_name || "Lluvia App Studio";
 
   return (
     <div className="client-dash" data-testid="client-dashboard">
       <header className="cd-header">
         <div className="cd-brand">
-          <div className="cd-logo" style={{ background: brandColor }}>
-            {brandName.slice(0, 1)}
-          </div>
+          <div className="cd-logo">{brandName.slice(0, 1)}</div>
           <div>
             <div className="cd-name">{brandName}</div>
             <div className="cd-user">{user?.name || user?.email}</div>
@@ -47,17 +44,16 @@ export default function ClientDashboard() {
 
       <div className="cd-tabs" data-testid="cd-tabs">
         {[
-          ["chat", "💬 Mis Agentes"],
-          ["recharge", "💎 Recargar Oros"],
-          ["github", "📦 Push a GitHub"],
-          ["settings", "⚙ Mi Cuenta"],
+          ["chat", "Mis Agentes"],
+          ["recharge", "Recargar Oros"],
+          ["github", "Push a GitHub"],
+          ["settings", "Mi Cuenta"],
         ].map(([k, l]) => (
           <button
             key={k}
             className={`cd-tab ${tab === k ? "active" : ""}`}
             onClick={() => setTab(k)}
             data-testid={`cd-tab-${k}`}
-            style={tab === k ? { borderColor: brandColor, color: brandColor } : {}}
           >
             {l}
           </button>
@@ -103,21 +99,21 @@ function RechargeTab({ onTopup }) {
 
   return (
     <div className="recharge-tab" data-testid="recharge-tab">
-      <h2>Recarga tu cuenta</h2>
+      <h2>Recargá tu cuenta</h2>
       <p className="hero-sub">
-        Los oros se descuentan por cada mensaje, voz o accion que pides a los agentes.
-        Sin caducidad, sin suscripcion. Pagas solo cuando los necesitas.
+        Los oros se descuentan por cada mensaje, voz o acción que pedís a los agentes.
+        Sin caducidad, sin suscripción. Pagás solo cuando los necesitás.
       </p>
       {activePromo && (
         <div className="promo-banner" data-testid="active-promo">
-          🎉 {activePromo.label} — descuento aplicado automaticamente
+          🎉 {activePromo.label} — descuento aplicado automáticamente
         </div>
       )}
       {err && <div className="alert">{err}</div>}
       <div className="packs-grid">
         {Object.entries(packs).map(([key, p]) => (
           <div key={key} className={`pack-card ${p.popular ? "popular" : ""}`} data-testid={`pack-${key}`}>
-            {p.popular && <div className="pack-tag">⭐ Mas elegido</div>}
+            {p.popular && <div className="pack-tag">Más elegido</div>}
             <h3>{p.label}</h3>
             <div className="pack-price">${p.price_usd}<small>USD</small></div>
             <div className="pack-oros"><strong>{p.oros}</strong> oros</div>
@@ -180,7 +176,7 @@ function GitHubTab() {
 
   return (
     <div className="github-tab" data-testid="github-tab">
-      <h2>📦 Push a GitHub</h2>
+      <h2>Push a GitHub</h2>
       <p className="hero-sub">
         Empuja tu codigo generado a TU repositorio de GitHub con 1 click.
         Tu codigo, tu repo, tu propiedad.
@@ -319,7 +315,7 @@ function SettingsTab() {
 
   return (
     <div data-testid="settings-tab">
-      <h2>⚙ Mi Cuenta</h2>
+      <h2>Mi Cuenta</h2>
       <form className="form-card" onSubmit={save}>
         <h3>GitHub</h3>
         <div className="field">
