@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../AuthContext";
 import { useBranding } from "../BrandingContext";
+import { ThemeToggle } from "../ThemeContext";
 import { api, formatError } from "../api";
 import BossConsole from "./BossConsole";
 
@@ -38,6 +39,7 @@ export default function ClientDashboard() {
               <strong>{balance}</strong> oros
             </span>
           )}
+          <ThemeToggle />
           <button className="cd-logout" onClick={logout} data-testid="cd-logout">Salir</button>
         </div>
       </header>

@@ -17,10 +17,9 @@ const FALLBACK = {
 
 function applyTheme(b) {
   const root = document.documentElement;
+  // Solo aplicamos primary/accent (el canvas — bg/text/surfaces — lo controla ThemeContext)
   root.style.setProperty("--brand-primary", b.primary_color || FALLBACK.primary_color);
   root.style.setProperty("--brand-accent", b.accent_color || FALLBACK.accent_color);
-  root.style.setProperty("--brand-bg", b.background_color || FALLBACK.background_color);
-  root.style.setProperty("--brand-text", b.text_color || FALLBACK.text_color);
   if (b.product_name) document.title = b.product_name;
 }
 

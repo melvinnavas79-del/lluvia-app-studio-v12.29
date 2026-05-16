@@ -5,9 +5,26 @@
 - Producción: https://lluvia-app-studio.lluvia-live.com (Emergent Native Deploy)
 - Telegram: https://t.me/LluviaAppStudioBot
 
-## Estado actual: v12 — UI/UX Premium Rediseño (Feb 2026)
+## Estado actual: v12.1 — UI/UX Premium + Light/Dark + Reposicionamiento comercial (Feb 2026)
+
+### Iteración 12.1 — Light/Dark Toggle + Pivot Comercial (HECHO)
+**Reposicionamiento de copy** (landing pública):
+- Hero title nuevo: "Creá Aplicaciones Profesionales y Agentes de IA que trabajan por vos 24/7"
+- Subtítulo enfocado en: apps multimedia (TikTok/Kwai/Likee), agentes IA personalizados para negocios (peluquerías, WhatsApp), sistemas de radio en vivo.
+- **3 tarjetas pilar grandes** con gradientes radiales únicos:
+  1. Apps Complejas y Multimedia (fucsia · feeds + streaming + perfiles dinámicos)
+  2. Agentes Personalizados para Negocios (verde · citas + cobros + WhatsApp)
+  3. Sistemas de Radio y Audio Live (ámbar · emisora 24/7 + DJ-IA + moderación)
+- Reemplazados emojis grandes por **iconos lucide-react** (Video, Bot, Radio, Sparkles, Calendar, etc).
+
+**Toggle Light/Dark Premium**:
+- `ThemeContext.js` nuevo — gestiona modo, persiste en `localStorage`, expone `<ThemeToggle/>`.
+- Variables CSS para canvas (bg/surface/text/border) separadas del white-label (que sigue controlando solo primary/accent).
+- Dark theme con: deep navy `#0B0F19`, gradients radiales acentuados, glow en pillar cards, primary invertido a `#F9FAFB`.
+- Toggle accesible en headers de `PublicChat` y `ClientDashboard`.
 
 ### Iteración 12 — Rediseño Premium "Emergent-style" (HECHO)
+[anterior]
 Pivot visual completo de aspecto "developer console oscuro" a **enterprise SaaS premium**.
 
 **Nuevo sistema de diseño** (`/app/design_guidelines.json` + `/app/frontend/src/App.css`):

@@ -2,6 +2,7 @@ import "@/App.css";
 import { useState } from "react";
 import { AuthProvider, useAuth } from "./AuthContext";
 import { BrandingProvider } from "./BrandingContext";
+import { ThemeProvider } from "./ThemeContext";
 import Login from "./components/Login";
 import AdminDashboard from "./components/AdminDashboard";
 import ClientDashboard from "./components/ClientDashboard";
@@ -42,11 +43,13 @@ function Inner() {
 export default function App() {
   return (
     <div className="App">
-      <BrandingProvider>
-        <AuthProvider>
-          <Inner />
-        </AuthProvider>
-      </BrandingProvider>
+      <ThemeProvider>
+        <BrandingProvider>
+          <AuthProvider>
+            <Inner />
+          </AuthProvider>
+        </BrandingProvider>
+      </ThemeProvider>
     </div>
   );
 }

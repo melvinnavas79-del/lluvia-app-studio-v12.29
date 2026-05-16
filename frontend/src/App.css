@@ -1672,3 +1672,304 @@ code {
   font-size: 0.85em;
   color: var(--text-primary);
 }
+
+/* ======================================================================
+   v12.1 — Theme toggle + 3 pillar cards + dark theme tweaks
+   ====================================================================== */
+
+/* ── Theme toggle button ─────────────────────────────────────────── */
+.theme-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all .18s ease;
+  flex-shrink: 0;
+}
+.theme-toggle:hover {
+  color: var(--text-primary);
+  border-color: var(--text-primary);
+  transform: rotate(12deg);
+}
+.theme-toggle:active { transform: rotate(0deg) scale(.95); }
+
+/* ── 3 Pillar cards ──────────────────────────────────────────────── */
+.landing-pillars {
+  max-width: 1180px;
+  margin: 5rem auto 2rem;
+  padding: 0 2rem;
+}
+.landing-pillars h2 {
+  font-family: var(--font-display);
+  font-size: clamp(1.8rem, 3.2vw, 2.6rem);
+  text-align: center;
+  margin: 0 0 0.75rem;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+.landing-pillars-sub {
+  text-align: center;
+  color: var(--text-secondary);
+  max-width: 640px;
+  margin: 0 auto 3rem;
+  font-size: 1.02rem;
+  line-height: 1.55;
+}
+.pillars-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+}
+@media (max-width: 980px) {
+  .pillars-grid { grid-template-columns: 1fr; }
+}
+
+.pillar-card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  padding: 2rem 1.75rem 2rem;
+  box-shadow: var(--shadow-xs);
+  transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  min-height: 360px;
+}
+.pillar-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 100% 0%, var(--pillar-accent, transparent) 0%, transparent 55%);
+  opacity: 0.18;
+  pointer-events: none;
+  transition: opacity .3s ease;
+}
+.pillar-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--text-primary);
+}
+.pillar-card:hover::before { opacity: 0.32; }
+
+.pillar-1 { --pillar-accent: #EC4899; }   /* fucsia tipo TikTok */
+.pillar-2 { --pillar-accent: #10B981; }   /* verde negocios */
+.pillar-3 { --pillar-accent: #F59E0B; }   /* ámbar radio */
+
+.pillar-icon {
+  width: 52px; height: 52px;
+  border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--pillar-accent) 14%, transparent);
+  color: var(--pillar-accent);
+  margin-bottom: 1rem;
+  position: relative;
+  z-index: 1;
+}
+.pillar-tag {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--pillar-accent);
+  margin-bottom: 0.6rem;
+  font-weight: 500;
+  position: relative; z-index: 1;
+}
+.pillar-card h3 {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  margin: 0 0 0.65rem;
+  color: var(--text-primary);
+  position: relative; z-index: 1;
+}
+.pillar-card p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.55;
+  margin: 0 0 1.2rem;
+  position: relative; z-index: 1;
+}
+.pillar-bullets {
+  list-style: none;
+  padding: 0;
+  margin: auto 0 0;
+  display: flex; flex-direction: column; gap: 0.45rem;
+  position: relative; z-index: 1;
+}
+.pillar-bullets li {
+  display: flex; align-items: center; gap: 0.55rem;
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.pillar-bullets li::before {
+  content: "";
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--pillar-accent);
+  flex-shrink: 0;
+}
+
+/* ── Feature icon premium (lucide en lugar de emoji grande) ─────── */
+.feature-card .feature-icon {
+  width: 40px; height: 40px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-primary);
+  font-size: 1rem;
+  margin-bottom: 0.85rem;
+}
+
+/* ======================================================================
+   DARK THEME — ajustes específicos para que se vea premium en oscuro
+   ====================================================================== */
+[data-theme="dark"] {
+  --gold-soft: rgba(217, 119, 6, 0.14);
+  --gold: #FCD34D;
+}
+
+[data-theme="dark"] .App::before {
+  background-image:
+    radial-gradient(circle at 12% 8%, rgba(252, 211, 77, 0.06), transparent 35%),
+    radial-gradient(circle at 88% 92%, rgba(59, 130, 246, 0.08), transparent 40%);
+}
+[data-theme="dark"] .App::after { opacity: 0.18; mix-blend-mode: screen; }
+
+[data-theme="dark"] .login-card,
+[data-theme="dark"] .form-card,
+[data-theme="dark"] .kpi,
+[data-theme="dark"] .feature-card,
+[data-theme="dark"] .pillar-card,
+[data-theme="dark"] .pack-card,
+[data-theme="dark"] .landing-agent-card,
+[data-theme="dark"] .ag-stat,
+[data-theme="dark"] .proposal-card,
+[data-theme="dark"] .bc-agent-card {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .pc-header,
+[data-theme="dark"] .cd-header {
+  background: rgba(11, 15, 25, 0.85);
+}
+
+[data-theme="dark"] .bc-msg-text {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+[data-theme="dark"] .bc-msg-user .bc-msg-text {
+  background: #F9FAFB;
+  color: #0B0F19;
+  border-color: #F9FAFB;
+}
+
+[data-theme="dark"] .bc-new-btn,
+[data-theme="dark"] .pack-card.popular,
+[data-theme="dark"] .landing-cta-final {
+  background: #F9FAFB;
+  color: #0B0F19;
+  border-color: #F9FAFB;
+}
+[data-theme="dark"] .bc-new-btn:hover,
+[data-theme="dark"] .pack-buy:hover { background: #E5E7EB; }
+
+[data-theme="dark"] .cta-primary,
+[data-theme="dark"] .pack-buy,
+[data-theme="dark"] .login-btn,
+[data-theme="dark"] .pc-logo,
+[data-theme="dark"] .cd-logo,
+[data-theme="dark"] .bc-send-btn,
+[data-theme="dark"] .rc-cta {
+  background: #F9FAFB !important;
+  color: #0B0F19 !important;
+  border-color: #F9FAFB !important;
+}
+[data-theme="dark"] .cta-primary:hover,
+[data-theme="dark"] .login-btn:hover,
+[data-theme="dark"] .bc-send-btn:hover,
+[data-theme="dark"] .rc-cta:hover { background: #E5E7EB !important; }
+
+[data-theme="dark"] .bc-msg-user .bc-msg-avatar { background: #F9FAFB !important; color: #0B0F19; }
+
+[data-theme="dark"] .pc-admin-link,
+[data-theme="dark"] .cta-secondary,
+[data-theme="dark"] .logout-btn,
+[data-theme="dark"] .cd-logout,
+[data-theme="dark"] .copy-btn,
+[data-theme="dark"] .bc-shop-btn,
+[data-theme="dark"] .theme-toggle {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
+}
+[data-theme="dark"] .pc-admin-link:hover,
+[data-theme="dark"] .cta-secondary:hover,
+[data-theme="dark"] .theme-toggle:hover { color: var(--text-primary); border-color: var(--text-primary); }
+
+[data-theme="dark"] .login-toggle {
+  background: transparent !important;
+  border-color: var(--border-strong) !important;
+  color: #93C5FD !important;
+}
+[data-theme="dark"] .login-toggle:hover { background: var(--surface-soft) !important; }
+
+[data-theme="dark"] .bc-thread.active { background: var(--surface-warm); }
+[data-theme="dark"] .table-wrap tr:hover { background: var(--surface-soft); }
+[data-theme="dark"] .bc-chat {
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-soft) 100%);
+}
+[data-theme="dark"] .feature-card .feature-icon,
+[data-theme="dark"] .bc-mic-btn {
+  background: var(--surface-soft);
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
+}
+
+[data-theme="dark"] .alert,
+[data-theme="dark"] .login-err {
+  background: rgba(220, 38, 38, 0.12);
+  border-color: rgba(220, 38, 38, 0.35);
+  color: #FCA5A5;
+}
+[data-theme="dark"] .success {
+  background: rgba(5, 150, 105, 0.12);
+  border-color: rgba(5, 150, 105, 0.35);
+  color: #6EE7B7;
+}
+[data-theme="dark"] .warn-card {
+  background: rgba(217, 119, 6, 0.12);
+  border-color: rgba(217, 119, 6, 0.35);
+  color: #FCD34D;
+}
+
+[data-theme="dark"] code,
+[data-theme="dark"] .chip,
+[data-theme="dark"] .warn-card code {
+  background: var(--surface-warm);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .bc-credits,
+[data-theme="dark"] .cd-balance,
+[data-theme="dark"] .oro-badge,
+[data-theme="dark"] .trial-badge {
+  background: rgba(252, 211, 77, 0.12);
+  border-color: rgba(252, 211, 77, 0.30);
+  color: #FCD34D;
+}
+
+[data-theme="dark"] .pack-card.popular .pack-buy { background: var(--brand-bg) !important; color: var(--text-primary) !important; }
+[data-theme="dark"] .landing-cta-final .cta-primary { background: var(--brand-bg) !important; color: var(--text-primary) !important; }
