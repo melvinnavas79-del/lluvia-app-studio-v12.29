@@ -5,7 +5,33 @@
 - Producción: https://lluvia-app-studio.lluvia-live.com (Emergent Native Deploy)
 - Telegram: https://t.me/LluviaAppStudioBot
 
-## Estado actual: v12.21 — Funnel cerrado dentro del demo + español neutro (Feb 2026)
+## Estado actual: v12.22 — Push Lock + Panel admin de Precios (Feb 2026)
+
+### Iteración 12.22 — Candado de exportación + Control admin de precios (HECHO)
+**🔒 Push Lock (candado de exportación)**
+- Lógica nueva en `user_workspace.do_push` líneas 199-238: si el user NO es admin y `balance < min_balance_for_export` (default 50), retorna `{ok:false, export_locked:true, balance, required, missing, message, recharge_url:'/#/recharge'}` ANTES de tocar GitHub. El admin bypassa siempre el candado.
+- Mensaje exacto: *"Has creado tu app con éxito. Para exportar el código fuente completo a tu GitHub y activar el backend para producción, adquiere un paquete de oros. Saldo actual: X oros · Necesitas al menos N oros para desbloquear la exportación."*
+- El refund automático de la tool `push_to_my_github` se mantiene cuando cae en este lock para que el visitor no pierda los 8 oros del intento.
+
+**💰 Panel admin de Precios (control financiero del dueño)**
+- Nuevo módulo `pricing.py`: source-of-truth de precios. `DEFAULT_TOOL_PRICES` define qué templates conoce el sistema; los valores efectivos se mergen desde `site_content.tool_prices` en MongoDB (editable por panel sin redeploy). `DEFAULT_MIN_BALANCE_FOR_EXPORT = 50`.
+- Nuevo router `admin_pricing.py` con `GET /api/admin/pricing` y `PUT /api/admin/pricing` (admin-only). Validación: ignora claves desconocidas, satura negativos a 0, ignora valores no-numéricos.
+- `console.py::_exec_tool` rama `generate_audio_room_app` lee precio dinámico de `pricing.get_tool_price()` (sobrescribe el hardcoded de TOOL_NAMES).
+- `TEMPLATE_METADATA` lista los 5 templates conocidos: Audio Room (real, default 40 oros) + 4 placeholders SOON (Radio Online, Feed TikTok, Landing Peluquería, Ecommerce simple) — el admin ve toda la roadmap y prepara precios anticipadamente.
+
+**🎨 Frontend nuevo**
+- Tab `💰 Precios de Templates` en SuperAdminPanel con: caja "🔒 Candado de exportación" (input min_balance), grid de 5 templates con input editable + badge SOON para los del backlog, botón "Guardar precios" + último editor + timestamp.
+- `BossConsole.GitHubPushCard` detecta `export_locked` y renderiza variante premium amarilla/violeta con grid Saldo / Necesitas / Te faltan + CTA "Recargar oros y desbloquear exportación →".
+- `BossConsole.pushNow` (botón ⬆ Push del composer) detecta `export_locked` y muestra confirm que redirige a `/#/recharge`.
+- `ClientDashboard` tab GitHub renderiza `data-testid='export-locked-modal'` con el mismo grid + botón gradient amarillo cuando el push manual es bloqueado.
+
+**Verificación (iteration_20.json)**: backend 12/12 PASS, frontend Playwright 100%. Validado: persistencia de cambios desde panel, ignore de keys desconocidas, saturación de negativos, admin bypass del lock, threshold dinámico (10 oros user con threshold=5 SI puede pushear, con threshold=50 NO), refund automático en lock, render de las dos variantes (rich card en chat + modal en GitHub tab). Cero regresiones.
+
+**Modelo de negocio activado**: el visitor entra del demo → registra → 15 oros trial → arma audio room (40 oros) → ve la rich card preview → quiere pushear → BLOQUEADO → ve modal premium → recarga → desbloquea → exporta. Embudo monetizado de punta a punta.
+
+
+
+## Estado anterior: v12.21 — Funnel cerrado dentro del demo + español neutro (Feb 2026)
 
 ### Iteración 12.21 — Demo → CTA → Registro → App Builder Pro automático (HECHO)
 **🎯 CTA flotante de conversión dentro del demo público**
