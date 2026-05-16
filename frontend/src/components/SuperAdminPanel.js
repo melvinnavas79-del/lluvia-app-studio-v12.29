@@ -107,6 +107,8 @@ function IntegrationsPanel() {
           </div>
         )}
 
+        {status.linked && <GmailMaestroSection />}
+
         <div style={{ marginBottom: "1rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
           <div>Client ID: {status.client_id_configured ? "✓ configurado" : "✕ falta"}</div>
           <div>Client Secret: {status.client_secret_configured ? "✓ configurado" : "✕ falta"}</div>
@@ -304,6 +306,81 @@ function SessionsPanel() {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+function GmailMaestroSection() {
+  const [metrics, setMetrics] = useState(null);
+  const [recent, setRecent] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const refresh = () => {
+    api.get("/integrations/gmail/maestro/metrics").then((r) => setMetrics(r.data)).catch(() => {});
+    api.get("/integrations/gmail/maestro/recent").then((r) => setRecent(r.data.items || [])).catch(() => {});
+  };
+  useEffect(() => { refresh(); }, []);
+
+  const process = async () => {
+    setBusy(true); setMsg("");
+    try {
+      const { data } = await api.post("/integrations/gmail/maestro/process-inbox");
+      setMsg(`✓ Procesados ${data.newly_processed} correos nuevos (de ${data.total_unread} no leídos)`);
+      refresh();
+    } catch (e) {
+      setMsg(`✕ ${formatError(e)}`);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div style={{ marginTop: "1.5rem", borderTop: "1px solid var(--border)", paddingTop: "1.25rem" }}>
+      <h3 style={{ fontFamily: "var(--font-display)", margin: "0 0 1rem", fontSize: "1.05rem" }}>
+        🤖 Agente Maestro Gmail
+      </h3>
+      <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem", margin: "0 0 1rem" }}>
+        Clasifica correos entrantes y genera borradores de respuesta en tu Gmail.
+        Los drafts aparecen en gmail.com → Borradores listos para revisar y enviar.
+      </p>
+      <button className="login-btn" onClick={process} disabled={busy}
+              data-testid="gmail-maestro-process"
+              style={{ width: "auto", padding: "0.65rem 1.25rem", marginTop: 0 }}>
+        {busy ? "Procesando..." : "▶ Procesar inbox ahora"}
+      </button>
+      {msg && (
+        <div style={{ marginTop: "0.75rem", fontSize: "0.9rem",
+                      color: msg.startsWith("✓") ? "var(--success)" : "var(--danger)" }}>
+          {msg}
+        </div>
+      )}
+
+      {metrics && (
+        <div className="kpi-grid" style={{ marginTop: "1.25rem" }}>
+          <div className="kpi"><div className="kpi-label">Procesados</div><div className="kpi-value">{metrics.total_processed}</div></div>
+          <div className="kpi"><div className="kpi-label">Con borrador</div><div className="kpi-value">{metrics.with_drafts}</div></div>
+          <div className="kpi"><div className="kpi-label">Min. ahorrados</div><div className="kpi-value">{metrics.estimated_minutes_saved}</div></div>
+        </div>
+      )}
+
+      {recent.length > 0 && (
+        <table className="ag-table" style={{ marginTop: "1.25rem" }}>
+          <thead><tr><th>De</th><th>Asunto</th><th>Categoría</th><th>Draft</th></tr></thead>
+          <tbody>
+            {recent.slice(0, 10).map((r) => (
+              <tr key={r.id} data-testid={`gmail-msg-${r.id}`}>
+                <td>{(r.from || "").slice(0, 30)}</td>
+                <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {r.subject}
+                </td>
+                <td><span className={`badge ${r.category === "lead-caliente" ? "ok" : r.category === "spam" ? "no" : "warn"}`}>
+                  {r.category}
+                </span></td>
+                <td>{r.draft_id ? <span style={{ color: "var(--success)" }}>✓</span> : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
