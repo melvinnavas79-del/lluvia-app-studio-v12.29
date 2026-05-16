@@ -1087,6 +1087,7 @@ function VideoJobCard({ card, agent, backendBase }) {
             </div>
             <div className="vj-hint">
               Podés cerrar el chat, el video sigue generándose. Te notificamos al volver.
+              <br/><span style={{ color: "#DC2626" }}>⚠ El cobro se aplica al iniciar; si Sora 2 falla, no es reembolsable.</span>
             </div>
           </div>
         )}

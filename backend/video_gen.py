@@ -42,6 +42,10 @@ COST_BY_DURATION = {4: 30, 8: 40, 12: 55}
 
 _db_ref: dict = {"db": None}
 
+# Mantenemos referencia a tasks activos para evitar que el GC los mate
+# (asyncio.create_task con fire-and-forget puede ser recolectado).
+_ACTIVE_TASKS: set = set()
+
 
 def set_db(db) -> None:
     _db_ref["db"] = db
@@ -132,8 +136,11 @@ async def enqueue_video(
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.video_jobs.insert_one(doc)
-    # Disparar background (no await)
-    asyncio.create_task(_run_job(job_id, prompt, model, size, duration))
+    # Disparar background (no await). Guardamos referencia para que el GC no
+    # mate el task antes de que termine la generación.
+    task = asyncio.create_task(_run_job(job_id, prompt, model, size, duration))
+    _ACTIVE_TASKS.add(task)
+    task.add_done_callback(_ACTIVE_TASKS.discard)
     return {
         "id": job_id,
         "status": "queued",

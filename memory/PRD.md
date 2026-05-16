@@ -5,7 +5,27 @@
 - Producción: https://lluvia-app-studio.lluvia-live.com (Emergent Native Deploy)
 - Telegram: https://t.me/LluviaAppStudioBot
 
-## Estado actual: v12.12 — Before/After Nano Banana + Marketing Lab (Feb 2026)
+## Estado actual: v12.13 — Sora 2 video generation + cámara nativa (Feb 2026)
+
+### Iteración 12.13 — Sora 2 + Bug fix cámara negra (HECHO)
+**🎥 Sora 2 generación de video real (Marketing Lab)**
+- Nuevo módulo `/app/backend/video_gen.py` con `OpenAIVideoGeneration` de `emergentintegrations` (EMERGENT_LLM_KEY).
+- **Bug del SDK descubierto y patcheado**: la API real de Sora 2 solo acepta `720x1280` y `1280x720`, pero el SDK validaba contra una whitelist vieja. Sobrescribimos `OpenAIVideoGeneration.SIZES` al cargar el módulo.
+- Nueva tool `generate_promo_video(prompt, duration, aspect, quality)`. Tarifa dinámica: **4s=30 oros, 8s=40 oros, 12s=55 oros** (cubre costo API + margen).
+- Arquitectura: tool encola job en mongo `video_jobs`, lanza `asyncio.create_task` con referencia trackeada (anti-GC), endpoint `GET /api/console/video-jobs/{id}` con auth + owner check para polling.
+- Frontend: `VideoJobCard` con spinner + cronómetro + progress bar con ETA, polling cada 6s, render final con `<video controls>` aspect-ratio dinámico + botón ⬇ Descargar MP4. Aviso UX: cobro no reembolsable si Sora falla.
+- Marketing Lab system prompt v2: ahora maneja flujo 1 (guion barato con `video_script_card`) y flujo 2 (video real con `generate_promo_video`). Obliga a confirmar costo antes de invocar la tool.
+- **Verificado E2E**: video real de 4s vertical generado en ~90s, 2.6MB, servido y reproducible en el chat.
+
+**📷 Bug fix: cámara negra**
+- Causa raíz: el `<input capture="environment">` falla silenciosamente en muchos WebViews/navegadores mobile → pantalla negra sin error.
+- Solución: botón nuevo (data-testid=`bc-camera-btn`) que abre un modal fullscreen con `getUserMedia` directo + `<video>` element. Captura el frame a un `<canvas>` y lo pasa por el mismo `uploadImage()` que el paperclip.
+- Modal con: shutter circular blanco, botón cancelar, botón flip (delantera/trasera). Mensaje de error explícito si no hay cámara/permiso (en vez de quedar congelado).
+- Cleanup de tracks al cerrar y al desmontar (evita "pantalla negra" en reintentos).
+
+**Tests**: 7/7 backend pytest verde, frontend E2E 100% verde (camera modal + VideoJobCard renderiza correcto). Cero regresiones.
+
+
 
 ### Iteración 12.12 — Estilista Before/After (Gemini Image) + agente Marketing Lab (HECHO)
 **💇✨ Estilista Visual ahora genera imagen real "After" con Gemini Nano Banana**
