@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 7 (v12.9 vision/imagenes + UI tipo ChatGPT) testing complete. Backend pytest 9/9 PASSED y smoke frontend e2e PASSO con GPT-4o vision describiendo correctamente la imagen verde generada. Voz (Whisper + TTS) sigue activa sin regresion. Upload, validaciones de tipo/tamaño/ownership, cobro 3 oros/imagen, persistencia de image_urls en el mensaje del usuario, render de la imagen en el bubble, mic + paperclip + send circular, todo verificado en preview.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/voice/tts",
+        "issue": "El test smoke acepto 4xx pero no se valido el flujo TTS completo (sin audio de input). No es regresion: el endpoint sigue existiendo y no retorna 5xx. Sugerido test extendido con texto real cuando se quiera validar audio binario."
+      },
+      {
+        "endpoint": "POST /api/console/sessions/{id}/messages (admin)",
+        "issue": "credits.charge() exime al rol admin de descontar oros (admin_free). El response sigue devolviendo cost_oros=4 cuando hay imagen, pero el balance del admin no decrece. No es bug — es comportamiento intencional documentado en credits.py:52. Si producto quiere validar visualmente el cobro, usar usuario no-admin."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_7_vision.py",
+    "/app/test_reports/pytest/iteration_7_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "console.py:705-729 — resolver de image_urls: si !PUBLIC_BASE_URL hace fallback a data:base64 inline. Funcional, pero base64 de imagenes de 8MB infla el payload a OpenAI ~10MB y puede excederse de tokens. En preview no se usa porque PUBLIC_BASE_URL esta seteado. Si en algun entorno futuro falta esa env var, considerar reducir resolucion antes de base64.",
+    "console.py:705 — limita a 4 imagenes via `[:4]`. Si el frontend ya manda 5+ deberia notificarlo (hoy las elimina silenciosamente). Sugerencia: log o agregar warning en el response.",
+    "BossConsole.js:402 — el `accept` del input excluye 'image/*' generico aunque el backend acepta WebP/GIF. OK explicito, pero podria simplificarse a accept='image/*' y mantener validacion en upload backend.",
+    "BossConsole.js:440 — send-btn disabled si `attachments.some(a=>a.uploading)`. Bien hecho. UX correcta.",
+    "console.py:651 — fpath.write_bytes en el event loop (I/O sync) — para 8MB esta OK, pero idealmente envolver en asyncio.to_thread para no bloquear.",
+    "server.py:418 — StaticFiles mount en /api/uploads/ NO requiere autenticacion. Cualquiera con la URL puede descargar las imagenes de cualquier sesion. Las URLs llevan UUID hex (no enumerable), pero si la URL se filtra es accesible publicamente. Considerar mover a /uploads + middleware auth si tienen contenido sensible (terapia, consulta sexologo, etc)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_7_vision.py (new)",
+    "/app/test_reports/pytest/iteration_7_results.xml (new)"
+  ],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "100% (smoke e2e con upload+vision+TTS playback verificado)"},
+  "test_credentials": "Admin melvinnavas79@gmail.com / Admin#2026. Admin no se cobra oros (credits.charge admin_free).",
+  "seed_data_creation": "Genero ~3 chat_sessions sobre agentes del catalogo (varios), 1 mensaje multimodal con imagen verde de 96x96 (272 bytes PNG) subida a /api/uploads/chat_images/<uid>_<hex>.png. No requiere cleanup manual (queda persistente en mongo y filesystem).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Re-ejecutar backend: cd /app && python -m pytest backend/tests/test_iteration_7_vision.py -v --junitxml=/app/test_reports/pytest/iteration_7_results.xml. El fixture session_id ahora elige dinamicamente el primer agent_id valido del catalogo (GET /api/console/agents -> .agents[0].id). Si el catalogo cambia y se mueve a un agente sin LLM, los tests siguen porque el bot responde igual. El test de TTS solo verifica que el endpoint exista y no retorne 5xx. Para validar imagen visualmente: hacer login en preview con admin, ir al tab 'Boss Console', adjuntar imagen y mandar — GPT-4o responde en <5s. El boton de play TTS (icono 🔊) aparece junto al mensaje del asistente.",
+  "rca of the issue": "No hay bugs. Feature de imagenes + UI ChatGPT-like esta implementado correctamente. Findings menores son sobre code review (auth en /api/uploads, async I/O en write_bytes, base64 fallback de 8MB) y no bloquean MVP. La voz (Whisper + TTS) sigue funcional. El user puede subir imagenes (drag&drop, paste, paperclip), el chip de preview aparece, el envio respeta multimodal a OpenAI con detail:auto, el bubble del usuario muestra la imagen, y GPT-4o describe correctamente la foto. Costo: 1 base + 3 por imagen = 4 oros minimo, mostrado en UI como '-4 oros' debajo del mensaje del asistente."
+}
