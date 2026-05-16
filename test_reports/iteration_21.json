@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 21 — Gmail Maestro Auto-Send (OPCION C). Backend 14/14 PASS + regresion iteration_20 12/12 PASS. Tests verifican: constantes AUTOSEND_CONFIDENCE_THRESHOLD=0.9 y AUTOSEND_CATEGORIES={'lead-caliente','soporte'}; _send_gmail_draft devuelve message_id en 200/201 y None en error/exception; _process_inbox_for_user con mocks (requests.get/post + _classify_and_draft + _get_valid_access_token) en 5 casos (A lead-caliente conf 0.95 auto-envia, B lead-caliente conf 0.8 NO auto-envia, C comercial conf 0.99 NO auto-envia, D soporte conf 0.92 auto-envia, E spam no crea draft); system prompt contiene reglas auto-senders (facebookmail.com, accounts.google.com, no-reply) y _classify_and_draft deserializa correctamente spam con confidence>=0.9 y reply_draft=''; endpoint GET /api/integrations/gmail/maestro/metrics expone auto_sent (int), autosend_threshold (0.9), autosend_categories=['lead-caliente','soporte'] preservando campos legacy.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_21_gmail_autosend.py",
+    "/app/test_reports/pytest/iteration_21_results.xml",
+    "/app/test_reports/pytest/iteration_20_regression.xml"
+  ],
+  "action_items": [
+    "[INFO] Todos los flows pasan. No se requiere accion del main agent.",
+    "[INFO] Auto-send E2E ya fue validado manualmente por el main agent (message_id 19e32c6e8a94dc20 enviado a melvinnavas79@gmail.com). Esta iteracion cubre la logica de decision con mocks deterministicos."
+  ],
+  "critical_code_review_comments": [
+    "gmail_maestro.py:310-314 — la condicion de auto-envio es estricta y correcta: requiere draft_id truthy + confidence >= threshold + category in AUTOSEND_CATEGORIES. El short-circuit evita llamadas innecesarias a _send_gmail_draft.",
+    "gmail_maestro.py:303 — el guard `r2['category'] not in ('spam','personal') and r2['reply_draft']` impide crear drafts vacios para spam/personal, lo cual es consistente con la regla del prompt (reply_draft='' para spam). OK.",
+    "gmail_maestro.py:231-245 — _send_gmail_draft maneja status 200 y 201 (Gmail API normalmente devuelve 200), retorna None en cualquier otro caso o excepcion. Logging via logger.exception captura stacktrace completo. Robusto.",
+    "gmail_maestro.py:281 — el dedupe por (user_id, message_id) usa find_one con projection {'_id':1} que es eficiente. Bien.",
+    "gmail_maestro.py:138-168 — system prompt esta hardcoded en codigo. Si el admin quisiera ajustar reglas sin redeploy, podria moverse a la coleccion de settings. No es blocker.",
+    "gmail_maestro.py:382-385 — metrics cuenta auto_sent con find/count_documents pero NO incluye breakdown auto_sent_by_category. Sugerencia para futuro: agregar {'auto_sent_by_category': {...}} para que el admin vea cuantos leads-calientes vs soporte se auto-enviaron.",
+    "gmail_maestro.py:121-193 — _classify_and_draft NO valida que category recibida del LLM este en la lista permitida; si el LLM alucina category='other' se persiste tal cual. Sugerencia: validar/normalizar (default 'soporte') tras parseo."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_21_gmail_autosend.py (NEW — 14 tests, all PASS)"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14 nuevos + 12/12 regresion iteration_20)",
+    "frontend": "N/A — testing_type=backend only"
+  },
+  "test_credentials": "Admin melvinnavas79@gmail.com/Admin#2026 OK",
+  "seed_data_creation": "Cada test de TestProcessInboxAutoSend usa user_id+message_id unicos (uuid4) y limpia gmail_processed al final. No queda data residual.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Ejecutar `pytest /app/backend/tests/test_iteration_21_gmail_autosend.py -v` desde /app/backend con MONGO_URL/DB_NAME del .env. Los tests de _process_inbox_for_user usan monkeypatch en gmail_maestro.requests + gmail_maestro._classify_and_draft + gmail_maestro._get_valid_access_token; cero llamadas a Gmail/OpenAI reales. El test de /metrics usa la cuenta admin real (melvinnavas79). Si en el futuro se agrega auto_sent_by_category al endpoint, ajustar TestMetricsEndpoint.",
+  "rca of the issue": "NO HAY BUGS. La logica OPCION C (auto-send si confidence>=0.9 y category in {'lead-caliente','soporte'}) esta implementada correctamente y validada por mocks deterministicos. El prompt nuevo con reglas de auto-senders se verifica via inspect.getsource + simulacion de respuesta LLM canned."
+}

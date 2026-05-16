@@ -228,6 +228,30 @@ async def _create_gmail_draft(token: str, raw_b64: str, thread_id: str) -> Optio
     return None
 
 
+async def _send_gmail_draft(token: str, draft_id: str) -> Optional[str]:
+    """Envia un draft creado previamente. Devuelve el message_id si OK."""
+    try:
+        r = requests.post(
+            f"{GMAIL_API}/drafts/send",
+            headers={**_gmail_headers(token), "Content-Type": "application/json"},
+            json={"id": draft_id},
+            timeout=20,
+        )
+        if r.status_code in (200, 201):
+            return r.json().get("id")
+        logger.error(f"Enviar draft fallo: {r.status_code} {r.text[:300]}")
+    except Exception as e:
+        logger.exception(f"Send draft exception: {e}")
+    return None
+
+
+# Umbral de auto-envio. Encima de esto, el agente envia solo. Debajo,
+# queda como draft para revision manual.
+AUTOSEND_CONFIDENCE_THRESHOLD = 0.9
+# Categorias que califican para auto-envio (lead/soporte = clientes reales).
+AUTOSEND_CATEGORIES = {"lead-caliente", "soporte"}
+
+
 # ============================================================
 # Loop principal: procesa inbox
 # ============================================================
@@ -274,10 +298,25 @@ async def _process_inbox_for_user(user_id: str, max_msgs: int = 10) -> dict:
             # Clasificar + draft
             r2 = await _classify_and_draft(subject, from_addr, body)
             draft_id = None
+            sent_message_id = None
+            auto_sent = False
             if r2["category"] not in ("spam", "personal") and r2["reply_draft"]:
                 raw = _build_raw_reply(from_addr, subject, r2["reply_draft"],
                                        msg_id_hdr, references)
                 draft_id = await _create_gmail_draft(token, raw, thread_id)
+                # OPCION C: auto-envio si confianza > 0.9 y categoria es
+                # lead-caliente o soporte. Las dudosas o comerciales se quedan
+                # como draft para revision manual del admin.
+                if (draft_id
+                        and r2["confidence"] >= AUTOSEND_CONFIDENCE_THRESHOLD
+                        and r2["category"] in AUTOSEND_CATEGORIES):
+                    sent_message_id = await _send_gmail_draft(token, draft_id)
+                    auto_sent = bool(sent_message_id)
+                    if auto_sent:
+                        logger.info(
+                            f"AUTO-ENVIADO user={user_id[:8]} category={r2['category']} "
+                            f"conf={r2['confidence']:.2f} to={from_addr[:40]}"
+                        )
 
             doc = {
                 "id": str(uuid.uuid4()),
@@ -292,6 +331,8 @@ async def _process_inbox_for_user(user_id: str, max_msgs: int = 10) -> dict:
                 "reply_draft": r2["reply_draft"],
                 "reasoning": r2["reasoning"],
                 "draft_id": draft_id,
+                "auto_sent": auto_sent,
+                "sent_message_id": sent_message_id,
                 "processed_at": datetime.now(timezone.utc).isoformat(),
             }
             await db.gmail_processed.insert_one(doc)
@@ -339,9 +380,15 @@ async def metrics(user: dict = Depends(get_current_user)):
     with_drafts = await db.gmail_processed.count_documents(
         {"user_id": user["id"], "draft_id": {"$ne": None}}
     )
+    auto_sent = await db.gmail_processed.count_documents(
+        {"user_id": user["id"], "auto_sent": True}
+    )
     return {
         "total_processed": total,
         "with_drafts": with_drafts,
+        "auto_sent": auto_sent,
         "by_category": by_cat,
         "estimated_minutes_saved": with_drafts * 3,  # 3 min por borrador
+        "autosend_threshold": AUTOSEND_CONFIDENCE_THRESHOLD,
+        "autosend_categories": list(AUTOSEND_CATEGORIES),
     }
