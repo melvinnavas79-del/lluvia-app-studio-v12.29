@@ -97,7 +97,7 @@ export default function PublicChat({ onLoginClick, onRegisterClick }) {
             onClick={onRegisterClick}
             data-testid="hero-register-btn"
           >
-            {site?.hero_cta_primary || "Empezar gratis con 50 oros →"}
+            {site?.hero_cta_primary || `Empezar gratis con ${site?.trial_oros ?? 15} oros →`}
           </button>
           <button
             className="cta-secondary"
@@ -109,7 +109,7 @@ export default function PublicChat({ onLoginClick, onRegisterClick }) {
         </div>
         <p className="landing-mini">
           <span>✓ Sin tarjeta de crédito</span>
-          <span>✓ 50 oros gratis al registrarte</span>
+          <span>✓ {site?.trial_oros ?? 15} oros gratis al registrarte</span>
           <span>✓ Tu código, tu GitHub</span>
         </p>
 
@@ -213,7 +213,7 @@ export default function PublicChat({ onLoginClick, onRegisterClick }) {
 
       <section className="landing-cta-final">
         <h2>¿Listo para construir tu próxima plataforma?</h2>
-        <p>50 oros gratis te alcanzan para ~50 mensajes de prueba. Cuando los consumas, recargas lo que necesites.</p>
+        <p>{site?.trial_oros ?? 15} oros gratis te alcanzan para una prueba inicial. Cuando los consumas, recargas lo que necesites.</p>
         <button
           className="cta-primary"
           onClick={onRegisterClick}

@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "../AuthContext";
 import { useBranding } from "../BrandingContext";
-import { formatError } from "../api";
+import { api, formatError } from "../api";
 
 export default function Login({ mode = "login", onBack }) {
   const { login, register } = useAuth();
@@ -12,6 +12,16 @@ export default function Login({ mode = "login", onBack }) {
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  const [trialOros, setTrialOros] = useState(15);
+
+  useEffect(() => {
+    // Leer oros de trial desde site_content (configurable por SuperAdmin)
+    api.get("/site/content").then((r) => {
+      if (typeof r.data?.trial_oros === "number") {
+        setTrialOros(r.data.trial_oros);
+      }
+    }).catch(() => {});
+  }, []);
 
   const onSubmit = async (e) => {
     e.preventDefault();
@@ -50,14 +60,14 @@ export default function Login({ mode = "login", onBack }) {
 
         {isRegister && (
           <span className="trial-badge" data-testid="trial-badge">
-            🎁 50 oros de regalo
+            🎁 {trialOros} oros de regalo
           </span>
         )}
 
         <h2>{isRegister ? "Crea tu cuenta" : "Bienvenido de vuelta"}</h2>
         <p className="login-sub">
           {isRegister
-            ? "Te regalamos 50 oros de trial. Sin tarjeta, sin compromiso."
+            ? `Te regalamos ${trialOros} oros de trial. Sin tarjeta, sin compromiso.`
             : (tagline || "Ingresa con tu email y contraseña.")}
         </p>
 
@@ -119,7 +129,7 @@ export default function Login({ mode = "login", onBack }) {
         >
           {isRegister
             ? "¿Ya tienes cuenta? Inicia sesión"
-            : "¿Eres nuevo? Crear cuenta (50 oros)"}
+            : `¿Eres nuevo? Crear cuenta (${trialOros} oros)`}
         </button>
 
         {branding?.support_email && (

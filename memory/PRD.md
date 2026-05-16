@@ -5,7 +5,23 @@
 - Producción: https://lluvia-app-studio.lluvia-live.com (Emergent Native Deploy)
 - Telegram: https://t.me/LluviaAppStudioBot
 
-## Estado actual: v12.15 — Refund automático Sora 2 / Nano Banana (Feb 2026)
+## Estado actual: v12.16 — PayPal capture arreglado + trial 15 oros + anti-farming (Feb 2026)
+
+### Iteración 12.16 — Pago real + economia sustentable (HECHO)
+**💳 Bug crítico PayPal RESUELTO**
+- Causa raíz: `create-order` no incluía `return_url`/`cancel_url` en `application_context`, por lo que PayPal nunca devolvía al cliente a la app, y el frontend nunca llamaba `/paypal/capture/{order_id}`. **Pagos completados sin acreditar oros**.
+- Fix backend: `paypal_integration.py` ahora pasa `return_url={PUBLIC_BASE_URL}/?paypal=success#/recharge` y `cancel_url={PUBLIC_BASE_URL}/?paypal=cancel#/recharge`.
+- Fix frontend: `RechargeTab` detecta `?paypal=success&token=ORDER_ID` al montarse → llama capture → muestra mensaje verde "Pago confirmado! Acreditamos X oros" (data-testid='paypal-success') → limpia URL con `history.replaceState`. Si cancel → warning.
+- Fix UX: `ClientDashboard.initialTab()` detecta el query string y fuerza tab `recharge` aunque el usuario haya estado en otra pestaña antes.
+
+**🎁 Trial reducido + dinámico + anti-abuso**
+- De 50 → **15 oros** por registro (configurable desde SuperAdmin via `site_content.trial_oros` con field Pydantic 0-500).
+- Anti-farming por IP: máximo **3 registros/24h** desde la misma IP, sino HTTP 429.
+- Trial usado dinámicamente en backend (`affiliates.py` lee `site_content.trial_oros`) y frontend (`Login.js` y `PublicChat.js` leen `/api/site/content` y muestran el número correcto en CTA, bullet, badge, banner). Verificado en landing: "Empezar gratis con 15 oros →" + "✓ 15 oros gratis al registrarte".
+
+**Tests**: backend 7/7 pytest verde (PayPal create-order con return_url, trial dinámico, anti-farming 429). Frontend verificado vía screenshot del landing.
+
+
 
 ### Iteración 12.15 — Bug crítico: budget EMERGENT_LLM_KEY agotado (HECHO)
 **🐛 Causa raíz descubierta**
