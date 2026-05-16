@@ -5,7 +5,24 @@
 - Producción: https://lluvia-app-studio.lluvia-live.com (Emergent Native Deploy)
 - Telegram: https://t.me/LluviaAppStudioBot
 
-## Estado actual: v12.1 — UI/UX Premium + Light/Dark + Reposicionamiento comercial (Feb 2026)
+## Estado actual: v12.10 — Vision (foto en chat) + UI ChatGPT-like (Feb 2026)
+
+### Iteración 12.10 — Chat con imágenes + UI Emergent-style (HECHO)
+**Imágenes en el chat de agentes** (`BossConsole`):
+- Nuevo endpoint backend `POST /api/console/sessions/{id}/upload-image` con upload por chunks (64KB), valida MIME (jpeg/png/gif/webp), límite 8MB, guarda en `/app/backend/uploads/chat_images/<userid>_<uuid>.ext`. Retorna `{url, filename, size, content_type}`.
+- `app.mount("/api/uploads", StaticFiles(...))` en `server.py` para servir las imágenes públicamente (URLs con UUID hex no enumerable).
+- `MessageIn` extendido con `image_urls: Optional[List[str]]`. Cuando viene, `send_message` construye contenido multimodal para GPT-4o (`[{type:text},{type:image_url,detail:auto}]`), resuelve URL relativa → absoluta usando `PUBLIC_BASE_URL` (fallback data:base64), cobra +3 oros por imagen (`COST_VISION_IMAGE`), persiste `image_urls` dentro del `user_msg`.
+- Frontend: botón paperclip + file picker (multiple), drag-and-drop sobre el chat con overlay "Soltá la imagen", paste de imagen desde clipboard, preview chip con thumbnail + spinner de uploading + botón X, imagen renderizada dentro de la burbuja del usuario con click → abre en pestaña nueva.
+
+**UI ChatGPT/Emergent-style**:
+- Burbujas pegadas al borde: usuario derecha (navy), asistente izquierda (surface). Border-radius asimétrico (top-right:6px / top-left:6px según rol).
+- Avatares circulares de 40px con sombra suave.
+- Composer rediseñado como una caja redondeada (radius 22px) con paperclip + mic + textarea autoresize (hasta 200px) + botón send circular con icono de avión SVG. Focus state con glow azul. Hint legend abajo "GPT-4o vision · 3 oros por imagen · arrastrá o pegá fotos".
+- Animaciones nuevas: `bcSlide` (mensaje entrante), `bcChipIn` (chip de adjunto), pulse en mic recording.
+
+**Tests**: backend pytest 9/9 verde (`/app/backend/tests/test_iteration_7_vision.py`). E2E smoke verificado: GPT-4o describe correctamente una imagen verde de 96x96 subida. Voz (Whisper + TTS) sin regresión.
+
+## Estado anterior: v12.1 — UI/UX Premium + Light/Dark + Reposicionamiento comercial (Feb 2026)
 
 ### Iteración 12.1 — Light/Dark Toggle + Pivot Comercial (HECHO)
 **Reposicionamiento de copy** (landing pública):
