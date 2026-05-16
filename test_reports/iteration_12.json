@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 12 (v12.12): Marketing Lab agent + generate_haircut_preview (Nano Banana) — backend 5/5 PASSED in 59s incluyendo generación REAL con Gemini gemini-3.1-flash-image-preview. Frontend E2E ambos flows verde: (1) Marketing Lab — agente visible en console, VideoScriptCard renderiza con HOOK / 6 ESCENAS (timecode + visual + voiceover) / CTA / MÚSICA / CAPTION / 9 HASHTAGS como chips / botón video-script-copy presente. (2) Estilista Visual — upload de foto Unsplash + prompt → before-after-card visible con Antes (foto original) y Después·IA (imagen generada por Nano Banana servida desde /api/uploads/ai_generated/), -19 oros cobrados (15 tool + 4 base/vision). result_preview 6000 chars confirmado (la card video llega completa con scenes+hashtags+caption sin truncar). Inyección _last_image_url funciona: el modelo encuentra la imagen del mensaje en curso. Static mount /api/uploads/ai_generated/{file} sirve la imagen generada (200 OK, ~600KB).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Estilista Visual chat bubble",
+        "issues": [
+          "El asistente devuelve además del rich card un texto plano con markdown ![Antes](sandbox:/api/uploads/...) que no se renderiza (sandbox: prefix). Es redundante con la BeforeAfterCard y queda como ruido visual. Sugerencia: instruir en el system prompt 'No incluyas links markdown ni el prefijo sandbox: en tu respuesta de texto; la rich card ya muestra las imágenes'."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_12_marketing_lab.py",
+    "/app/test_reports/pytest/iteration_12_results.xml"
+  ],
+  "action_items": [
+    "(opcional, cosmético) Limpiar el texto plano del Estilista Visual para que no duplique las imágenes con markdown sandbox: cuando ya hay BeforeAfterCard."
+  ],
+  "critical_code_review_comments": [
+    "console.py:927 — result_preview[:6000] OK. Para tools que generen >6000 chars (poco probable en video_script_card normal) podría faltar info; aceptable porque la cota dura es 30000 en _exec_tool.",
+    "image_gen.py:107 — el cast .jpe→.jpg está bien; manejo de mime poco común OK. No hay cleanup de archivos viejos en /app/backend/uploads/ai_generated/, puede crecer indefinido. Sugerencia futura: TTL de 7 días o purge manual.",
+    "agents_catalog.py:267 — marketing_lab.tools incluye SOLO video_script_card. Si el usuario quiere variantes (ej. paypal para cobrar el guion), faltaría agregar; OK para este iter.",
+    "BossConsole.js:535 — JSON.parse(tc.result_preview) sin schema validation. Si Nano Banana devuelve un payload corrupto sería un crash silencioso (try/catch protege). OK."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_12_marketing_lab.py (new)",
+    "/app/test_reports/pytest/iteration_12_results.xml (new)"
+  ],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "100% (Marketing Lab + Estilista Visual + Before/After + VideoScript)"},
+  "test_credentials": "Admin melvinnavas79@gmail.com / Admin#2026 (admin no se cobra oros en chat base, pero generate_haircut_preview SÍ descontó 15 oros — verificado en UI '-19 oros')",
+  "seed_data_creation": "1 sesión marketing_lab con un video_script_card emitido. 1 sesión estilista_visual con 1 imagen subida + before-after-card con imagen real generada y guardada en /app/backend/uploads/ai_generated/. Nano Banana real call ~10-25s.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Re-run: cd /app && REACT_APP_BACKEND_URL=https://ai-bot-cost-calc.preview.emergentagent.com python -m pytest backend/tests/test_iteration_12_marketing_lab.py -v. Toma ~60s (incluye llamada real a Gemini Nano Banana). Si el LLM no llama a la tool (no determinismo), el test reintenta con prompts explícitos 'no me hagas preguntas, llamá directamente'. El frontend test usa el file_input directo (paperclip) para subir y descarga la foto Unsplash a /tmp/face.jpg antes del set_input_files.",
+  "rca of the issue": "N/A — todas las features funcionan correctamente. El único punto cosmético menor es el doble render (texto markdown + rich card) en respuestas del Estilista cuando hay before_after."
+}

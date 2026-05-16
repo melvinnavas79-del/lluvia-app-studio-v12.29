@@ -1202,6 +1202,132 @@ html, body, #root {
   font-weight: 600; font-size: 0.85rem;
   border: 1px solid #FDE68A;
 }
+
+/* ─── Rich Card: Before / After (Estilista Visual + Nano Banana) ── */
+.rich-card.before-after-card { max-width: 480px; }
+.ba-grid {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem;
+  background: var(--surface-soft);
+}
+.ba-slot { display: flex; flex-direction: column; gap: 0.35rem; align-items: stretch; min-width: 0; }
+.ba-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.ba-img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+  display: block;
+  cursor: zoom-in;
+  transition: transform .15s, box-shadow .15s;
+}
+.ba-img:hover { transform: scale(1.02); box-shadow: 0 8px 20px rgba(15, 23, 42, 0.16); }
+.ba-arrow {
+  color: var(--text-muted);
+  display: flex; align-items: center; justify-content: center;
+  padding-top: 1.2rem;
+}
+
+/* ─── Rich Card: Video Script (Marketing Lab) ──────────────────── */
+.rich-card.video-script-card { max-width: 520px; }
+.video-script-card .rc-head { position: relative; padding-right: 3rem; }
+.vs-copy-btn {
+  position: absolute;
+  top: 0.85rem; right: 0.85rem;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 0.95rem;
+  transition: all .15s;
+}
+.vs-copy-btn:hover { background: var(--surface-soft); transform: scale(1.05); }
+.vs-body {
+  padding: 1rem 1.1rem 1.2rem;
+  display: flex; flex-direction: column; gap: 0.95rem;
+}
+.vs-section { display: flex; flex-direction: column; gap: 0.35rem; }
+.vs-section-title {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  font-weight: 700;
+}
+.vs-section-title span { color: var(--text-muted); font-weight: 400; opacity: 0.7; }
+.vs-hook {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.35;
+  padding: 0.55rem 0.85rem;
+  border-left: 4px solid;
+  background: var(--surface-soft);
+  border-radius: 0 8px 8px 0;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+.vs-scenes {
+  list-style: none;
+  margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 0.55rem;
+  counter-reset: scene;
+}
+.vs-scene {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.6rem 0.8rem;
+  display: flex; flex-direction: column; gap: 0.25rem;
+  font-size: 0.86rem;
+}
+.vs-scene-t {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+.vs-scene-visual { color: var(--text-primary); line-height: 1.45; }
+.vs-scene-vo {
+  color: var(--text-secondary);
+  font-style: italic;
+  line-height: 1.4;
+  font-size: 0.85rem;
+}
+.vs-cta { font-weight: 700; font-size: 0.95rem; }
+.vs-music, .vs-caption {
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--surface-soft);
+  padding: 0.55rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.vs-hashtags { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.vs-hashtag {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.22rem 0.55rem;
+  border: 1px solid;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+}
+
 .cc-status {
   padding: 0.7rem 1rem;
   border: 1px solid var(--border);

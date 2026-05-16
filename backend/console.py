@@ -197,6 +197,70 @@ OPENAI_TOOLS = [
             "app_name": {"type": "string", "description": "Nombre de la subcarpeta a pushear. Si se omite, empuja todo el workspace del usuario."},
         }},
     }},
+    {"type": "function", "function": {
+        "name": "generate_haircut_preview",
+        "description": (
+            "Genera una imagen visual 'Before/After' mostrando como se veria el cliente "
+            "con el nuevo corte/color de cabello. Usa Gemini Nano Banana (img2img) con la "
+            "ULTIMA foto que el cliente envio en este chat. Devuelve una rich card visual con "
+            "ambas imagenes lado a lado. SOLO llamar despues de haber analizado la foto del "
+            "cliente y haber propuesto opciones de corte. La descripcion debe ser detallada y "
+            "en INGLES (el modelo entiende mejor): nombre del corte, largo, color, textura, "
+            "movimiento. Ejemplo: 'Long bob (lob) cut to collarbone, caramel balayage with "
+            "soft face-framing layers, slight wave texture, side-swept fringe'."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "look_description": {
+                "type": "string",
+                "description": "Descripcion en INGLES del nuevo corte/color, 30-300 chars."
+            },
+            "look_name": {
+                "type": "string",
+                "description": "Nombre corto del look en español para mostrar al cliente."
+            },
+        }, "required": ["look_description", "look_name"]},
+    }},
+    {"type": "function", "function": {
+        "name": "video_script_card",
+        "description": (
+            "Genera una rich card visual con el GUION COMPLETO para grabar un video corto de "
+            "marketing (TikTok/Reels/Shorts) sobre una funcionalidad de Lluvia App Studio o "
+            "del cliente. Devuelve la tarjeta lista para que el equipo grabe y publique. "
+            "Llamar SIEMPRE despues de haber preguntado: que feature, que plataforma, que tono "
+            "(divertido/serio/inspiracional). Generar copy en ESPAÑOL neutro."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "title": {"type": "string", "description": "Titulo del video (max 80 chars)"},
+            "platform": {
+                "type": "string",
+                "enum": ["tiktok", "reels", "shorts", "todos"],
+                "description": "Plataforma destino. 'todos' = formato 9:16 universal."
+            },
+            "duration_sec": {"type": "integer", "description": "Duracion total en segundos (15-90)"},
+            "hook": {"type": "string", "description": "Frase de gancho que aparece en pantalla los primeros 1-3 segundos. Genera curiosidad."},
+            "scenes": {
+                "type": "array",
+                "description": "Lista de 3-7 escenas con timecode, lo que se ve y lo que se dice/escribe en pantalla.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "t": {"type": "string", "description": "Timecode tipo '0:00-0:03'"},
+                        "visual": {"type": "string", "description": "Que se ve en pantalla (cinematografia)"},
+                        "voiceover": {"type": "string", "description": "Texto que dice el creador o sale en pantalla"},
+                    },
+                    "required": ["t", "visual", "voiceover"],
+                },
+            },
+            "caption": {"type": "string", "description": "Caption/descripcion lista para publicar (max 300 chars)"},
+            "hashtags": {
+                "type": "array",
+                "description": "8-15 hashtags relevantes mezclando nicho + amplio + trending. Incluir el #",
+                "items": {"type": "string"},
+            },
+            "music_suggestion": {"type": "string", "description": "Genero / vibe musical sugerido (no nombres comerciales). Ej: 'beat trap chill con drop al final'"},
+            "cta": {"type": "string", "description": "Llamado a la accion final (ej: 'Comenta APP y te paso el link')"},
+        }, "required": ["title", "platform", "duration_sec", "hook", "scenes", "caption", "hashtags", "cta"]},
+    }},
 ]
 
 
@@ -484,6 +548,43 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
                     "commit_message": result.get("commit_message"),
                     "error": result.get("error"),
                 }
+        elif name == "generate_haircut_preview":
+            import image_gen
+            last_img = (args.get("_last_image_url") or "").strip()
+            if not last_img:
+                data = {
+                    "card_type": "before_after",
+                    "ok": False,
+                    "error": "El cliente no ha enviado todavia una foto. Pedile que adjunte una foto de su rostro de frente con buena luz.",
+                }
+            else:
+                result = await image_gen.generate_haircut_preview(
+                    original_image_url=last_img,
+                    look_description=args.get("look_description", ""),
+                    user_id=user_id,
+                )
+                data = {
+                    "card_type": "before_after",
+                    "ok": result.get("ok", False),
+                    "look_name": args.get("look_name", ""),
+                    "look_description": args.get("look_description", ""),
+                    "before_url": result.get("before_url"),
+                    "after_url": result.get("after_url"),
+                    "error": result.get("error"),
+                }
+        elif name == "video_script_card":
+            data = {
+                "card_type": "video_script",
+                "title": args.get("title", "").strip(),
+                "platform": args.get("platform", "todos"),
+                "duration_sec": int(args.get("duration_sec") or 30),
+                "hook": args.get("hook", "").strip(),
+                "scenes": args.get("scenes") or [],
+                "caption": args.get("caption", "").strip(),
+                "hashtags": args.get("hashtags") or [],
+                "music_suggestion": (args.get("music_suggestion") or "").strip(),
+                "cta": (args.get("cta") or "").strip(),
+            }
         else:
             return json.dumps({"error": f"Tool desconocida: {name}"}), 0
         return json.dumps(data, ensure_ascii=False)[:30000], cost
@@ -796,6 +897,18 @@ async def send_message(
                 args = {}
             # Inyectar agent_id para tools que lo necesitan (appointments)
             args["_agent_id"] = agent["id"]
+            # Inyectar la ULTIMA imagen del chat (mensaje actual o historial) para
+            # tools de vision/edicion como generate_haircut_preview.
+            if "_last_image_url" not in args:
+                last_img_url = ""
+                if image_urls:
+                    last_img_url = image_urls[-1]
+                else:
+                    for past in reversed(sess.get("messages", [])):
+                        if past.get("role") == "user" and past.get("image_urls"):
+                            last_img_url = past["image_urls"][-1]
+                            break
+                args["_last_image_url"] = last_img_url
             result, cost = await _exec_tool(tc.function.name, args, user["id"], is_admin)
             # cobrar el coste de la tool (si falla, abortamos)
             if cost > 0:
@@ -806,7 +919,13 @@ async def send_message(
                     result = json.dumps({"error": "saldo insuficiente para esta tool"})
                 else:
                     extra_cost += cost
-            tool_calls_made.append({"name": tc.function.name, "args": args, "result_preview": result[:300]})
+            tool_calls_made.append({
+                "name": tc.function.name,
+                "args": args,
+                # Mantener result completo para tools que generan rich cards (max 6000 chars).
+                # Para tools opacas (shell, github), un preview corto es suficiente.
+                "result_preview": result[:6000],
+            })
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
 
     if not final_text:

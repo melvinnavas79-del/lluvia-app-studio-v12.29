@@ -524,9 +524,13 @@ function Message({ msg, agent, onPlay, backendBase }) {
     if (u.startsWith("http") || u.startsWith("blob:") || u.startsWith("data:")) return u;
     return (backendBase || "") + u;
   };
-  // Extraer rich cards desde tool_calls (paypal_invoice_card / service_card / push_to_my_github)
+  // Extraer rich cards desde tool_calls
+  const RICH_CARD_TOOLS = [
+    "paypal_invoice_card", "service_card", "push_to_my_github",
+    "generate_haircut_preview", "video_script_card",
+  ];
   const cards = (msg.tool_calls || []).map((tc) => {
-    if (!["paypal_invoice_card", "service_card", "push_to_my_github"].includes(tc.name)) return null;
+    if (!RICH_CARD_TOOLS.includes(tc.name)) return null;
     try {
       const r = JSON.parse(tc.result_preview || "{}");
       if (r.card_type) return r;
@@ -567,6 +571,8 @@ function Message({ msg, agent, onPlay, backendBase }) {
         {cards.map((c, i) => {
           if (c.card_type === "payment") return <PaymentCard key={i} card={c} agent={agent} />;
           if (c.card_type === "github_push") return <GitHubPushCard key={i} card={c} />;
+          if (c.card_type === "before_after") return <BeforeAfterCard key={i} card={c} agent={agent} backendBase={backendBase} />;
+          if (c.card_type === "video_script") return <VideoScriptCard key={i} card={c} agent={agent} />;
           return <ServiceCard key={i} card={c} agent={agent} />;
         })}
         {msg.superadmin_takeover && (
@@ -698,3 +704,154 @@ function GitHubPushCard({ card }) {
     </div>
   );
 }
+
+function BeforeAfterCard({ card, agent, backendBase }) {
+  const accent = agent?.color || "#ec4899";
+  const abs = (u) => {
+    if (!u) return u;
+    if (u.startsWith("http") || u.startsWith("blob:") || u.startsWith("data:")) return u;
+    return (backendBase || "") + u;
+  };
+  const ok = card.ok === true;
+  return (
+    <div className="rich-card before-after-card" data-testid="before-after-card"
+         style={{ borderColor: accent }}>
+      <div className="rc-head" style={{ background: `linear-gradient(135deg, ${accent}22, transparent)` }}>
+        <div className="rc-brand">
+          <div className="rc-logo" style={{ background: accent }}>💇</div>
+          <div>
+            <div className="rc-brand-name">{card.look_name || "Look propuesto"}</div>
+            <div className="rc-brand-sub">Estilista Visual · Vista previa IA</div>
+          </div>
+        </div>
+      </div>
+      {!ok && (
+        <div className="rc-body">
+          <div className="rc-desc" style={{ color: "#DC2626" }}>
+            {card.error || "No pude generar la vista previa. Pedile al cliente una foto clara."}
+          </div>
+        </div>
+      )}
+      {ok && (
+        <div className="ba-grid">
+          <div className="ba-slot">
+            <div className="ba-label">Antes</div>
+            <a href={abs(card.before_url)} target="_blank" rel="noreferrer">
+              <img src={abs(card.before_url)} alt="Antes" className="ba-img" loading="lazy" />
+            </a>
+          </div>
+          <div className="ba-arrow" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M13 5l7 7-7 7"/>
+            </svg>
+          </div>
+          <div className="ba-slot">
+            <div className="ba-label" style={{ color: accent }}>Después · IA</div>
+            <a href={abs(card.after_url)} target="_blank" rel="noreferrer">
+              <img src={abs(card.after_url)} alt="Después" className="ba-img"
+                   style={{ borderColor: accent }} loading="lazy" />
+            </a>
+          </div>
+        </div>
+      )}
+      {ok && card.look_description && (
+        <div className="rc-body" style={{ paddingTop: "0.6rem" }}>
+          <div className="rc-desc" style={{ fontSize: "0.82rem", color: "var(--text-muted)", fontStyle: "italic" }}>
+            {card.look_description}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VideoScriptCard({ card, agent }) {
+  const accent = agent?.color || "#f59e0b";
+  const platformLabel = {
+    tiktok: "TikTok", reels: "Instagram Reels", shorts: "YouTube Shorts", todos: "9:16 universal",
+  }[card.platform] || card.platform;
+  const copyAll = () => {
+    const text = [
+      `📹 ${card.title}`,
+      `Plataforma: ${platformLabel} · ${card.duration_sec}s`,
+      ``,
+      `HOOK (0-3s): ${card.hook}`,
+      ``,
+      `ESCENAS:`,
+      ...(card.scenes || []).map((s) => `  ${s.t} · ${s.visual}\n      → "${s.voiceover}"`),
+      ``,
+      `CTA: ${card.cta}`,
+      `Música: ${card.music_suggestion || "—"}`,
+      ``,
+      `📝 CAPTION:`,
+      card.caption,
+      ``,
+      `# ${(card.hashtags || []).join(" ")}`,
+    ].join("\n");
+    navigator.clipboard?.writeText(text);
+  };
+  return (
+    <div className="rich-card video-script-card" data-testid="video-script-card"
+         style={{ borderColor: accent }}>
+      <div className="rc-head" style={{ background: `linear-gradient(135deg, ${accent}22, transparent)` }}>
+        <div className="rc-brand">
+          <div className="rc-logo" style={{ background: accent }}>🎬</div>
+          <div>
+            <div className="rc-brand-name">{card.title}</div>
+            <div className="rc-brand-sub">{platformLabel} · {card.duration_sec}s</div>
+          </div>
+        </div>
+        <button className="vs-copy-btn" onClick={copyAll}
+                data-testid="video-script-copy" title="Copiar todo">
+          📋
+        </button>
+      </div>
+      <div className="vs-body">
+        <div className="vs-section">
+          <div className="vs-section-title">HOOK <span>(0-3s)</span></div>
+          <div className="vs-hook" style={{ borderLeftColor: accent }}>{card.hook}</div>
+        </div>
+        <div className="vs-section">
+          <div className="vs-section-title">ESCENAS</div>
+          <ol className="vs-scenes">
+            {(card.scenes || []).map((s, i) => (
+              <li key={i} className="vs-scene">
+                <span className="vs-scene-t" style={{ color: accent }}>{s.t}</span>
+                <div className="vs-scene-visual"><strong>📷</strong> {s.visual}</div>
+                <div className="vs-scene-vo">🎙 "{s.voiceover}"</div>
+              </li>
+            ))}
+          </ol>
+        </div>
+        <div className="vs-section">
+          <div className="vs-section-title">CTA</div>
+          <div className="vs-cta" style={{ color: accent }}>{card.cta}</div>
+        </div>
+        {card.music_suggestion && (
+          <div className="vs-section">
+            <div className="vs-section-title">MÚSICA</div>
+            <div className="vs-music">🎵 {card.music_suggestion}</div>
+          </div>
+        )}
+        <div className="vs-section">
+          <div className="vs-section-title">CAPTION</div>
+          <div className="vs-caption">{card.caption}</div>
+        </div>
+        {card.hashtags?.length > 0 && (
+          <div className="vs-section">
+            <div className="vs-section-title">HASHTAGS</div>
+            <div className="vs-hashtags">
+              {card.hashtags.map((h, i) => (
+                <span key={i} className="vs-hashtag" style={{ color: accent, borderColor: accent + "55" }}>
+                  {h.startsWith("#") ? h : `#${h}`}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
