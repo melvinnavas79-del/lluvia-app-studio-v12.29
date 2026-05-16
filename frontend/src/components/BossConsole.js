@@ -27,6 +27,7 @@ export default function BossConsole() {
   const textareaRef = useRef(null);
   const cameraVideoRef = useRef(null);
   const cameraStreamRef = useRef(null);
+  const nativeCameraInputRef = useRef(null);  // <input capture> fallback iOS/Android
   const backendBase = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/$/, "");
 
   // Auto-resize del textarea estilo ChatGPT
@@ -111,6 +112,24 @@ export default function BossConsole() {
     } finally { setSending(false); }
   };
 
+  // Listener global para que las rich cards puedan pre-rellenar y enviar
+  // mensajes (ej: CTA "Generar video real con Sora 2" desde VideoScriptCard).
+  useEffect(() => {
+    const onCompose = (e) => {
+      const { text, send: shouldSend } = e.detail || {};
+      if (!text) return;
+      if (shouldSend) {
+        send(text);  // enviar directamente
+      } else {
+        setInput((prev) => (prev ? prev + " " + text : text));
+        textareaRef.current?.focus();
+      }
+    };
+    window.addEventListener("lluvia:compose-message", onCompose);
+    return () => window.removeEventListener("lluvia:compose-message", onCompose);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId, attachments]);
+
   // ---- IMAGENES: subir archivo y adjuntar al proximo mensaje
   const uploadImage = async (file) => {
     if (!file || !activeId) return;
@@ -167,10 +186,23 @@ export default function BossConsole() {
   };
 
   // ---- CAMARA: abrir modal con getUserMedia y capturar foto a canvas
+  // En entornos donde getUserMedia esta bloqueado (iframe Preview iOS,
+  // WebView, contexto inseguro), automaticamente caemos al <input capture>
+  // nativo que iOS Safari SI permite incluso dentro del Preview.
+  const triggerNativeCamera = () => {
+    closeCamera();
+    if (nativeCameraInputRef.current) {
+      nativeCameraInputRef.current.value = "";
+      nativeCameraInputRef.current.click();
+    }
+  };
+
   const openCamera = async () => {
     setCameraErr("");
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraErr("Tu navegador no soporta camara. Usá el botón de adjuntar.");
+    // Si no hay API de mediaDevices (Safari iframe / contexto inseguro),
+    // saltamos directo a la camara nativa nativa del SO.
+    if (!navigator.mediaDevices?.getUserMedia || !window.isSecureContext) {
+      triggerNativeCamera();
       return;
     }
     setCameraOpen(true);
@@ -187,11 +219,17 @@ export default function BossConsole() {
         try { await cameraVideoRef.current.play(); } catch (_) {}
       }
     } catch (e) {
-      const msg = e?.name === "NotAllowedError"
-        ? "Permitime el acceso a la camara desde la configuración del navegador."
-        : e?.name === "NotFoundError"
+      const name = e?.name || "";
+      const isBlocked = name === "NotAllowedError" || /not allowed/i.test(e?.message || "");
+      if (isBlocked) {
+        // Preview de Emergent / iframe en iOS bloquea getUserMedia.
+        // Caemos al input capture nativo (que SI funciona).
+        triggerNativeCamera();
+        return;
+      }
+      const msg = name === "NotFoundError"
         ? "No detecté ninguna cámara. Probá adjuntar desde la galería."
-        : `No pude abrir la cámara: ${e?.message || e}`;
+        : `No pude abrir la cámara: ${e?.message || e}. Tocá '📱 Usar cámara del teléfono' para usar la cámara nativa.`;
       setCameraErr(msg);
     }
   };
@@ -208,9 +246,11 @@ export default function BossConsole() {
     // Alterna entre front/rear apagando y volviendo a abrir con facingMode contrario.
     const current = cameraStreamRef.current?.getVideoTracks?.()[0]?.getSettings?.()?.facingMode;
     const newFacing = current === "user" ? "environment" : "user";
-    closeCamera();
-    setCameraOpen(true);
-    await new Promise((r) => setTimeout(r, 60));
+    // Cortar tracks viejos antes de pedir otros (algunos WebViews lo requieren).
+    const oldStream = cameraStreamRef.current;
+    if (oldStream) oldStream.getTracks().forEach((t) => t.stop());
+    cameraStreamRef.current = null;
+    if (cameraVideoRef.current) cameraVideoRef.current.srcObject = null;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: newFacing }, width: { ideal: 1280 }, height: { ideal: 1280 } },
@@ -222,7 +262,8 @@ export default function BossConsole() {
         try { await cameraVideoRef.current.play(); } catch (_) {}
       }
     } catch (e) {
-      setCameraErr(`No pude cambiar de cámara: ${e?.message || e}`);
+      // En iOS Preview iframe el flip suele fallar con NotAllowed; caemos al nativo.
+      triggerNativeCamera();
     }
   };
 
@@ -499,6 +540,15 @@ export default function BossConsole() {
                 onChange={onFilePick}
                 data-testid="bc-file-input"
               />
+              <input
+                ref={nativeCameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                style={{ display: "none" }}
+                onChange={onFilePick}
+                data-testid="bc-native-camera-input"
+              />
               <button
                 className="bc-attach-btn"
                 onClick={() => fileInputRef.current?.click()}
@@ -633,7 +683,16 @@ export default function BossConsole() {
                 data-testid="bc-camera-video"
               />
               {cameraErr && (
-                <div className="bc-camera-err" data-testid="bc-camera-err">{cameraErr}</div>
+                <div className="bc-camera-err" data-testid="bc-camera-err">
+                  <div>{cameraErr}</div>
+                  <button
+                    className="bc-camera-fallback-btn"
+                    onClick={triggerNativeCamera}
+                    data-testid="bc-camera-native-btn"
+                  >
+                    📱 Usar cámara del teléfono
+                  </button>
+                </div>
               )}
             </div>
             <div className="bc-camera-controls">
@@ -939,6 +998,19 @@ function VideoScriptCard({ card, agent }) {
     ].join("\n");
     navigator.clipboard?.writeText(text);
   };
+  const requestRealVideo = () => {
+    // Dispara un evento global que el contenedor (BossConsole) escucha y
+    // arma un mensaje pre-rellenado en el composer para pedirle a Sora 2
+    // el video real de este guion.
+    const horizontal = card.platform === "shorts" ? false : false; // por default vertical
+    const dur = card.duration_sec <= 6 ? 4 : (card.duration_sec <= 10 ? 8 : 12);
+    const prompt = [
+      `Hace el video REAL con Sora 2 de este guion:`,
+      `"${card.title}". Hook: ${card.hook}.`,
+      `Duracion ${dur} segundos, vertical, calidad standard. Confirmo el costo.`,
+    ].join(" ");
+    window.dispatchEvent(new CustomEvent("lluvia:compose-message", { detail: { text: prompt, send: true } }));
+  };
   return (
     <div className="rich-card video-script-card" data-testid="video-script-card"
          style={{ borderColor: accent }}>
@@ -998,6 +1070,15 @@ function VideoScriptCard({ card, agent }) {
             </div>
           </div>
         )}
+        <button
+          className="vs-cta-real-video"
+          onClick={requestRealVideo}
+          style={{ background: accent }}
+          data-testid="vs-request-real-video"
+        >
+          🎥 Generar este video REAL con Sora 2
+          <span className="vs-cta-price">30–55 oros</span>
+        </button>
       </div>
     </div>
   );

@@ -257,9 +257,29 @@ function IntegrationsPanel() {
 
         {status.linked && status.account && (
           <div style={{ background: "var(--surface-soft)", padding: "0.85rem 1rem",
-                        borderRadius: 8, marginBottom: "1rem", fontSize: "0.9rem" }}>
-            Cuenta de Google: <strong>{status.account.google_email}</strong><br/>
-            Vinculada: {new Date(status.account.linked_at).toLocaleString()}
+                        borderRadius: 8, marginBottom: "1rem", fontSize: "0.9rem",
+                        display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+            <div>
+              Cuenta de Google: <strong data-testid="gmail-linked-email">{status.account.google_email}</strong><br/>
+              <span style={{ color: "var(--text-muted)", fontSize: "0.83rem" }}>
+                Vinculada: {new Date(status.account.linked_at).toLocaleString()}
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontSize: "0.78rem", color: "var(--text-muted)", flex: 1, minWidth: 200 }}>
+                ⚠ Asegurate que esta sea la cuenta a la que <strong>te llegan los correos de tus clientes</strong>
+                (no tu Gmail personal). Si necesitás cambiarla, desvinculá y vinculá la correcta.
+              </span>
+              <button
+                className="copy-btn"
+                onClick={desvincular}
+                data-testid="gmail-unlink-btn-inline"
+                style={{ background: "#DC2626", color: "#fff", borderColor: "#DC2626",
+                         padding: "0.5rem 0.9rem", fontSize: "0.82rem", fontWeight: 600 }}
+              >
+                Desvincular y cambiar cuenta
+              </button>
+            </div>
           </div>
         )}
 
@@ -482,7 +502,7 @@ function GmailMaestroSection() {
     setBusy(true); setMsg("");
     try {
       const { data } = await api.post("/integrations/gmail/maestro/process-inbox");
-      setMsg(`✓ Procesados ${data.newly_processed} correos nuevos (de ${data.total_unread} no leídos)`);
+      setMsg(`✓ Procesados ${data.newly_processed ?? 0} correos nuevos (de ${data.total_unread ?? 0} no leídos)`);
       refresh();
     } catch (e) {
       setMsg(`✕ ${formatError(e)}`);

@@ -1327,6 +1327,35 @@ html, body, #root {
   border-radius: 999px;
   font-family: var(--font-mono);
 }
+.vs-cta-real-video {
+  margin-top: 0.4rem;
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  padding: 0.85rem 1.1rem;
+  font-size: 0.94rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  transition: transform .12s, box-shadow .15s, opacity .12s;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25);
+}
+.vs-cta-real-video:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(245, 158, 11, 0.35);
+}
+.vs-cta-real-video:active { transform: translateY(0); opacity: .9; }
+.vs-cta-price {
+  background: rgba(255, 255, 255, 0.22);
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
 
 .cc-status {
   padding: 0.7rem 1rem;
@@ -2311,13 +2340,30 @@ code {
   transform: translateX(-50%);
   background: rgba(220, 38, 38, 0.95);
   color: #fff;
-  padding: 0.7rem 1.1rem;
-  border-radius: 12px;
+  padding: 0.85rem 1.1rem;
+  border-radius: 14px;
   font-size: 0.92rem;
   max-width: 88%;
   text-align: center;
   box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  align-items: stretch;
 }
+.bc-camera-fallback-btn {
+  background: #fff;
+  color: #DC2626;
+  border: none;
+  border-radius: 999px;
+  padding: 0.6rem 1rem;
+  font-weight: 700;
+  font-size: 0.92rem;
+  cursor: pointer;
+  transition: transform .12s, opacity .12s;
+}
+.bc-camera-fallback-btn:hover { transform: scale(1.02); }
+.bc-camera-fallback-btn:active { opacity: .85; }
 .bc-camera-controls {
   background: rgba(0, 0, 0, 0.85);
   padding: 1.3rem 1rem 2rem;
