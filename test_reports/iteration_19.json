@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 19 — Funnel demo->CTA->register->/#/chat->app_builder_pro validated. Backend 5/5 PASS + 1 SKIP (rate-limit). Frontend CTA, modal, submit, 429-protection clear message all VERIFIED. BossConsole seed-consume logic verified via code review + admin mock (note: admin mock doesn't render BossConsole because admin->AdminDashboard whose hashToTab doesn't accept 'chat' — only ClientDashboard.hashToTab accepts 'chat' for non-admin users; for the actual funnel a freshly-registered non-admin user will hit ClientDashboard correctly). Full end-to-end real funnel BLOCKED by /api/auth/register IP rate-limit 429 'Demasiados registros desde tu red. Esperá 24h o contactanos.' from container IP — anti-abuse working as designed, NOT a bug.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/demo/audio-room/api/convert",
+        "issue": "Rate-limit 429 (heredado de affiliates.register) bloquea registro automatizado desde la IP del runner. Mensaje claro: 'Demasiados registros desde tu red. Esperá 24h o contactanos.' Validacion E2E del happy path en este entorno solo es posible esperando 24h o desde otra IP. Comportamiento esperado, no es bug."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_19_funnel.py",
+    "/app/test_reports/pytest/iteration_19_results.xml"
+  ],
+  "action_items": [
+    "[INFO] El happy-path E2E del convert no se pudo ejecutar end-to-end por rate-limit 429 anti-abuse desde la IP del testing runner. Todo el contrato esta verificado a nivel de codigo + estructura HTML del CTA + comportamiento de validaciones 4xx + mensaje 429 claro. Para validar manualmente desde otra IP: visitar /api/demo/audio-room-static/, click CTA, llenar modal, submit -> deberia devolver 200 con seed + redirect.",
+    "[INFO] Voseos traducidos correctamente en /app/backend/app_templates/audio_room/backend/server.py linea 206 ('No puedes seguirte a ti mismo') y linea 323 ('Tienes X oros.'). Grep negativo confirmado.",
+    "[INFO] CTA flotante inyectado correctamente con todos los data-testid requeridos (demo-cta-floating, demo-cta-submit, demo-cta-email, demo-cta-password, demo-cta-app-name, demo-cta-color), JS window.lluviaSubmitConvert presente, redirect a /#/chat tras 700ms, localStorage keys correctas (bot_admin_token + lluvia_demo_seed). Validado por scrape del HTML real."
+  ],
+  "critical_code_review_comments": [
+    "demo_audio_room.py: el CTA HTML/CSS/JS esta inyectado inline en index.html via _build_demo_cta() — funciona pero suma ~2KB inline. Considerable mover a /api/demo/audio-room-static/js/lluvia-cta.js si el contenido crece. No-blocker.",
+    "BossConsole.js:65-84 — el useEffect que consume el seed depende de [agents.length], lo cual es correcto y rendera UNA sola vez cuando agents pasa de 0 a >0. localStorage.removeItem se hace ANTES del await fetch, garantizando que aun si recarga durante la creacion de la sesion el seed ya no se procesa. Idempotente y a prueba de double-fire. OK.",
+    "demo_audio_room.py:404 — convert reusa register_endpoint directamente importando affiliates.register. Acopla logicamente convert con el sistema antiabuse del registro, lo cual es CORRECTO (no queremos farm de trials por la puerta de atras). Sin embargo limita la testeabilidad — considerar parameter dev_bypass_rate_limit firmado por server secret para CI/E2E.",
+    "demo_audio_room.py:74 — el CTA dice 'Ármala con TU marca → 40 oros' pero el visitante arranca con 15 oros (trial). UX issue menor: el CTA no advierte que va a necesitar comprar oros. La linea 'price-line' del modal SI lo explica ('15 oros gratis al crear cuenta · La app cuesta 40 oros · Sin tarjeta'). Suficiente."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_19_funnel.py (NEW — 6 tests, 5 PASS 1 SKIP)"
+  ],
+  "success_rate": {
+    "backend": "100% (5/5 PASS, 1 SKIP por 429 rate-limit anti-abuse esperado)",
+    "frontend": "100% — CTA flotante visible, modal abre, submit dispara convert call, 429 muestra mensaje claro, codigo BossConsole verificado"
+  },
+  "test_credentials": "Admin melvinnavas79@gmail.com / Admin#2026 OK. Registro nuevo bloqueado por 429 desde IP del contenedor (esperado).",
+  "seed_data_creation": "Ningun seed creado. Solo test de validacion sin escritura persistente.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Para retestear el happy path del convert: esperar 24h o limpiar la coleccion mongo que trackea registros recientes desde la IP. Pytest re-run: `pytest /app/backend/tests/test_iteration_19_funnel.py -v`. El mock con admin token NO sirve para validar BossConsole porque admin -> AdminDashboard (que no acepta hash 'chat'); solo un usuario non-admin nuevo va a ClientDashboard -> BossConsole donde el seed-consume useEffect dispara. La logica esta verificada por code review en BossConsole.js:65-84.",
+  "rca of the issue": "NO HAY BUGS. La unica falla es el rate-limit 429 que bloquea el E2E end-to-end del registro desde la IP del runner — esto es proteccion anti-farming intencional, funcionando correctamente, con mensaje claro al usuario. Reproduccion: POST /api/demo/audio-room/api/convert con email nuevo desde IP del container devuelve 429 'Demasiados registros desde tu red. Esperá 24h o contactanos.' Mitigacion: esperar 24h, otro entorno, o agregar bypass dev firmado para CI."
+}

@@ -203,7 +203,7 @@ def get_user(user_id: str):
 @api.post("/api/users/{user_id}/follow")
 def follow_user(user_id: str, user: dict = Depends(current_user)):
     if user_id == user["id"]:
-        raise HTTPException(400, "No podes seguirte a vos mismo")
+        raise HTTPException(400, "No puedes seguirte a ti mismo")
     with db() as con:
         exists = con.execute("SELECT 1 FROM users WHERE id=?", (user_id,)).fetchone()
         if not exists:
@@ -320,7 +320,7 @@ def purchase_access(room_id: str, user: dict = Depends(current_user)):
         price = int(room["price_credits"] or 0)
         user_row = con.execute("SELECT credits FROM users WHERE id=?", (user["id"],)).fetchone()
         if (user_row["credits"] or 0) < price:
-            raise HTTPException(402, f"Necesitas {price} oros. Tenes {user_row['credits']}.")
+            raise HTTPException(402, f"Necesitas {price} oros. Tienes {user_row['credits']}.")
         con.execute("UPDATE users SET credits = credits - ? WHERE id=?", (price, user["id"]))
         con.execute(
             "INSERT OR REPLACE INTO room_access (user_id, room_id, paid_at, price) VALUES (?,?,?,?)",

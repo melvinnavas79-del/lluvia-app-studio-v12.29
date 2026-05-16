@@ -59,6 +59,30 @@ export default function BossConsole() {
 
   useEffect(() => { refreshAll(); }, []);
 
+  // Si el visitante vino del demo publico, hay un seed en localStorage con
+  // {app_name, brand_color}. Auto-creamos una sesion con app_builder_pro
+  // y mandamos el mensaje para que ensamble la app inmediatamente.
+  useEffect(() => {
+    if (!agents.length) return;
+    let seed = null;
+    try { seed = JSON.parse(localStorage.getItem("lluvia_demo_seed") || "null"); } catch (_) {}
+    if (!seed || !seed.app_name) return;
+    localStorage.removeItem("lluvia_demo_seed"); // consumir una sola vez
+    (async () => {
+      try {
+        const r = await api.post("/console/sessions", { agent_id: "app_builder_pro" });
+        await refreshAll();
+        setActiveId(r.data.id);
+        // dar tiempo a que activeSession se cargue
+        setTimeout(() => {
+          const text = `Llamala "${seed.app_name}" y usá color ${seed.brand_color || "#5B8DEF"}. Generala ya.`;
+          window.dispatchEvent(new CustomEvent("lluvia:compose-message", { detail: { text, send: true } }));
+        }, 800);
+      } catch (e) { setErr(formatError(e)); }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agents.length]);
+
   useEffect(() => {
     if (!activeId) { setActiveSession(null); return; }
     api.get(`/console/sessions/${activeId}`)
