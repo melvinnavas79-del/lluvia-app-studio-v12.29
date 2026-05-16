@@ -99,6 +99,11 @@ async def create_order(request: Request, data: CreateOrderIn, user: dict = Depen
     final_price = round(float(pack["price_usd"]) * factor, 2)
     base, _, _ = _paypal_env()
     token = _access_token()
+    # URLs de retorno: PayPal redirige al frontend con ?paypal=success&token=ORDER_ID
+    # o ?paypal=cancel. El RechargeTab detecta el query string y llama capture.
+    public = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/") or str(request.base_url).rstrip("/")
+    return_url = f"{public}/?paypal=success#/recharge"
+    cancel_url = f"{public}/?paypal=cancel#/recharge"
     order_payload = {
         "intent": "CAPTURE",
         "purchase_units": [{
@@ -111,6 +116,8 @@ async def create_order(request: Request, data: CreateOrderIn, user: dict = Depen
             "brand_name": "Lluvia App Studio",
             "shipping_preference": "NO_SHIPPING",
             "user_action": "PAY_NOW",
+            "return_url": return_url,
+            "cancel_url": cancel_url,
         },
     }
     r = requests.post(

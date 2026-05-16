@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration 15 (v12.16) — PayPal capture fix + trial dinamico 15 oros + anti-farming IP. Backend 7/7 PASSED (5.7s): site_content devuelve trial_oros=15 y hero_cta_primary 'Empezar gratis con 15 oros →'; POST /api/auth/register otorga 15 oros por defecto (verificado con balance en /api/console/credits/me); trial dinamico funciona (PUT trial_oros=5 → nuevo registro recibe 5 → restaurado a 15); anti-farming detectado: el 4to registro desde misma IP en CI devuelve 429; POST /api/paypal/create-order devuelve approve_url valido (paypal.com) y persiste la orden en paypal_orders con approve_url (verificado por code-review paypal_integration.py:135-140); capture a orden inexistente devuelve 502 (proxy del 404 de PayPal). Frontend code-review CONFIRMA: ClientDashboard.initialTab() detecta ?paypal=success/cancel y fuerza tab='recharge' (ClientDashboard.js:22-28); RechargeTab.useEffect captura token, llama /paypal/capture/{order_id}, muestra paypal-capturing durante el fetch y paypal-success al completar, limpia URL con history.replaceState (ClientDashboard.js:117-142). Landing visual: el CTA principal muestra correctamente 'Empezar gratis con 15 oros →' (verificado por screenshot). BUG ENCONTRADO: el bullet point bajo el CTA AÚN dice '✓ 50 oros gratis al registrarte' (PublicChat.js:112) — texto literal hardcoded que no se actualizó al cambiar el trial. También Login.js y PublicChat.js tienen otras 5 menciones a '50 oros' que quedaron rezagadas. El flujo PayPal callback (interactivo) no se pudo verificar end-to-end porque el login en preview no completó automaticamente; el code-review confirma toda la logica.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "PublicChat (landing)", "issue": "Bullet '✓ 50 oros gratis al registrarte' contradice el CTA principal que dice '15 oros'. Hardcoded en PublicChat.js:112", "selector": ".hero-trust span", "priority": "HIGH"},
+      {"component": "PublicChat", "issue": "Subtitulo en seccion de creditos sigue diciendo '50 oros gratis te alcanzan para ~50 mensajes de prueba' (PublicChat.js:216)", "selector": "(text)", "priority": "MEDIUM"},
+      {"component": "PublicChat fallback CTA", "issue": "Fallback del CTA cuando site_content no carga: 'Empezar gratis con 50 oros →' (PublicChat.js:100) — deberia ser 15", "selector": "(fallback string)", "priority": "LOW"},
+      {"component": "Login", "issue": "Banner login muestra '🎁 50 oros de regalo' y '50 oros de trial' y '¿Eres nuevo? Crear cuenta (50 oros)' (Login.js:53,60,122)", "selector": "[data-testid*=login]", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Landing hero", "issues": ["Inconsistencia visual: el boton CTA dice '15 oros' pero el bullet inmediatamente debajo dice '50 oros gratis al registrarte' — confunde al usuario y contradice el cambio de iteracion 15"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_15_paypal_trial.py",
+    "/app/test_reports/pytest/iteration_15_results.xml"
+  ],
+  "action_items": [
+    "Reemplazar los strings '50 oros' restantes por '15 oros' (o mejor, leerlos del site_content.trial_oros) en: PublicChat.js:100 (fallback CTA), PublicChat.js:112 (bullet), PublicChat.js:216 (parrafo), Login.js:53/60/122 (banner registro). 6 ocurrencias totales.",
+    "Sugerencia: hacer estos textos dinamicos leyendo site.trial_oros del GET /api/site/content (ya lo expone el backend) para que el SuperAdmin pueda cambiar el numero desde un solo lugar y se refleje en todo el frontend."
+  ],
+  "critical_code_review_comments": [
+    "BUG VISUAL: PublicChat.js:112 hardcodea '50 oros gratis al registrarte' creando inconsistencia con el CTA dinamico que lee site.hero_cta_primary. Recomendado: <span>✓ {site?.trial_oros ?? 15} oros gratis al registrarte</span>.",
+    "PublicChat.js:100 — fallback del CTA cuando site_content no responde: 'Empezar gratis con 50 oros →'. Si el endpoint cae, el usuario veria 50 (incorrecto). Cambiar fallback a '15 oros'.",
+    "Login.js — 3 menciones hardcoded a '50 oros' en el banner de signup. Igual que arriba, deberia ser dinamico o al menos 15.",
+    "paypal_integration.py:104 — usa PUBLIC_BASE_URL o fallback a request.base_url; en producción detrás de proxy K8s/ingress, request.base_url puede ser http://0.0.0.0:8001 y NO el dominio publico, lo que rompe el redirect. Verificar que PUBLIC_BASE_URL esté seteado en .env (lo está). Sugerencia: log warning si no hay PUBLIC_BASE_URL.",
+    "affiliates.py:115 — el anti-farming usa count_documents con $gte ISO string; funciona pero seria mas robusto usar datetime objects directamente, y limpiar created_at antiguos del indice. Considerar agregar índice (signup_ip, created_at) para que el count sea O(log n).",
+    "Codigo muerto identificado en iter 14 sigue presente: BossConsole.js:1005 `const horizontal = card.platform === 'shorts' ? false : false;`."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_15_paypal_trial.py (new)",
+    "/app/test_reports/pytest/iteration_15_results.xml (new)"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "85% — landing CTA correcto pero 6 strings rezagados con '50 oros' detectados via grep"},
+  "test_credentials": "Admin melvinnavas79@gmail.com / Admin#2026",
+  "seed_data_creation": "~2 usuarios TEST_ creados durante test_register (con prefijo TEST_reg_/TEST_dyn_/TEST_farm_); 1 orden PayPal en estado CREATED (no completed) para test_paypal_create_order. Saturé el anti-farming/IP del cluster con ~4 registros — proximos tests pueden recibir 429 hasta 24h.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Re-run backend: cd /app && REACT_APP_BACKEND_URL=https://ai-bot-cost-calc.preview.emergentagent.com python -m pytest backend/tests/test_iteration_15_paypal_trial.py -v. NOTA IMPORTANTE: tras este run la IP del CI puede estar bloqueada por anti-farming (4 registros consumidos); test_register_grants_default_15_oros y test_anti_farming_429 pueden devolver skip/diferentes resultados en re-runs hasta 24h. Para verificar el flujo PayPal callback end-to-end interactivamente: 1) login admin via UI, 2) ir a /#/recharge, 3) click pack 'starter', 4) en lugar de pagar, copiar el order_id de la URL paypal, 5) navegar a /?paypal=success&token=ORDER_ID#/recharge — backend devolvera 400 (orden no COMPLETED) lo cual es el comportamiento esperado.",
+  "rca of the issue": "Bug PayPal capture original: RESUELTO — create-order ahora incluye return_url/cancel_url (paypal_integration.py:115-121) y RechargeTab.useEffect detecta el callback (ClientDashboard.js:117-142). Bug trial 50→15: RESUELTO en backend (affiliates.py:122, site_content.py:92, legal.py:101) pero INCOMPLETO en frontend: 6 strings literales '50 oros' siguen hardcoded en PublicChat.js (3) y Login.js (3). Esto NO afecta la funcionalidad (los oros que se acreditan SON 15) pero genera confusion visual: el usuario ve '15 oros' en el CTA grande y '50 oros gratis' en el bullet justo debajo. Reproduccion: cargar https://ai-bot-cost-calc.preview.emergentagent.com/ → screenshot adjunto muestra ambos textos contradictorios. Mitigacion: el main agent debe (a) reemplazar los strings por valores dinamicos basados en site.trial_oros, o (b) hard-code 15 en todos los lugares restantes."
+}

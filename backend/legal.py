@@ -98,7 +98,7 @@ async def terms_of_service():
   <p>Para usar el Servicio debés crear una cuenta proporcionando un email válido
   y una contraseña. Sos responsable de mantener la confidencialidad de tus
   credenciales. Las cuentas son personales e intransferibles. Al registrarte
-  recibís un saldo inicial de cortesía de <strong>50 oros</strong>.</p>
+  recibís un saldo inicial de cortesía de <strong>15 oros</strong>.</p>
 
   <h2>3. Créditos ("oros") y Pagos</h2>
   <p>El Servicio opera con un sistema de créditos llamados "oros". Cada acción

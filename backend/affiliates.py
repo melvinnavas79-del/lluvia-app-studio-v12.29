@@ -7,7 +7,7 @@ ROUTERS: AUTH + AFILIADOS + VENTAS
 import uuid
 import string
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Body, Request
 from pydantic import BaseModel, EmailStr, Field
 from typing import List, Optional
@@ -96,13 +96,36 @@ class RegisterIn(BaseModel):
 @limiter.limit("6/minute")
 async def register(request: Request, payload: RegisterIn):
     """Registro publico de usuarios. Crea un user con role='user' y
-    le regala 50 oros de trial para que pueda probar la plataforma."""
+    le regala oros de trial (cantidad configurable desde SuperAdmin → Site Content).
+    Anti-abuso: limitamos cuantos trials por IP/dia para evitar farming."""
     db = _db()
     email = payload.email.lower().strip()
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=409, detail="Email ya registrado")
     if len(payload.password) < 6:
         raise HTTPException(status_code=400, detail="Password minimo 6 chars")
+
+    # Anti-farming: limitar a 3 registros por IP por dia.
+    client_ip = request.client.host if request.client else "unknown"
+    since = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    same_ip_count = await db.users.count_documents({
+        "signup_ip": client_ip,
+        "created_at": {"$gte": since},
+    })
+    if same_ip_count >= 3:
+        raise HTTPException(
+            status_code=429,
+            detail="Demasiados registros desde tu red. Esperá 24h o contactanos.",
+        )
+
+    # Cantidad de oros del trial: configurable desde site_content (default 15)
+    trial_oros = 15
+    try:
+        sc = await db.site_content.find_one({"_id": "main"}, {"_id": 0, "trial_oros": 1})
+        if sc and isinstance(sc.get("trial_oros"), int):
+            trial_oros = max(0, int(sc["trial_oros"]))
+    except Exception:
+        pass
 
     uid = str(uuid.uuid4())
     code = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
@@ -115,13 +138,14 @@ async def register(request: Request, payload: RegisterIn):
         "affiliate_code": code,
         "active": True,
         "created_at": now,
-        "trial_oros_given": 50,
+        "signup_ip": client_ip,
+        "trial_oros_given": trial_oros,
     }
     await db.users.insert_one(user_doc)
 
-    # Trial: 50 oros gratis
     import credits as credits_mod
-    await credits_mod.topup(uid, 50, reason="trial_signup")
+    if trial_oros > 0:
+        await credits_mod.topup(uid, trial_oros, reason="trial_signup")
 
     token = auth.create_access_token(uid, email, "user")
     user_doc.pop("password_hash", None)
@@ -130,7 +154,7 @@ async def register(request: Request, payload: RegisterIn):
         "access_token": token,
         "token_type": "bearer",
         "user": _strip_user(user_doc),
-        "trial_oros": 50,
+        "trial_oros": trial_oros,
     }
 
 

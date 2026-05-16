@@ -17,7 +17,16 @@ export default function ClientDashboard() {
     const key = (h || "").replace(/^#\/?/, "").trim();
     return ["chat", "recharge", "github", "settings"].includes(key) ? key : "chat";
   };
-  const [tab, setTab] = useState(() => hashToTab(window.location.hash));
+  // Si volvemos desde PayPal con ?paypal=success o ?paypal=cancel, forzamos
+  // el tab "recharge" para que el RechargeTab procese el callback.
+  const initialTab = () => {
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.get("paypal") === "success" || sp.get("paypal") === "cancel") {
+      return "recharge";
+    }
+    return hashToTab(window.location.hash);
+  };
+  const [tab, setTab] = useState(initialTab);
   const [balance, setBalance] = useState(null);
 
   useEffect(() => {
@@ -97,12 +106,41 @@ function RechargeTab({ onTopup }) {
   const [activePromo, setActivePromo] = useState(null);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
+  const [success, setSuccess] = useState(null);
 
   useEffect(() => {
     api.get("/paypal/packs").then((r) => {
       setPacks(r.data.packs || {});
       setActivePromo(r.data.active_promo);
     }).catch((e) => setErr(formatError(e)));
+
+    // Capturar el callback de PayPal: cuando PayPal redirige con ?paypal=success&token=ORDER_ID,
+    // llamamos a /paypal/capture/{order_id} para acreditar los oros.
+    const params = new URLSearchParams(window.location.search);
+    const paypalStatus = params.get("paypal");
+    const orderId = params.get("token");
+    if (paypalStatus === "success" && orderId) {
+      setBusy("capturing");
+      api.post(`/paypal/capture/${orderId}`).then((r) => {
+        setSuccess({
+          oros: r.data.credited_oros,
+          balance: r.data.balance,
+          already: r.data.already_processed,
+        });
+        if (onTopup) onTopup();
+      }).catch((e) => setErr(`Error capturando pago: ${formatError(e)}`))
+        .finally(() => {
+          setBusy("");
+          // Limpiar la URL para que un refresh no reintente capturar
+          const cleanUrl = window.location.pathname + window.location.hash;
+          window.history.replaceState({}, "", cleanUrl);
+        });
+    } else if (paypalStatus === "cancel") {
+      setErr("Cancelaste el pago. Si querés intentar de nuevo, elegí un pack abajo.");
+      const cleanUrl = window.location.pathname + window.location.hash;
+      window.history.replaceState({}, "", cleanUrl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const buy = async (key) => {
@@ -129,6 +167,21 @@ function RechargeTab({ onTopup }) {
       {activePromo && (
         <div className="promo-banner" data-testid="active-promo">
           🎉 {activePromo.label} — descuento aplicado automáticamente
+        </div>
+      )}
+      {busy === "capturing" && (
+        <div className="alert" style={{ background: "#FEF3C7", borderColor: "#FCD34D", color: "#92400E" }}
+             data-testid="paypal-capturing">
+          ⏳ Confirmando tu pago con PayPal... no cierres la ventana.
+        </div>
+      )}
+      {success && (
+        <div className="alert" style={{ background: "#D1FAE5", borderColor: "#34D399", color: "#065F46" }}
+             data-testid="paypal-success">
+          ✅ {success.already
+            ? "Este pago ya estaba procesado."
+            : `¡Pago confirmado! Acreditamos ${success.oros} oros a tu cuenta.`}
+          <strong> Saldo actual: {success.balance} oros.</strong>
         </div>
       )}
       {err && <div className="alert">{err}</div>}

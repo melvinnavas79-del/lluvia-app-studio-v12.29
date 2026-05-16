@@ -70,6 +70,7 @@ class SiteContentIn(BaseModel):
     hero_sub: Optional[str] = Field(default=None, max_length=800)
     hero_cta_primary: Optional[str] = Field(default=None, max_length=80)
     hero_cta_secondary: Optional[str] = Field(default=None, max_length=80)
+    trial_oros: Optional[int] = Field(default=None, ge=0, le=500)
     pillars: Optional[list[PillarIn]] = None
     streaming: Optional[StreamingIn] = None
     social: Optional[SocialLinksIn] = None
@@ -86,8 +87,9 @@ DEFAULT_CONTENT = {
         "especializados para automatizar peluquerías, tiendas o soporte por WhatsApp. "
         "Todo programado, desplegado y gestionado por IA sin tocar una sola línea de código."
     ),
-    "hero_cta_primary": "Empezar gratis con 50 oros →",
+    "hero_cta_primary": "Empezar gratis con 15 oros →",
     "hero_cta_secondary": "Ya tengo cuenta",
+    "trial_oros": 15,  # oros gratis al registrarse (configurable desde SuperAdmin)
     "pillars": [
         {
             "icon": "Video", "tag": "01 · Multimedia",
