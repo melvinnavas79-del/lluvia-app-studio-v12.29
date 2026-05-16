@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 17 (v12.19) — App Builder Pro feature E2E: backend 7/7 PASSED + frontend AppBuiltCard rendering verificado. (a) GET /api/console/agents incluye 'app_builder_pro' con emoji='🚀', tagline='Apps completas deployables (Audio Room, etc) en 30 segundos' (menciona Audio Room ✅) y tools=['generate_audio_room_app','push_to_my_github']; (b) POST /api/console/sessions con agent_id='app_builder_pro' crea sesion 200; (c) Mensaje en español 'Llamala MyTalkApp y usa color #2563EB. Generala ya' DISPARA confiablemente la tool generate_audio_room_app — verificado en assistant_message.tool_calls[].name; result_preview parseado tiene card_type='app_built', ok=true, app_slug='mytalkapp', screens=['Inicio','Tendencias','Sala Activa','Perfil'], files_written=10; (d) Archivos materializados FISICAMENTE en /tmp/lluvia/user_apps/<admin_id>/mytalkapp/ con la estructura completa (backend/server.py, backend/requirements.txt, frontend/index.html, frontend/css/styles.css, frontend/js/{api.js,webrtc.js,app.js}, README.md, .env.example, .gitignore — 10 archivos). Placeholders {{APP_NAME}} y {{BRAND_COLOR}} reemplazados correctamente por 'MyTalkApp' y '#2563EB' en index.html y README.md (verificado con .read_text()); (e) Re-invocacion en sesion fresca: el agente vuelve a disparar la tool con mismo slug, retorna ok=false con error claro 'Ya existe una app en mytalkapp. Borrala primero o elegi otro nombre.', admin no perdio oros (balance constante = admin_free funciona); (f) Template backend /app/backend/app_templates/audio_room/backend/server.py importa sin errores via importlib.util y expone `app` (ASGI) y `api` (FastAPI); (g) Endpoints existentes vivos: /api/console/agents lista (estilista_visual, marketing_lab, vendedor, etc), /api/auth/login admin 200, /api/console/credits/me 200. FRONTEND E2E (Playwright + admin login): login OK -> #/console -> [data-testid=bc-new-thread-btn] -> picker -> [data-testid=bc-agent-card-app_builder_pro] visible con nombre 'App Builder Pro' y tagline correcta -> crear sesion -> [data-testid=bc-input] -> 'Llamala FrontTest y usa color rojo #FF0000. Generala ya' -> [data-testid=bc-send-btn] -> ~30s -> [data-testid=app-built-card] renderiza con: '🚀 App ensamblada · Audio Room (Clubhouse / Spaces) · FastAPI + Socket.IO + SQLite + Vanilla JS · FrontTest · Workspace: fronttest · 10 archivos · 52 KB · 📱 Inicio 📱 Tendencias 📱 Sala Activa 📱 Perfil · 💡 next_step Push GitHub'. Todas las verificaciones (FrontTest, App ensamblada, 4 screens) ✅.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "BossConsole / AgentAvatar (línea ~500)",
+        "issue": "El agente 'app_builder_pro' (y todos los agentes) usa AgentAvatar que renderiza un bot SVG de dicebear (api.dicebear.com/bottts-neutral) en lugar del campo agent.emoji ('🚀'). Por eso en la tarjeta del picker NO se ve el cohete 🚀 — sólo el nombre 'App Builder Pro' y la tagline. El emoji 🚀 sí aparece correctamente dentro del AppBuiltCard al ensamblar. Esto es by-design pero el review request pedía verificar 🚀 en sidebar; reportado como minor para que main agent decida si quiere agregar el emoji superpuesto al avatar o cambiar el avatar para este agente específico.",
+        "selector": "[data-testid=bc-agent-card-app_builder_pro] img.agent-avatar",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_17_app_builder_pro.py",
+    "/app/test_reports/pytest/iteration_17_results.xml"
+  ],
+  "action_items": [
+    "Opcional (LOW): si quieres que el cohete 🚀 sea visible en la tarjeta del picker de agentes, ajusta AgentAvatar para superponer agent.emoji como badge encima del bot SVG, o renderiza el emoji nativo cuando agent.emoji esté definido en lugar del dicebear bot.",
+    "Mantener cleanup de /tmp/lluvia/user_apps/<admin_id>/{mytalkapp,fronttest}/ si llegan a quedar de tests previos — los tests automatizados ya lo manejan via shutil.rmtree."
+  ],
+  "critical_code_review_comments": [
+    "app_builder.py:90 mkdir(parents=True, exist_ok=False) — exist_ok=False es defensa correcta contra sobreescritura, pero combinado con el check del:80 (target_dir.exists()) es redundante. OK por seguridad doble.",
+    "app_builder.py:39-42 _slugify trunca a 40 chars y normaliza a-z0-9 — robusto, evita inyección de path traversal vía app_name.",
+    "app_builder.py:91 __import__('os').walk(src) — funciona pero es inconsistente con el resto del archivo (no hay import os al tope). Recomendado: `import os` al inicio para legibilidad.",
+    "console.py:670-672 app_slug = _slugify(args.get('app_slug') or app_name_in) — si el LLM no pasa app_slug, se deriva del app_name. OK.",
+    "console.py:681-687 refund solo si !is_admin — correcto. Pero la lógica de admin_free para esta tool específicamente (40 oros) se centraliza vía agents_catalog.TOOL_NAMES['generate_audio_room_app']=40 — consistente.",
+    "agents_catalog.py:283 tools=['generate_audio_room_app','push_to_my_github'] — alineado con review request. ✅",
+    "app_templates/audio_room/backend/server.py — el template carga e instancia FastAPI + Socket.IO sin errores; expone tanto `api` (FastAPI) como `app` (ASGI envuelto con socketio). Bien estructurado para deploy en Railway/Render según README.",
+    "Cobertura: el flujo de push_to_my_github desde App Builder Pro NO fue probado en esta tanda (per request del main agent). El refund de 8 oros en caso de auth_failed ya fue testeado en iteration 16."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_17_app_builder_pro.py (new — 7 tests, 100% pass)"
+  ],
+  "success_rate": {
+    "backend": "100% (7/7 pytest passed in 10.78s)",
+    "frontend": "100% — AppBuiltCard renderiza con todos los campos requeridos (app_name, 4 screens, next_step, badge 'App ensamblada')"
+  },
+  "test_credentials": "Admin: melvinnavas79@gmail.com / Admin#2026 — funcionando",
+  "seed_data_creation": "Tests crean y limpian /tmp/lluvia/user_apps/<admin_id>/mytalkapp/. El frontend test dejó /tmp/lluvia/user_apps/<admin_id>/fronttest/ (limpiado manualmente al finalizar). No se modificaron seeds de Mongo.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Tests en /app/backend/tests/test_iteration_17_app_builder_pro.py — reutilizables. Para re-correr: `pytest backend/tests/test_iteration_17_app_builder_pro.py -v --junitxml=/app/test_reports/pytest/iteration_17_results.xml`. LLUVIA_HOME=/tmp/lluvia en preview. Admin user_id descubierto via /api/auth/me. Si el test_02 (re-invocación) hace SKIP es por no-determinismo del LLM (a veces pide confirmación antes de re-llamar la tool); no es bug. El frontend usa AgentAvatar con dicebear — para validar visualmente el 🚀 hay que ver el AppBuiltCard renderizado, NO el agent picker.",
+  "rca of the issue": "No hubo bugs. La feature App Builder Pro v12.19 está completamente operativa: tool definida en console.py:667-703, agente registrado en agents_catalog.py:240-284, materialize_template en app_builder.py copia el template /app/backend/app_templates/audio_room/ reemplazando placeholders {{APP_NAME}} y {{BRAND_COLOR}}, AppBuiltCard.js renderiza la rich card con badge verde 'App ensamblada', 4 screens grid y next_step para push GitHub. Único nit visual (LOW): el rocket emoji del agente no aparece en el agent-picker porque AgentAvatar usa dicebear bot SVG; el emoji sí aparece en el AppBuiltCard final."
+}

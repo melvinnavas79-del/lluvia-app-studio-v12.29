@@ -762,6 +762,7 @@ function Message({ msg, agent, onPlay, backendBase }) {
   const RICH_CARD_TOOLS = [
     "paypal_invoice_card", "service_card", "push_to_my_github",
     "generate_haircut_preview", "video_script_card", "generate_promo_video",
+    "generate_audio_room_app",
   ];
   const cards = (msg.tool_calls || []).map((tc) => {
     if (!RICH_CARD_TOOLS.includes(tc.name)) return null;
@@ -808,6 +809,7 @@ function Message({ msg, agent, onPlay, backendBase }) {
           if (c.card_type === "before_after") return <BeforeAfterCard key={i} card={c} agent={agent} backendBase={backendBase} />;
           if (c.card_type === "video_script") return <VideoScriptCard key={i} card={c} agent={agent} />;
           if (c.card_type === "video_job") return <VideoJobCard key={i} card={c} agent={agent} backendBase={backendBase} />;
+          if (c.card_type === "app_built") return <AppBuiltCard key={i} card={c} />;
           return <ServiceCard key={i} card={c} agent={agent} />;
         })}
         {msg.superadmin_takeover && (
@@ -1137,6 +1139,76 @@ function VideoScriptCard({ card, agent }) {
 }
 
 
+
+function AppBuiltCard({ card }) {
+  const ok = card.ok === true;
+  const stateColor = ok ? "#059669" : "#DC2626";
+  const accent = card.brand_color || "#5B8DEF";
+  return (
+    <div className="rich-card app-built-card" data-testid="app-built-card"
+         style={{ borderColor: stateColor, overflow: "hidden" }}>
+      <div className="rc-head" style={{ background: `linear-gradient(135deg, ${accent}1F, ${accent}05)` }}>
+        <div className="rc-brand">
+          <div className="rc-logo" style={{ background: accent, fontSize: "1.1rem" }}>🚀</div>
+          <div>
+            <div className="rc-brand-name">{ok ? "App ensamblada" : "Falló el ensamble"}</div>
+            <div className="rc-brand-sub">{card.template_name || "App Builder Pro"}</div>
+          </div>
+        </div>
+        <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontWeight: 600 }}>
+          {card.stack}
+        </div>
+      </div>
+      <div className="rc-body">
+        {ok ? (
+          <>
+            <div style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--text-primary)" }}>
+              {card.app_name}
+            </div>
+            <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>
+              Workspace: <code>{card.app_slug}</code> · {card.files_written} archivos · {Math.round((card.bytes_written || 0) / 1024)} KB
+            </div>
+            <div style={{
+              marginTop: "0.9rem", display: "grid",
+              gridTemplateColumns: "repeat(2, 1fr)", gap: "0.45rem",
+            }}>
+              {(card.screens || []).map((s, i) => (
+                <div key={i} style={{
+                  background: `${accent}10`, border: `1px solid ${accent}33`,
+                  borderRadius: 10, padding: "0.5rem 0.7rem", fontSize: "0.82rem",
+                  fontWeight: 600, color: "var(--text-primary)",
+                }}>
+                  📱 {s}
+                </div>
+              ))}
+            </div>
+            {card.next_step && (
+              <div style={{
+                marginTop: "0.8rem", padding: "0.65rem 0.8rem",
+                background: "var(--surface-muted, rgba(0,0,0,0.04))",
+                borderRadius: 10, fontSize: "0.85rem", lineHeight: 1.5,
+                color: "var(--text-secondary)",
+              }}>
+                💡 {card.next_step}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div style={{ color: stateColor, fontSize: "0.92rem", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
+              {card.error || "Error desconocido"}
+            </div>
+            {card.refunded_oros > 0 && (
+              <div style={{ marginTop: "0.6rem", color: "#059669", fontWeight: 600, fontSize: "0.88rem" }}>
+                💸 Te reembolsamos {card.refunded_oros} oros automáticamente.
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function VideoJobCard({ card, agent, backendBase }) {
   const [job, setJob] = useState({

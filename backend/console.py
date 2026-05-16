@@ -257,6 +257,23 @@ OPENAI_TOOLS = [
         }, "required": ["prompt", "duration", "aspect"]},
     }},
     {"type": "function", "function": {
+        "name": "generate_audio_room_app",
+        "description": (
+            "MATERIALIZA en el workspace del usuario una app completa de Salas de Audio "
+            "en vivo (estilo Clubhouse / Twitter Spaces) lista para deployar. Copia un "
+            "template pre-construido y testeado (FastAPI + Socket.IO + WebRTC + SQLite, "
+            "4 pantallas: Inicio, Tendencias, Sala Activa, Perfil) reemplazando el nombre "
+            "y color de la marca. Despues el cliente puede usar push_to_my_github para "
+            "subirlo a su propio repo. Costo: 40 oros fijos. Usar SOLO despues de que el "
+            "cliente confirmo nombre + color."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "app_name": {"type": "string", "description": "Nombre visible de la app (ej: Talkly, AudioPro). 1-60 chars."},
+            "brand_color": {"type": "string", "description": "Color hex (ej: #5B8DEF) o vacio para default azul Lluvia."},
+            "app_slug": {"type": "string", "description": "(Opcional) slug-de-carpeta. Si se omite, se deriva del app_name."},
+        }, "required": ["app_name"]},
+    }},
+    {"type": "function", "function": {
         "name": "video_script_card",
         "description": (
             "Genera una rich card visual con el GUION COMPLETO para grabar un video corto de "
@@ -646,6 +663,43 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
                 "hashtags": args.get("hashtags") or [],
                 "music_suggestion": (args.get("music_suggestion") or "").strip(),
                 "cta": (args.get("cta") or "").strip(),
+            }
+        elif name == "generate_audio_room_app":
+            import app_builder
+            import user_workspace as uw
+            app_name_in = (args.get("app_name") or "Mi App").strip()
+            brand_color = (args.get("brand_color") or "#5B8DEF").strip()
+            app_slug = app_builder._slugify(args.get("app_slug") or app_name_in)
+            target_dir = os.path.join(uw._user_apps_dir(user_id), app_slug)
+            result = app_builder.materialize_template(
+                template_id="audio_room",
+                target_dir=target_dir,
+                app_name=app_name_in,
+                brand_color=brand_color,
+            )
+            # Refund automatico si falla la materializacion
+            if not result.get("ok") and not is_admin:
+                refund_amt = agents_catalog.TOOL_NAMES.get("generate_audio_room_app", 40)
+                await credits_mod.refund(
+                    user_id, refund_amt, "app_builder_failed",
+                    {"error": str(result.get("error"))[:200], "template": "audio_room"},
+                )
+                result["refunded_oros"] = refund_amt
+            data = {
+                "card_type": "app_built",
+                "ok": result.get("ok", False),
+                "template_id": "audio_room",
+                "template_name": result.get("template_name", "Audio Room"),
+                "app_name": result.get("app_name", app_name_in),
+                "app_slug": result.get("app_slug", app_slug),
+                "brand_color": result.get("brand_color", brand_color),
+                "files_written": result.get("files_written", 0),
+                "bytes_written": result.get("bytes_written", 0),
+                "screens": ["Inicio", "Tendencias", "Sala Activa", "Perfil"],
+                "stack": "FastAPI + Socket.IO + SQLite + Vanilla JS",
+                "next_step": "Apreta + → ⬆ Push a GitHub en el composer para subirlo a tu repo. El README tiene los pasos de deploy a Railway/Render.",
+                "error": result.get("error"),
+                "refunded_oros": result.get("refunded_oros", 0),
             }
         elif name == "generate_promo_video":
             import video_gen
