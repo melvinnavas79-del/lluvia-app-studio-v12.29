@@ -5,7 +5,30 @@
 - Producción: https://lluvia-app-studio.lluvia-live.com (Emergent Native Deploy)
 - Telegram: https://t.me/LluviaAppStudioBot
 
-## Estado actual: v12.10 — Vision (foto en chat) + UI ChatGPT-like (Feb 2026)
+## Estado actual: v12.11 — Estilista Visual + Settings tab admin + composer Emergent-style (Feb 2026)
+
+### Iteración 12.11 — Estilista Visual + UX fixes (HECHO)
+**🐛 Bug fix: Settings tab para admin**
+- `AdminDashboard` no exponía la pantalla de configuración de GitHub (solo el `ClientDashboard` la tenía). El usuario admin no podía configurar su token y el botón "Push" del chat se quedaba en un dead-end.
+- Extraído `SettingsTab` a `/app/frontend/src/components/SettingsTab.js` (form GitHub + tarjeta Telegram).
+- Agregado tab "Mi Cuenta" (data-testid='tab-settings') al `AdminDashboard`.
+- Ambos dashboards ahora sincronizan el tab con `location.hash` (#/settings, #/github, etc) y escuchan el evento `lluvia:goto-settings`.
+- `BossConsole.pushNow()` ya no recarga la página: dispara `CustomEvent('lluvia:goto-settings')` cuando el push falla por falta de configuración → el dashboard salta limpiamente al tab settings.
+
+**🎨 Composer estilo Emergent (orden de izq→der)**
+- 📎 paperclip → textarea → 🎙 mic → ▶ send.
+- Mic e icono de send ahora son SVGs (no emoji). Botones circulares de 36px.
+- Spinner animado mientras se envía.
+
+**💇 Nuevo agente: Estilista Visual** (`/app/backend/agents_catalog.py`)
+- ID `estilista_visual`, emoji 💇, color `#ec4899`, voice `shimmer`.
+- System prompt: cliente manda foto → análisis (forma de rostro, textura, subtono) → 3 opciones (corte + por qué favorece + mantenimiento + precio USD) → service_card por cada opción → check_availability + book_appointment + paypal_invoice_card cuando reserva.
+- Tools: `service_card`, `check_availability`, `book_appointment`, `list_appointments`, `cancel_appointment`, `paypal_invoice_card`.
+- Usa GPT-4o vision (ya implementado en iteración 12.10) → wow-demo perfecto para videos de TikTok.
+
+**Tests**: backend 7/7 verde (`/app/backend/tests/test_iteration_8_estilista.py`), frontend e2e 100% (settings tab, composer order, hash routing, estilista vision). Cero regresiones.
+
+
 
 ### Iteración 12.10 — Chat con imágenes + UI Emergent-style (HECHO)
 **Imágenes en el chat de agentes** (`BossConsole`):
