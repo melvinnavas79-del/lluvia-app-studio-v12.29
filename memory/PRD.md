@@ -5,7 +5,27 @@
 - Producción: https://lluvia-app-studio.lluvia-live.com (Emergent Native Deploy)
 - Telegram: https://t.me/LluviaAppStudioBot
 
-## Estado actual: v12.13 — Sora 2 video generation + cámara nativa (Feb 2026)
+## Estado actual: v12.14 — Fixes UX urgentes (Feb 2026)
+
+### Iteración 12.14 — 4 bugs reportados en screenshots (HECHO)
+**🐛 Bug 1: Marketing Lab solo devolvía guion, no video**
+- System prompt v3: ahora exige decisión A (guion 2 oros) vs B (Sora 2 30-55 oros) cuando el cliente dice "crea un video" sin más contexto. Y cuando el cliente confirma B con duración + "dale/confirmo", el agente DEBE llamar `generate_promo_video` **en el mismo turno** (regla explícita anti-procrastinación del LLM).
+- Frontend: botón CTA dentro de `VideoScriptCard` (data-testid='vs-request-real-video') con "🎥 Generar este video REAL con Sora 2 · 30–55 oros". Dispara `CustomEvent('lluvia:compose-message',{text,send:true})` que el BossConsole escucha y envía automáticamente con los datos del guion.
+- Verificado E2E: confirmación explícita → tool call con cost=31 oros (1 base + 30 video 4s), card status=queued.
+
+**🐛 Bug 2: Cámara negra en iOS WebView (Preview de Emergent)**
+- Causa raíz: el Preview de Emergent en iOS Safari corre en WebView/iframe que bloquea `getUserMedia` con `NotAllowedError`.
+- Fix: `openCamera()` ahora detecta `!window.isSecureContext`, ausencia de `mediaDevices`, o `NotAllowedError` → cae automáticamente al `<input capture="environment">` nativo (data-testid='bc-native-camera-input') que SÍ funciona en WebView iOS porque abre la app de cámara del SO. Botón fallback visible "📱 Usar cámara del teléfono" dentro del overlay de error. Flip también con fallback.
+
+**🐛 Bug 3: "Procesados undefined correos"**
+- Fix: `data.newly_processed ?? 0` + `data.total_unread ?? 0` en `SuperAdminPanel.js:485`.
+
+**🐛 Bug 4: Usuario vinculó cuenta Gmail equivocada y no encontraba cómo cambiar**
+- Fix: en `IntegrationsPanel`, junto al email vinculado ahora aparece un aviso ⚠ "Asegurate que esta sea la cuenta a la que te llegan los correos de tus clientes" + botón inline "Desvincular y cambiar cuenta" (data-testid='gmail-unlink-btn-inline'). El botón original al fondo del panel sigue disponible.
+
+**Tests**: backend 6/6 pytest verde + frontend E2E del panel Gmail verificado en vivo. Cero regresiones.
+
+
 
 ### Iteración 12.13 — Sora 2 + Bug fix cámara negra (HECHO)
 **🎥 Sora 2 generación de video real (Marketing Lab)**

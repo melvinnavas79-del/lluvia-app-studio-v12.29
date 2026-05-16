@@ -1002,12 +1002,13 @@ function VideoScriptCard({ card, agent }) {
     // Dispara un evento global que el contenedor (BossConsole) escucha y
     // arma un mensaje pre-rellenado en el composer para pedirle a Sora 2
     // el video real de este guion.
-    const horizontal = card.platform === "shorts" ? false : false; // por default vertical
     const dur = card.duration_sec <= 6 ? 4 : (card.duration_sec <= 10 ? 8 : 12);
+    const isHorizontal = card.platform === "shorts" || card.platform === "youtube";
+    const aspectWord = isHorizontal ? "horizontal" : "vertical";
     const prompt = [
       `Hace el video REAL con Sora 2 de este guion:`,
       `"${card.title}". Hook: ${card.hook}.`,
-      `Duracion ${dur} segundos, vertical, calidad standard. Confirmo el costo.`,
+      `Duracion ${dur} segundos, ${aspectWord}, calidad standard. Confirmo el costo.`,
     ].join(" ");
     window.dispatchEvent(new CustomEvent("lluvia:compose-message", { detail: { text: prompt, send: true } }));
   };
