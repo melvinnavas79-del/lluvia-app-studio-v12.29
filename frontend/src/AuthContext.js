@@ -27,13 +27,20 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
+  const register = async (email, password, name) => {
+    const { data } = await api.post("/auth/register", { email, password, name });
+    setToken(data.access_token);
+    setUser(data.user);
+    return data;
+  };
+
   const logout = () => {
     clearToken();
     setUser(null);
   };
 
   return (
-    <AuthCtx.Provider value={{ user, checking, login, logout, setUser }}>
+    <AuthCtx.Provider value={{ user, checking, login, register, logout, setUser }}>
       {children}
     </AuthCtx.Provider>
   );

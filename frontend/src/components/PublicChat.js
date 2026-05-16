@@ -1,90 +1,27 @@
-/* PublicChat - Landing 24/7 para visitantes anonimos */
-import { useEffect, useRef, useState } from "react";
+/* PublicChat - Marketing Landing con CTA registrarse */
+import { useEffect, useState } from "react";
 import axios from "axios";
 import { useBranding } from "../BrandingContext";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
-export default function PublicChat({ onAdminClick }) {
+export default function PublicChat({ onLoginClick, onRegisterClick }) {
   const { branding } = useBranding();
   const [agents, setAgents] = useState([]);
-  const [selected, setSelected] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
-  const [sessionId, setSessionId] = useState("");
-  const [visitorName, setVisitorName] = useState(
-    () => localStorage.getItem("lluvia_visitor_name") || ""
-  );
-  const [nameAsked, setNameAsked] = useState(!!visitorName);
-  const [err, setErr] = useState("");
-  const scrollRef = useRef(null);
 
   useEffect(() => {
     axios
       .get(`${API}/public/agents`)
       .then((r) => setAgents(r.data.agents || []))
-      .catch((e) => setErr(e.response?.data?.detail || "Error cargando agentes"));
+      .catch(() => {});
   }, []);
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
-
-  const saveName = () => {
-    if (visitorName.trim().length >= 2) {
-      localStorage.setItem("lluvia_visitor_name", visitorName.trim());
-      setNameAsked(true);
-    }
-  };
-
-  const send = async () => {
-    if (!text.trim() || !selected) return;
-    const userMsg = { role: "user", content: text.trim(), id: Date.now() };
-    setMessages((m) => [...m, userMsg]);
-    setText("");
-    setSending(true);
-    setErr("");
-    try {
-      const { data } = await axios.post(`${API}/public/chat`, {
-        agent_id: selected.id,
-        text: userMsg.content,
-        session_id: sessionId || undefined,
-        visitor_name: visitorName || undefined,
-      });
-      if (data.session_id && !sessionId) setSessionId(data.session_id);
-      setMessages((m) => [...m, {
-        role: "assistant",
-        content: data.response,
-        agent: data.agent,
-        id: Date.now() + 1,
-      }]);
-    } catch (e) {
-      setErr(e.response?.data?.detail || "Error enviando mensaje. Intenta de nuevo.");
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const pickAgent = (a) => {
-    setSelected(a);
-    setMessages([{
-      role: "assistant",
-      content: `Hola${visitorName ? ` ${visitorName}` : ""}, soy ${a.name}. ${a.tagline || "¿En que te ayudo?"}`,
-      agent: a,
-      id: Date.now(),
-    }]);
-    setSessionId("");
-  };
 
   const brandColor = branding?.primary_color || "#5fb4ff";
   const brandName = branding?.product_name || branding?.company_name || "Lluvia App Studio";
-  const tagline = branding?.tagline || "Agentes inteligentes a tu servicio 24/7";
+  const tagline = branding?.tagline || "Agentes inteligentes que atienden tu negocio 24/7";
 
   return (
-    <div className="public-chat" data-testid="public-chat-page">
+    <div className="landing" data-testid="public-chat-page">
       <header className="pc-header">
         <div className="pc-brand">
           <div className="pc-logo" style={{ background: brandColor }}>
@@ -95,137 +32,118 @@ export default function PublicChat({ onAdminClick }) {
             <div className="pc-tag">{tagline}</div>
           </div>
         </div>
-        <button
-          className="pc-admin-link"
-          onClick={onAdminClick}
-          data-testid="public-admin-login-btn"
-        >
-          Soy admin → Login
-        </button>
-      </header>
-
-      {!nameAsked && (
-        <div className="pc-name-card" data-testid="pc-name-card">
-          <h3>Bienvenido 👋</h3>
-          <p>¿Como te llamas? (asi el agente te trata mejor)</p>
-          <div style={{ display: "flex", gap: "0.5rem" }}>
-            <input
-              type="text"
-              value={visitorName}
-              onChange={(e) => setVisitorName(e.target.value)}
-              placeholder="Tu nombre"
-              maxLength={60}
-              onKeyDown={(e) => e.key === "Enter" && saveName()}
-              data-testid="pc-name-input"
-            />
-            <button
-              onClick={saveName}
-              style={{ background: brandColor }}
-              data-testid="pc-name-submit"
-            >
-              Empezar
-            </button>
-          </div>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
           <button
-            className="pc-skip"
-            onClick={() => setNameAsked(true)}
-            data-testid="pc-name-skip"
+            className="pc-admin-link"
+            onClick={onLoginClick}
+            data-testid="public-login-btn"
           >
-            Prefiero no decirlo
+            Entrar
+          </button>
+          <button
+            className="login-btn"
+            onClick={onRegisterClick}
+            data-testid="public-register-btn"
+            style={{ background: brandColor, padding: "0.5rem 1.25rem" }}
+          >
+            Crear cuenta gratis
           </button>
         </div>
-      )}
+      </header>
 
-      {nameAsked && (
-        <div className="pc-body">
-          <aside className="pc-agents" data-testid="pc-agents-list">
-            <h4>Elige un agente</h4>
-            {agents.length === 0 && !err && <div className="empty">Cargando...</div>}
-            {err && <div className="alert">{err}</div>}
-            {agents.map((a) => (
-              <button
-                key={a.id}
-                className={`pc-agent ${selected?.id === a.id ? "active" : ""}`}
-                onClick={() => pickAgent(a)}
-                data-testid={`pc-agent-${a.id}`}
-                style={selected?.id === a.id ? { borderColor: a.color || brandColor } : {}}
-              >
-                <span className="pc-agent-emoji" style={{ background: a.color }}>
-                  {a.emoji}
-                </span>
-                <span className="pc-agent-info">
-                  <span className="pc-agent-name">{a.name}</span>
-                  <span className="pc-agent-tagline">{a.tagline}</span>
-                </span>
-              </button>
-            ))}
-          </aside>
-
-          <main className="pc-chat">
-            {!selected ? (
-              <div className="pc-empty-state">
-                <h2>Hola {visitorName || "👋"}</h2>
-                <p>Elige uno de los agentes para empezar a conversar</p>
-              </div>
-            ) : (
-              <>
-                <div className="pc-chat-head" style={{ borderColor: selected.color }}>
-                  <div className="pc-chat-avatar" style={{ background: selected.color }}>
-                    {selected.emoji}
-                  </div>
-                  <div>
-                    <div className="pc-chat-name">{selected.name}</div>
-                    <div className="pc-chat-status">● en linea</div>
-                  </div>
-                </div>
-
-                <div className="pc-messages" ref={scrollRef} data-testid="pc-messages">
-                  {messages.map((m) => (
-                    <div key={m.id} className={`pc-msg pc-msg-${m.role}`}>
-                      <div
-                        className="pc-bubble"
-                        style={m.role === "assistant" ? { borderColor: selected.color + "44" } : {}}
-                      >
-                        {m.content}
-                      </div>
-                    </div>
-                  ))}
-                  {sending && (
-                    <div className="pc-msg pc-msg-assistant">
-                      <div className="pc-bubble pc-typing">
-                        <span></span><span></span><span></span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {err && <div className="alert">{err}</div>}
-
-                <div className="pc-input">
-                  <input
-                    type="text"
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && !sending && send()}
-                    placeholder="Escribe tu mensaje..."
-                    maxLength={1000}
-                    disabled={sending}
-                    data-testid="pc-msg-input"
-                  />
-                  <button
-                    onClick={send}
-                    disabled={!text.trim() || sending}
-                    style={{ background: selected.color }}
-                    data-testid="pc-msg-send"
-                  >
-                    {sending ? "..." : "Enviar"}
-                  </button>
-                </div>
-              </>
-            )}
-          </main>
+      <section className="landing-hero">
+        <h1>
+          Tu agencia digital con <span style={{ color: brandColor }}>agentes que trabajan solos 24/7</span>
+        </h1>
+        <p className="landing-sub">
+          Crea bots inteligentes para atender, reservar, cobrar y vender en automatico.
+          Sin instalar nada, sin codigo. Pagas solo lo que consumes (modelo de oros).
+        </p>
+        <div className="landing-cta">
+          <button
+            className="cta-primary"
+            onClick={onRegisterClick}
+            style={{ background: brandColor }}
+            data-testid="hero-register-btn"
+          >
+            Empezar gratis con 50 oros 🎁
+          </button>
+          <button
+            className="cta-secondary"
+            onClick={onLoginClick}
+            data-testid="hero-login-btn"
+          >
+            Ya tengo cuenta
+          </button>
         </div>
-      )}
+        <p className="landing-mini">
+          ✓ Sin tarjeta de credito · ✓ 50 oros gratis al registrarte · ✓ Tu codigo, tu GitHub
+        </p>
+      </section>
+
+      <section className="landing-features">
+        <h2>Que puedes hacer</h2>
+        <div className="feature-grid">
+          <div className="feature-card">
+            <div className="feature-icon">🤖</div>
+            <h3>Crea tus propios agentes</h3>
+            <p>Dile al "Arquitecto" que necesitas un bot para tu negocio. En segundos lo crea con su personalidad, voz y herramientas.</p>
+          </div>
+          <div className="feature-card">
+            <div className="feature-icon">📅</div>
+            <h3>Reservas reales</h3>
+            <p>Tus agentes reservan citas en una base de datos real, validan horarios y evitan duplicados.</p>
+          </div>
+          <div className="feature-card">
+            <div className="feature-icon">💳</div>
+            <h3>Cobros con PayPal</h3>
+            <p>Genera ordenes de pago profesionales que tus clientes pagan con 1 click. Sin comisiones extras.</p>
+          </div>
+          <div className="feature-card">
+            <div className="feature-icon">🗣️</div>
+            <h3>Voz natural</h3>
+            <p>Whisper + TTS de OpenAI. Cada agente tiene su propia voz. Modo Call Center continuo disponible.</p>
+          </div>
+          <div className="feature-card">
+            <div className="feature-icon">📦</div>
+            <h3>Push a tu GitHub</h3>
+            <p>Empuja todo el codigo generado a TU repositorio con 1 click. Tu trabajo, tu propiedad.</p>
+          </div>
+          <div className="feature-card">
+            <div className="feature-icon">📱</div>
+            <h3>Telegram + Web</h3>
+            <p>Tus agentes responden tambien por Telegram. Tus clientes los acceden desde cualquier canal.</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="landing-agents">
+        <h2>Agentes disponibles para inspirarte</h2>
+        <div className="landing-agents-grid">
+          {agents.map((a) => (
+            <div key={a.id} className="landing-agent-card" data-testid={`landing-agent-${a.id}`}>
+              <div className="landing-agent-emoji" style={{ background: a.color }}>{a.emoji}</div>
+              <div>
+                <div className="landing-agent-name">{a.name}</div>
+                <div className="landing-agent-tag">{a.tagline}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="landing-cta-final">
+        <h2>Listo para empezar?</h2>
+        <p>50 oros gratis te alcanzan para ~50 mensajes de prueba. Cuando los acabes, recarga lo que necesites.</p>
+        <button
+          className="cta-primary"
+          onClick={onRegisterClick}
+          style={{ background: brandColor }}
+          data-testid="footer-register-btn"
+        >
+          Crear mi cuenta gratis →
+        </button>
+      </section>
 
       <footer className="pc-footer">
         Powered by {brandName} · {new Date().getFullYear()}

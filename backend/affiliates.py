@@ -9,6 +9,7 @@ import string
 import random
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Body, Request
+from pydantic import BaseModel, EmailStr, Field
 from typing import List, Optional
 
 import auth
@@ -83,6 +84,54 @@ async def me(user: dict = Depends(auth.get_current_user)):
 async def logout(user: dict = Depends(auth.get_current_user)):
     # Bearer token: cliente borra su token. Server-side no hay sesion.
     return {"ok": True}
+
+
+class RegisterIn(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=6, max_length=120)
+    name: Optional[str] = Field(default=None, max_length=80)
+
+
+@auth_router.post("/register")
+@limiter.limit("6/minute")
+async def register(request: Request, payload: RegisterIn):
+    """Registro publico de usuarios. Crea un user con role='user' y
+    le regala 50 oros de trial para que pueda probar la plataforma."""
+    db = _db()
+    email = payload.email.lower().strip()
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(status_code=409, detail="Email ya registrado")
+    if len(payload.password) < 6:
+        raise HTTPException(status_code=400, detail="Password minimo 6 chars")
+
+    uid = str(uuid.uuid4())
+    code = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    now = datetime.now(timezone.utc).isoformat()
+    user_doc = {
+        "id": uid, "email": email,
+        "name": (payload.name or email.split("@")[0])[:80],
+        "password_hash": auth.hash_password(payload.password),
+        "role": "user",
+        "affiliate_code": code,
+        "active": True,
+        "created_at": now,
+        "trial_oros_given": 50,
+    }
+    await db.users.insert_one(user_doc)
+
+    # Trial: 50 oros gratis
+    import credits as credits_mod
+    await credits_mod.topup(uid, 50, reason="trial_signup")
+
+    token = auth.create_access_token(uid, email, "user")
+    user_doc.pop("password_hash", None)
+    user_doc.pop("_id", None)
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": _strip_user(user_doc),
+        "trial_oros": 50,
+    }
 
 
 # ============================================================

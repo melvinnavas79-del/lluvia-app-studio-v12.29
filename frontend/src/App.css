@@ -1138,3 +1138,164 @@ html, body, #root {
   .pc-agents { max-height: 200px; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.06); }
   .pc-chat { padding: 1rem; height: auto; min-height: 60vh; }
 }
+
+/* ============================================
+   Marketing Landing
+   ============================================ */
+.landing { min-height: 100vh; background: linear-gradient(135deg, #0a0e1a 0%, #131826 100%); color: #e7eef8; }
+.landing-hero {
+  max-width: 900px; margin: 4rem auto; padding: 0 2rem; text-align: center;
+}
+.landing-hero h1 {
+  font-size: 3rem; font-weight: 800; line-height: 1.1; margin: 0 0 1.5rem;
+}
+.landing-sub {
+  font-size: 1.15rem; color: rgba(255,255,255,0.7); line-height: 1.6;
+  margin-bottom: 2rem; max-width: 700px; margin-left: auto; margin-right: auto;
+}
+.landing-cta { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+.cta-primary {
+  padding: 1rem 2rem; border: none; border-radius: 12px;
+  color: #0a0e1a; font-weight: 700; font-size: 1.05rem; cursor: pointer;
+  transition: transform 0.15s; box-shadow: 0 6px 20px rgba(95,180,255,0.3);
+}
+.cta-primary:hover { transform: translateY(-2px); }
+.cta-secondary {
+  padding: 1rem 2rem; background: transparent; color: #fff;
+  border: 1.5px solid rgba(255,255,255,0.2); border-radius: 12px;
+  font-weight: 600; font-size: 1.05rem; cursor: pointer; transition: all 0.15s;
+}
+.cta-secondary:hover { border-color: rgba(255,255,255,0.5); }
+.landing-mini { margin-top: 1.5rem; font-size: 0.85rem; color: rgba(255,255,255,0.5); }
+
+.landing-features { max-width: 1100px; margin: 5rem auto; padding: 0 2rem; }
+.landing-features h2 { font-size: 2rem; text-align: center; margin: 0 0 2.5rem; }
+.feature-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem;
+}
+.feature-card {
+  background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px; padding: 1.5rem; transition: all 0.2s;
+}
+.feature-card:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.15); }
+.feature-icon { font-size: 2rem; margin-bottom: 0.75rem; }
+.feature-card h3 { margin: 0 0 0.5rem; font-size: 1.1rem; }
+.feature-card p { color: rgba(255,255,255,0.65); font-size: 0.9rem; line-height: 1.5; margin: 0; }
+
+.landing-agents { max-width: 1100px; margin: 4rem auto; padding: 0 2rem; }
+.landing-agents h2 { font-size: 1.8rem; text-align: center; margin: 0 0 2rem; }
+.landing-agents-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.75rem;
+}
+.landing-agent-card {
+  display: flex; align-items: center; gap: 0.75rem; padding: 0.85rem;
+  background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
+}
+.landing-agent-emoji {
+  width: 38px; height: 38px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font-size: 1.2rem;
+  flex-shrink: 0;
+}
+.landing-agent-name { font-weight: 600; font-size: 0.9rem; }
+.landing-agent-tag { font-size: 0.72rem; color: rgba(255,255,255,0.5); }
+
+.landing-cta-final {
+  max-width: 700px; margin: 5rem auto 3rem; padding: 3rem 2rem; text-align: center;
+  background: linear-gradient(135deg, rgba(95,180,255,0.08), rgba(255,107,157,0.04));
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 20px;
+}
+.landing-cta-final h2 { font-size: 1.8rem; margin: 0 0 0.75rem; }
+.landing-cta-final p { color: rgba(255,255,255,0.7); margin-bottom: 1.5rem; }
+
+@media (max-width: 768px) {
+  .landing-hero h1 { font-size: 2rem; }
+  .landing-hero { margin: 2rem auto; }
+  .cta-primary, .cta-secondary { width: 100%; }
+}
+
+/* ============================================
+   ClientDashboard
+   ============================================ */
+.client-dash { min-height: 100vh; background: #0a0e1a; color: #e7eef8; }
+.cd-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1rem 2rem; border-bottom: 1px solid rgba(255,255,255,0.06);
+  background: rgba(0,0,0,0.3); backdrop-filter: blur(10px);
+}
+.cd-brand { display: flex; align-items: center; gap: 0.75rem; }
+.cd-logo {
+  width: 40px; height: 40px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; color: #fff;
+}
+.cd-name { font-weight: 700; font-size: 1rem; }
+.cd-user { font-size: 0.78rem; color: rgba(255,255,255,0.6); }
+.cd-actions { display: flex; align-items: center; gap: 0.75rem; }
+.cd-balance {
+  background: rgba(255,200,90,0.15); color: #ffc85a;
+  padding: 0.5rem 0.9rem; border-radius: 999px; font-size: 0.85rem;
+}
+.cd-logout {
+  background: transparent; border: 1px solid rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.7); padding: 0.5rem 1rem; border-radius: 8px;
+  cursor: pointer; font-size: 0.85rem;
+}
+.cd-tabs {
+  display: flex; gap: 0.5rem; padding: 0 2rem; overflow-x: auto;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.cd-tab {
+  background: transparent; border: none; border-bottom: 2px solid transparent;
+  padding: 1rem 1.25rem; color: rgba(255,255,255,0.6); cursor: pointer;
+  font-size: 0.9rem; white-space: nowrap;
+}
+.cd-tab.active { color: #fff; border-bottom-width: 2px; }
+.cd-main { padding: 2rem; max-width: 1100px; margin: 0 auto; }
+
+.recharge-tab h2 { margin-top: 0; }
+.promo-banner {
+  background: linear-gradient(90deg, rgba(255,200,90,0.15), rgba(255,107,157,0.1));
+  border: 1px solid rgba(255,200,90,0.3); color: #ffc85a;
+  padding: 0.75rem 1rem; border-radius: 8px; margin: 1rem 0;
+}
+.packs-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem; margin-top: 1.5rem;
+}
+.pack-card {
+  background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px; padding: 1.5rem; text-align: center; position: relative;
+}
+.pack-card.popular { border-color: #5fb4ff; box-shadow: 0 0 20px rgba(95,180,255,0.2); }
+.pack-tag {
+  position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+  background: #5fb4ff; color: #0a0e1a; padding: 0.2rem 0.8rem;
+  border-radius: 999px; font-size: 0.7rem; font-weight: 700;
+}
+.pack-card h3 { margin: 0.5rem 0; font-size: 1rem; }
+.pack-price { font-size: 1.8rem; font-weight: 700; color: #5fdbc4; margin: 0.5rem 0; }
+.pack-price small { font-size: 0.6rem; color: rgba(255,255,255,0.5); margin-left: 0.2rem; }
+.pack-oros { color: #ffc85a; font-size: 1rem; margin-bottom: 0.5rem; }
+.pack-saving { font-size: 0.75rem; color: #5fdbc4; }
+.pack-buy {
+  width: 100%; padding: 0.75rem; margin-top: 1rem;
+  background: #5fb4ff; color: #0a0e1a; border: none;
+  border-radius: 8px; font-weight: 700; cursor: pointer;
+}
+.pack-buy:disabled { opacity: 0.5; }
+
+.warn-card {
+  background: rgba(255,200,90,0.08); border: 1px solid rgba(255,200,90,0.25);
+  border-radius: 12px; padding: 1.25rem; color: #ffc85a;
+}
+.warn-card ul { margin: 0.5rem 0; padding-left: 1.5rem; }
+.warn-card code {
+  background: rgba(0,0,0,0.3); padding: 0.1rem 0.4rem;
+  border-radius: 4px; font-size: 0.85em;
+}
+.warn-card .login-btn {
+  display: inline-block; margin-top: 1rem; padding: 0.6rem 1.2rem;
+  background: #ffc85a; color: #0a0e1a; text-decoration: none; border-radius: 6px;
+  font-weight: 600;
+}

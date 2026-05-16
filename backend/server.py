@@ -49,6 +49,7 @@ import call_center as call_center_module
 import super_admin as super_admin_module
 import appointments as appointments_module
 import public_chat as public_chat_module
+import user_workspace as user_workspace_module
 from rate_limit import limiter, rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -82,6 +83,7 @@ call_center_module.set_db(db)
 super_admin_module.set_db(db)
 appointments_module.set_db(db)
 public_chat_module.set_db(db)
+user_workspace_module.set_db(db)
 
 
 # ----------------------- APP -----------------------
@@ -358,6 +360,7 @@ api_router.include_router(call_center_module.router)
 api_router.include_router(super_admin_module.router)
 api_router.include_router(appointments_module.router)
 api_router.include_router(public_chat_module.router)
+api_router.include_router(user_workspace_module.router)
 app.include_router(api_router)
 
 app.add_middleware(

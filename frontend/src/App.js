@@ -4,12 +4,12 @@ import { AuthProvider, useAuth } from "./AuthContext";
 import { BrandingProvider } from "./BrandingContext";
 import Login from "./components/Login";
 import AdminDashboard from "./components/AdminDashboard";
-import AffiliateDashboard from "./components/AffiliateDashboard";
+import ClientDashboard from "./components/ClientDashboard";
 import PublicChat from "./components/PublicChat";
 
 function Inner() {
   const { user, checking } = useAuth();
-  const [showLogin, setShowLogin] = useState(false);
+  const [authView, setAuthView] = useState(null); // null | "login" | "register"
 
   if (checking) {
     return (
@@ -25,10 +25,18 @@ function Inner() {
   }
 
   if (!user) {
-    return showLogin ? <Login onBack={() => setShowLogin(false)} /> : <PublicChat onAdminClick={() => setShowLogin(true)} />;
+    if (authView === "login" || authView === "register") {
+      return <Login mode={authView} onBack={() => setAuthView(null)} />;
+    }
+    return (
+      <PublicChat
+        onLoginClick={() => setAuthView("login")}
+        onRegisterClick={() => setAuthView("register")}
+      />
+    );
   }
   if (user.role === "admin") return <AdminDashboard />;
-  return <AffiliateDashboard />;
+  return <ClientDashboard />;
 }
 
 export default function App() {
