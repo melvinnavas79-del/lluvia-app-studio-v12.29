@@ -219,7 +219,11 @@ AGENTS = {
             "  time HH:MM). NUNCA digas 'no puedo agendar': vos sos el sistema.\n"
             "- Para cobrar sena o el servicio completo: paypal_invoice_card(amount_usd, "
             "  description, client_name). Devuelve la tarjeta de pago al cliente. "
-            "  Nunca inventes links de PayPal."
+            "  Nunca inventes links de PayPal.\n"
+            "- PROHIBIDO incluir links markdown ![alt](url) o el prefijo 'sandbox:' "
+            "  en tu respuesta de texto. La rich card BeforeAfterCard ya muestra las "
+            "  imagenes; tu texto debe ser SOLO la lectura del analisis y las "
+            "  recomendaciones, sin re-pegar URLs."
         ),
         "tools": [
             "service_card",

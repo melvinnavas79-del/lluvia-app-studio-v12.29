@@ -5,7 +5,30 @@
 - Producción: https://lluvia-app-studio.lluvia-live.com (Emergent Native Deploy)
 - Telegram: https://t.me/LluviaAppStudioBot
 
-## Estado actual: v12.11 — Estilista Visual + Settings tab admin + composer Emergent-style (Feb 2026)
+## Estado actual: v12.12 — Before/After Nano Banana + Marketing Lab (Feb 2026)
+
+### Iteración 12.12 — Estilista Before/After (Gemini Image) + agente Marketing Lab (HECHO)
+**💇✨ Estilista Visual ahora genera imagen real "After" con Gemini Nano Banana**
+- Nuevo módulo `/app/backend/image_gen.py` que usa `emergentintegrations.LlmChat` con modelo `gemini-3.1-flash-image-preview` para img2img.
+- Nueva tool `generate_haircut_preview(look_description, look_name)` que toma la última foto del cliente, le aplica el prompt en inglés (largo + color + textura + movimiento) y guarda el resultado en `/app/backend/uploads/ai_generated/`. Cobro: **15 oros**.
+- Inyección automática de `_last_image_url` en el args (busca en el mensaje actual o en el historial).
+- Rich card nuevo `BeforeAfterCard`: grid 3 columnas (Antes | flecha | Después · IA), imágenes 1:1 con click-to-zoom.
+- System prompt del Estilista actualizado para llamar a `generate_haircut_preview` por cada una de las 3 opciones de corte (después de las `service_card`).
+- Verificado E2E: una foto real de Unsplash → Nano Banana → imagen 627KB del rostro con el corte sugerido manteniendo identidad facial.
+
+**🎬 Nuevo agente: Marketing Lab**
+- ID `marketing_lab`, emoji 🎬, color `#f59e0b`, voice `fable`.
+- Recibe una feature de la app y genera el GUION COMPLETO para TikTok/Reels/Shorts.
+- Nueva tool `video_script_card` con: `title`, `platform`, `duration_sec`, `hook`, `scenes[{t,visual,voiceover}]`, `caption`, `hashtags[]`, `music_suggestion`, `cta`. Cobro: 2 oros.
+- Rich card `VideoScriptCard` con secciones organizadas (hook con accent border, escenas numeradas con timecodes, hashtags como chips, botón 📋 para copiar todo al clipboard).
+- System prompt obliga al modelo a hacer 1 pregunta por turno hasta tener los 4 datos mínimos (feature, plataforma, duración, tono) y solo entonces emitir la tarjeta.
+
+**🐛 Bug fix técnico crítico**
+- `result_preview` en `tool_calls` truncaba a 300 chars (no permitía renderizar `video_script_card` ni `before_after_card` completos en el frontend). Ahora 6000 chars.
+
+**Tests**: 5/5 backend pytest verde incluyendo llamada real a Nano Banana (~25s). Frontend E2E ambos flujos verde. Cero regresiones.
+
+
 
 ### Iteración 12.11 — Estilista Visual + UX fixes (HECHO)
 **🐛 Bug fix: Settings tab para admin**
