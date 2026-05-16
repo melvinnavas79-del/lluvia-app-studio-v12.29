@@ -571,11 +571,25 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
                     app_name=args.get("app_name"),
                     commit_message=args.get("commit_message"),
                 )
+                # Refund automatico si el push fallo (token mal, repo no existe, etc).
+                # NO refundamos si el cliente solo necesita configurar (needs_setup),
+                # porque en ese caso el cobro tampoco se ejecuto (la tool ni se llamo
+                # de verdad). Si fue invocada y fallo por auth/permisos, devolvemos.
+                refunded_oros = 0
+                if not result.get("ok") and not result.get("needs_setup") and not is_admin:
+                    import credits as credits_mod
+                    refund_amt = agents_catalog.TOOL_NAMES.get("push_to_my_github", 8)
+                    await credits_mod.refund(
+                        user_id, refund_amt, "github_push_failed",
+                        {"error": str(result.get("error") or "")[:200]},
+                    )
+                    refunded_oros = refund_amt
                 # Wrap como rich card para que el frontend lo renderice
                 data = {
                     "card_type": "github_push",
                     "ok": result.get("ok", False),
                     "needs_setup": result.get("needs_setup", False),
+                    "auth_failed": result.get("auth_failed", False),
                     "message": result.get("message"),
                     "repo": result.get("repo"),
                     "repo_url": result.get("repo_url"),
@@ -583,6 +597,8 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
                     "app_name": result.get("app_name"),
                     "commit_message": result.get("commit_message"),
                     "error": result.get("error"),
+                    "help_url": result.get("help_url"),
+                    "refunded_oros": refunded_oros,
                 }
         elif name == "generate_haircut_preview":
             import image_gen
@@ -1023,7 +1039,10 @@ async def send_message(
     if not final_text:
         final_text = "No pude finalizar la respuesta. Reformula la peticion."
 
-    # 4. Persistir mensajes
+    # 4. Persistir mensajes. Para admin (admin_free) el cost real es 0
+    # aunque internamente sumemos para que las metricas funcionen.
+    nominal_cost = agents_catalog.COST_CHAT_MESSAGE + extra_cost + vision_cost
+    real_cost = 0 if is_admin else nominal_cost
     now = datetime.now(timezone.utc).isoformat()
     user_msg = {"id": str(uuid.uuid4()), "role": "user", "content": data.text, "ts": now}
     if image_urls:
@@ -1035,7 +1054,9 @@ async def send_message(
         "ts": now,
         "agent_id": agent["id"],
         "tool_calls": tool_calls_made,
-        "cost_oros": agents_catalog.COST_CHAT_MESSAGE + extra_cost + vision_cost,
+        "cost_oros": real_cost,
+        "is_admin_free": is_admin,
+        "nominal_cost_oros": nominal_cost,
     }
     await db.chat_sessions.update_one(
         {"id": session_id},
@@ -1049,6 +1070,6 @@ async def send_message(
     return {
         "user_message": user_msg,
         "assistant_message": assistant_msg,
-        "cost_oros": agents_catalog.COST_CHAT_MESSAGE + extra_cost + vision_cost,
+        "cost_oros": real_cost,
         "balance": new_balance,
     }

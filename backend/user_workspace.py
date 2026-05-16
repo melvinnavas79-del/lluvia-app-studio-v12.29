@@ -25,6 +25,7 @@ import re
 from datetime import datetime, timezone
 from typing import Optional
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
@@ -38,6 +39,59 @@ _db_ref: dict = {"db": None}
 
 def set_db(db) -> None:
     _db_ref["db"] = db
+
+
+async def _validate_github_token(token: str, repo: Optional[str] = None) -> dict:
+    """Pre-valida que el token de GitHub funcione consultando la API REST.
+    Retorna {ok, login, scopes, repo_access, error} sin hacer git push real.
+    Asi evitamos cobrarle al cliente 9 oros por un push que va a fallar."""
+    if not token or len(token) < 10:
+        return {"ok": False, "error": "Token vacio o invalido (muy corto)."}
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    async with httpx.AsyncClient(timeout=10.0) as cli:
+        # 1) /user para validar el token
+        r = await cli.get("https://api.github.com/user", headers=headers)
+        if r.status_code == 401:
+            return {
+                "ok": False,
+                "error": (
+                    "Token rechazado por GitHub. Crealo nuevo en "
+                    "https://github.com/settings/tokens/new con scope 'repo' "
+                    "y pegalo en Mi Cuenta → GITHUB_TOKEN."
+                ),
+            }
+        if r.status_code >= 400:
+            return {"ok": False, "error": f"GitHub respondio {r.status_code}: {r.text[:200]}"}
+        login = r.json().get("login")
+        scopes = r.headers.get("X-OAuth-Scopes", "")
+        # Verificar que tenga scope repo (fine-grained o classic)
+        has_repo_scope = "repo" in scopes
+        # 2) Si dieron repo, verificar acceso de escritura
+        repo_access = None
+        if repo:
+            r2 = await cli.get(f"https://api.github.com/repos/{repo}", headers=headers)
+            if r2.status_code == 404:
+                # Puede ser repo nuevo a crear automaticamente
+                repo_access = "not_found"
+            elif r2.status_code == 200:
+                perms = r2.json().get("permissions", {})
+                if perms.get("push") or perms.get("admin"):
+                    repo_access = "writable"
+                else:
+                    repo_access = "read_only"
+            else:
+                repo_access = f"error_{r2.status_code}"
+        return {
+            "ok": True,
+            "login": login,
+            "scopes": scopes,
+            "has_repo_scope": has_repo_scope,
+            "repo_access": repo_access,
+        }
 
 
 def _safe_repo(s: str) -> str:
@@ -163,6 +217,31 @@ async def do_push(user: dict, app_name: Optional[str] = None,
     repo = settings["github_repo"]
     branch = settings.get("github_branch") or "main"
 
+    # PRE-VALIDACION: probar el token con la API de GitHub antes de gastar
+    # ciclos de git. Si el token esta mal, devolvemos error claro al cliente
+    # SIN cobrarle (la tool de oros refunda al ver ok=False con auth_failed).
+    try:
+        validation = await _validate_github_token(token, repo)
+    except Exception as e:
+        validation = {"ok": False, "error": f"No pude contactar a GitHub: {e}"}
+    if not validation["ok"]:
+        return {
+            "ok": False,
+            "auth_failed": True,
+            "error": validation["error"],
+            "help_url": "https://github.com/settings/tokens/new?scopes=repo&description=Lluvia%20App%20Studio",
+        }
+    if validation.get("repo_access") == "read_only":
+        return {
+            "ok": False,
+            "auth_failed": True,
+            "error": (
+                f"El token funciona pero NO tiene permisos de escritura sobre "
+                f"{repo}. Verifica que sos owner o que el token tiene scope 'repo'."
+            ),
+            "help_url": "https://github.com/settings/tokens/new?scopes=repo",
+        }
+
     # Definir que directorio empujar
     base_dir = _user_apps_dir(user["id"])
     if app_name:
@@ -215,6 +294,30 @@ async def do_push(user: dict, app_name: Optional[str] = None,
     success = steps[-1]["rc"] == 0
     repo_url = f"https://github.com/{repo}"
 
+    # Si el push fallo, traducir el error de git a algo claro en español
+    user_facing_error = None
+    if not success:
+        last_out = steps[-1]["out"]
+        if "Invalid username or token" in last_out or "Password authentication" in last_out:
+            user_facing_error = (
+                "GitHub rechazó tu token. Pasos:\n"
+                "1) Andá a https://github.com/settings/tokens/new\n"
+                "2) Tildá el scope 'repo' (completo)\n"
+                "3) Generá el token, copialo (empieza con ghp_ o github_pat_)\n"
+                "4) Pegalo en Mi Cuenta → GITHUB_TOKEN\n"
+                "5) Tocá 'Guardar configuración' y reintentá el push."
+            )
+        elif "could not read Username" in last_out or "remote: Repository not found" in last_out:
+            user_facing_error = (
+                f"El repo '{repo}' no existe o tu token no lo ve. "
+                "Verificá que el nombre sea owner/repo correcto y que sea público o que tu token tenga acceso."
+            )
+        elif "failed to push" in last_out or "rejected" in last_out:
+            user_facing_error = (
+                f"GitHub rechazó el push (puede ser por protección de rama o conflicto). "
+                f"Detalle: {last_out[-200:]}"
+            )
+
     # Bitacora (sin token)
     await db.user_github_pushes.insert_one({
         "id": str(uuid.uuid4()),
@@ -231,7 +334,26 @@ async def do_push(user: dict, app_name: Optional[str] = None,
         "ok": success, "repo": repo, "repo_url": repo_url,
         "branch": branch, "app_name": app_name, "commit_message": commit_msg,
         "steps": steps,
+        "auth_failed": (not success and user_facing_error and "rechazó tu token" in user_facing_error),
+        "error": user_facing_error,
     }
+
+
+@router.post("/github/validate")
+async def validate_my_github(user: dict = Depends(get_current_user)):
+    """Valida que el token de GitHub del usuario funcione SIN cobrar oros
+    ni hacer push. Devuelve {ok, login, repo_access, error}."""
+    db = _db_ref["db"]
+    settings = await db.user_settings.find_one({"user_id": user["id"]}, {"_id": 0})
+    if not settings or not settings.get("github_token"):
+        raise HTTPException(status_code=400, detail="No tenés token configurado")
+    try:
+        result = await _validate_github_token(
+            settings["github_token"], settings.get("github_repo"),
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error validando: {e}")
 
 
 @router.post("/github/push")

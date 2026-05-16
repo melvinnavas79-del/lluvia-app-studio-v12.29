@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 16 (v12.18) — GitHub validate endpoint + push pre-validation + refund + admin_free cost UI. Backend 7/7 PASSED + 2 skipped (anti-farming 429 sin poder registrar usuarios nuevos). Verificado: (a) POST /api/me/github/validate sin auth → 401 ✅; (b) Admin con token mal configurado → endpoint devuelve 200 {ok:false, error:'Token rechazado por GitHub. Crealo nuevo en https://github.com/settings/tokens/new con scope repo y pegalo en Mi Cuenta → GITHUB_TOKEN.'} — mensaje claro en español con link de ayuda ✅; (c) send_message para admin retorna cost_oros=0, assistant_message.is_admin_free=true, nominal_cost_oros=1 ✅; (d) Balance del admin no cambia tras varios mensajes (admin_free funciona correctamente) ✅; (e) /api/site/content, /api/paypal/create-order, /api/me/settings vivos. Frontend E2E con admin: (a) Landing muestra '15 oros gratis al registrarte' (fix de iter 15 aplicado) ✅; (b) Login muestra '¿Eres nuevo? Crear cuenta (15 oros)' ✅; (c) En #/settings, el botón 'Probar mi token de GitHub' [data-testid=github-validate-btn] aparece (porque hasToken=true), al click llama POST /me/github/validate y renderiza la alerta roja [data-testid=github-validate-result class=alert] con el mensaje completo '❌ Token rechazado por GitHub. Crealo nuevo en https://github.com/settings/tokens/new con scope repo y pegalo en Mi Cuenta → GITHUB_TOKEN.' en pre-wrap ✅; (d) En #/console al abrir la sesión TEST_admin_free, el mensaje del assistant muestra la badge verde '👑 Gratis (admin · sería 1 oros)' en lugar del '-1 oros' que veía antes el usuario ✅. NO se pudo testear interactivamente el flujo de push_to_my_github (refund de 8 oros + rich card con CTAs auth_failed/needs_setup) porque requiere triggear la tool desde un mensaje del agente — pero el código de console.py:579-602 está correcto (refund=agents_catalog.TOOL_NAMES['push_to_my_github']=8, sólo si !is_admin, rich card con auth_failed/help_url/refunded_oros), y GitHubPushCard.js:931 renderiza '💸 Te reembolsamos {refunded_oros} oros' + help_url CTA en BossConsole.js:950-952.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_16_github_validate.py",
+    "/app/test_reports/pytest/iteration_16_results.xml"
+  ],
+  "action_items": [
+    "Sugerencia (no bloqueante): para testear el refund real de push fallido, el main agent puede simular un push con admin como no-admin temporalmente, o crear un usuario fresco con saldo y un token fake — el código está bien pero no probado end-to-end interactivamente.",
+    "user_workspace.py:337 — `auth_failed` se calcula con string-match 'rechazó tu token' sobre user_facing_error. Es frágil: si el copy del mensaje cambia ligeramente, auth_failed=false. Mejor exponer un flag interno explícito desde el bloque que setea el mensaje (línea 301-309)."
+  ],
+  "critical_code_review_comments": [
+    "user_workspace.py:48-49 — la pre-validación rechaza tokens con len<10. Los tokens 'github_pat_' fine-grained son largos (~93+ chars), y los classic 'ghp_' son 40 chars. Min de 10 es ok pero podría detectar formato '^(ghp_|github_pat_|gho_|ghu_|ghs_|ghr_)' para feedback más temprano.",
+    "user_workspace.py:262 — el remote_url contiene el token en plain text. Asegurarse que `steps[].out` (línea 268) trunca a 2000 chars no incluya casualmente el remote_url. El comando git push usa --force; podría loggear stderr con el URL. Verificar que steps NO contenga el token (riesgo si user_github_pushes se filtra).",
+    "console.py:579-585 — el refund usa agents_catalog.TOOL_NAMES.get('push_to_my_github', 8). Si el catalog define el costo en otro lugar (ej. agent.tools), 8 puede quedar desfasado. Centralizar el costo en una constante.",
+    "console.py:1045 — real_cost=0 if is_admin else nominal_cost. Esto significa que admin nunca consume oros pero el balance se muestra (9998). El usuario reportó '-51 oros' porque ANTES de este fix el frontend mostraba cost_oros nominal aunque no se cobrara. El fix está correcto: ahora cost_oros=0 y nominal_cost_oros=51 separados.",
+    "BossConsole.js:817-822 — la lógica es correcta: muestra '👑 Gratis' si is_admin_free, else muestra '-X oros'. Pero `msg.is_admin_free && msg.nominal_cost_oros > 0` no contempla mensajes antiguos (pre-fix) que tienen cost_oros nominal y is_admin_free=undefined; esos seguirán mostrando '-X oros' lo cual es OK pero confuso para historico.",
+    "Iter 15 issues PARCIALMENTE arreglados: '15 oros' ahora correcto en landing CTA Y en login banner. Buen trabajo. PublicChat.js:216 párrafo 'creditos gratis' no verificado en este run pero el CTA principal está bien."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_16_github_validate.py (new — 9 tests)"
+  ],
+  "success_rate": {"backend": "100% (7/7 ejecutados; 2 skipped por anti-farming saturado)", "frontend": "100% — ValidateGitHubButton + admin_free badge + landing CTA verificados E2E con screenshots"},
+  "test_credentials": "Admin: melvinnavas79@gmail.com / Admin#2026",
+  "seed_data_creation": "4 sesiones TEST_admin_free/TEST_admin_bal en la chat_sessions del admin (cleanup opcional). Anti-farming aún saturado de iter 15, ningún registro nuevo intentado.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Tests reutilizables en /app/backend/tests/test_iteration_16_github_validate.py. Para volver a correr: `pytest backend/tests/test_iteration_16_github_validate.py -v --junitxml=/app/test_reports/pytest/iteration_16_results.xml`. Los 2 tests SKIPPED (test_returns_400_when_no_token_configured, test_fake_token_returns_ok_false_with_clear_spanish_message) requieren poder registrar un usuario nuevo (anti-farming bloquea desde iter 15). Para probar interactivamente el refund de push fallido: login como un user no-admin, configurar un token fake en /me/settings, ir al chat con agente App Builder, decirle 'pusheá mi app a github', observar el rich card con 💸 refund y verificar /api/console/credits/me antes/después.",
+  "rca of the issue": "Bug original v12.17: usuario hizo push con token mal, do_push intentó git real (consumió 9 oros y falló con 'Invalid username or token. Password authentication is not supported'), el error técnico era ilegible y vio -51 oros sin entender. RESUELTO: (1) _validate_github_token en user_workspace.py:44-94 pre-consulta https://api.github.com/user con el token ANTES de gastar ciclos; si rechaza con 401 retorna mensaje en español con link a tokens/new (líneas 58-66). (2) do_push:223-243 invoca esta validación PRIMERO; si falla devuelve {ok:false, auth_failed:true, error, help_url} sin tocar git. (3) console.py:579-586 refunda automáticamente 8 oros (sólo si !is_admin y !needs_setup). (4) console.py:1044-1058 separa cost_oros (real, 0 para admin) de nominal_cost_oros (lo que costaría sin admin_free). (5) BossConsole.js:817-822 muestra '👑 Gratis (admin · sería X oros)' en verde para admin en lugar del confuso '-X oros'. (6) SettingsTab.js:125-167 expone botón 'Probar mi token de GitHub' para que el cliente valide preventivamente. Reproducción del fix verificada con curl + browser: el token actual del admin es inválido y al validar muestra el mensaje correcto."
+}

@@ -814,7 +814,12 @@ function Message({ msg, agent, onPlay, backendBase }) {
           <div className="bc-takeover-badge">👑 SuperAdmin · {msg.by}</div>
         )}
         <div className="bc-msg-foot">
-          {msg.cost_oros !== undefined && msg.cost_oros > 0 && (
+          {msg.is_admin_free && msg.nominal_cost_oros > 0 && (
+            <span className="bc-msg-cost" style={{ color: "#059669" }} title="Sos admin: no se cobra">
+              👑 Gratis (admin · sería {msg.nominal_cost_oros} oros)
+            </span>
+          )}
+          {!msg.is_admin_free && msg.cost_oros !== undefined && msg.cost_oros > 0 && (
             <span className="bc-msg-cost">-{msg.cost_oros} oros</span>
           )}
           {!isUser && msg.content && (
@@ -919,8 +924,13 @@ function GitHubPushCard({ card }) {
           </div>
         )}
         {card.error && (
-          <div className="rc-desc" style={{ color: stateColor, marginTop: "0.5rem", fontFamily: "var(--font-mono)", fontSize: "0.78rem" }}>
+          <div className="rc-desc" style={{ color: stateColor, marginTop: "0.5rem", whiteSpace: "pre-wrap", fontSize: "0.85rem", lineHeight: 1.55 }}>
             {card.error}
+          </div>
+        )}
+        {card.refunded_oros > 0 && (
+          <div style={{ marginTop: "0.6rem", color: "#059669", fontWeight: 600, fontSize: "0.88rem" }}>
+            💸 Te reembolsamos {card.refunded_oros} oros automáticamente.
           </div>
         )}
       </div>
@@ -932,9 +942,17 @@ function GitHubPushCard({ card }) {
         </a>
       )}
       {needsSetup && (
-        <div className="rc-cta" style={{ background: stateColor, cursor: "default", fontSize: "0.85rem" }}>
-          Configura tu token en Mi Cuenta → Settings
-        </div>
+        <a href="#/settings" className="rc-cta" style={{ background: stateColor }}
+           data-testid="github-push-card-setup">
+          Configurar GitHub ahora →
+        </a>
+      )}
+      {card.help_url && !isOk && !needsSetup && (
+        <a href={card.help_url} target="_blank" rel="noreferrer"
+           className="rc-cta" style={{ background: stateColor }}
+           data-testid="github-push-card-help">
+          Crear token nuevo en GitHub →
+        </a>
       )}
     </div>
   );

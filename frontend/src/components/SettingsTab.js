@@ -108,13 +108,62 @@ export default function SettingsTab() {
         </div>
         {err && <div className="alert">{err}</div>}
         {msg && <div className="success">{msg}</div>}
-        <button className="login-btn" type="submit" data-testid="settings-save" style={{ marginTop: "1rem" }}>
-          Guardar configuración
-        </button>
+        <div style={{ display: "flex", gap: "0.65rem", marginTop: "1rem", flexWrap: "wrap" }}>
+          <button className="login-btn" type="submit" data-testid="settings-save"
+                  style={{ width: "auto", padding: "0.75rem 1.25rem" }}>
+            Guardar configuración
+          </button>
+          <ValidateGitHubButton hasToken={hasToken} />
+        </div>
       </form>
 
       <TelegramLinkCard />
     </div>
+  );
+}
+
+function ValidateGitHubButton({ hasToken }) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const test = async () => {
+    setBusy(true);
+    setResult(null);
+    try {
+      const r = await api.post("/me/github/validate");
+      setResult(r.data);
+    } catch (e) {
+      setResult({ ok: false, error: formatError(e) });
+    } finally { setBusy(false); }
+  };
+  if (!hasToken) return null;
+  return (
+    <>
+      <button type="button" className="copy-btn" onClick={test} disabled={busy}
+              data-testid="github-validate-btn"
+              style={{ padding: "0.75rem 1.25rem" }}>
+        {busy ? "Validando..." : "Probar mi token de GitHub"}
+      </button>
+      {result && (
+        <div style={{ flex: "1 1 100%", marginTop: "0.5rem" }}
+             className={result.ok ? "success" : "alert"} data-testid="github-validate-result">
+          {result.ok ? (
+            <>
+              ✅ Token válido. Usuario GitHub: <strong>{result.login}</strong>
+              {result.repo_access === "writable" && <> · ✅ Tenés permisos de escritura en el repo</>}
+              {result.repo_access === "not_found" && <> · ⚠ El repo no existe todavía; GitHub lo creará en el primer push si tu token tiene scope <code>repo</code></>}
+              {result.repo_access === "read_only" && <> · ❌ Solo lectura sobre el repo (necesitás scope <code>repo</code> completo)</>}
+              {!result.has_repo_scope && (
+                <div style={{ marginTop: "0.4rem", color: "#92400E" }}>
+                  ⚠ Tu token no tiene scope <code>repo</code>. Regeneralo con ese permiso o el push va a fallar.
+                </div>
+              )}
+            </>
+          ) : (
+            <span style={{ whiteSpace: "pre-wrap" }}>❌ {result.error}</span>
+          )}
+        </div>
+      )}
+    </>
   );
 }
 
