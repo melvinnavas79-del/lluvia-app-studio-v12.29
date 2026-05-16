@@ -26,30 +26,68 @@ export default function AgentAvatar({
   rounded = "circle", // "circle" | "rounded"
   className = "",
   style = {},
+  showEmojiBadge = true,
 }) {
   const seed = (agent?.name || agent?.id || "Agent").trim();
   const bg = useMemo(() => pickBg(seed), [seed]);
   const url = `https://api.dicebear.com/8.x/bottts-neutral/svg?seed=${encodeURIComponent(seed)}&backgroundColor=${bg}&radius=${rounded === "circle" ? 50 : 18}&size=${size * 2}`;
   const radius = rounded === "circle" ? "50%" : "14px";
+  const emoji = agent?.emoji;
+  const badgeSize = Math.max(18, Math.round(size * 0.5));
   return (
-    <img
-      src={url}
-      alt={agent?.name || "Agent"}
-      width={size}
-      height={size}
-      className={`agent-avatar ${className}`}
+    <div
+      className={`agent-avatar-wrap ${className}`}
       style={{
+        position: "relative",
         width: size,
         height: size,
-        borderRadius: radius,
-        background: `#${bg}`,
-        objectFit: "cover",
-        display: "block",
         flexShrink: 0,
+        display: "inline-block",
         ...style,
       }}
-      data-testid={`agent-avatar-${agent?.id || seed}`}
-    />
+    >
+      <img
+        src={url}
+        alt={agent?.name || "Agent"}
+        width={size}
+        height={size}
+        className="agent-avatar"
+        style={{
+          width: size,
+          height: size,
+          borderRadius: radius,
+          background: `#${bg}`,
+          objectFit: "cover",
+          display: "block",
+        }}
+        data-testid={`agent-avatar-${agent?.id || seed}`}
+      />
+      {showEmojiBadge && emoji && (
+        <span
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            right: -2,
+            bottom: -2,
+            width: badgeSize,
+            height: badgeSize,
+            borderRadius: "50%",
+            background: agent?.color || "#0F172A",
+            color: "#fff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: Math.round(badgeSize * 0.7),
+            lineHeight: 1,
+            boxShadow: "0 1px 3px rgba(0,0,0,0.25), 0 0 0 2px var(--surface, #fff)",
+            pointerEvents: "none",
+          }}
+          data-testid={`agent-avatar-emoji-${agent?.id || seed}`}
+        >
+          {emoji}
+        </span>
+      )}
+    </div>
   );
 }
 

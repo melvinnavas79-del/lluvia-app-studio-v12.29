@@ -1,4 +1,4 @@
-// SPA Router + Views de {{APP_NAME}}
+// SPA Router + Views de Lluvia Audio Live
 const view = document.getElementById("app-view");
 
 const routes = {
@@ -43,7 +43,7 @@ async function viewHome(){
   view.innerHTML = `
     <header class="head">
       <div>
-        <h1>{{APP_NAME}}</h1>
+        <h1>Lluvia Audio Live</h1>
         <div class="greet">Hola ${u.name} · descubrí salas en vivo</div>
       </div>
       <div class="avatar">${u.name.slice(0,2).toUpperCase()}</div>
@@ -246,7 +246,7 @@ async function viewProfile(){
       <div class="big-av" style="background:${stringToColor(p.name)}">${p.name.slice(0,2).toUpperCase()}</div>
       <div class="name">${escapeHtml(p.name)}</div>
       <div class="handle">@${escapeHtml((p.handle||p.name).toLowerCase().replace(/\s+/g,''))}</div>
-      <div class="bio">${escapeHtml(p.bio||"Creador en {{APP_NAME}}. Hosteo charlas en vivo.")}</div>
+      <div class="bio">${escapeHtml(p.bio||"Creador en Lluvia Audio Live. Hosteo charlas en vivo.")}</div>
     </div>
     <div class="stats">
       <div class="stat"><div class="n">${p.followers||0}</div><div class="lbl">Seguidores</div></div>

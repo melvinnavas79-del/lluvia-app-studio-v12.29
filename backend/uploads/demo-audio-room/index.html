@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <title>Lluvia Audio Live · Salas de Audio en Vivo</title>
+  <meta name="theme-color" content="#2563EB"/>
+  <link rel="stylesheet" href="/api/demo/audio-room-static/css/styles.css"/>
+</head>
+<body><div style="position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(135deg,#2563EB,#7C3AED);color:#fff;padding:8px 16px;text-align:center;font:600 13px/1.4 system-ui;box-shadow:0 2px 8px rgba(0,0,0,0.2)">DEMO PUBLICO · Esta app la ensambla App Builder Pro en 30 segundos · <a href="/" style="color:#fff;text-decoration:underline">Volver a Lluvia App Studio</a></div><style>body{padding-top:42px}</style>
+  <nav class="bottom-nav">
+    <a href="#/" data-route="/" class="nav-item"><span class="ico">🏠</span><span>Inicio</span></a>
+    <a href="#/trending" data-route="/trending" class="nav-item"><span class="ico">🔥</span><span>Tendencias</span></a>
+    <a href="#/create" data-route="/create" class="nav-item fab"><span class="ico">+</span></a>
+    <a href="#/rooms" data-route="/rooms" class="nav-item"><span class="ico">🎙</span><span>Salas</span></a>
+    <a href="#/profile" data-route="/profile" class="nav-item"><span class="ico">👤</span><span>Perfil</span></a>
+  </nav>
+  <main id="app-view"></main>
+  <div id="toast"></div>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script>window.APP_CONFIG={API_URL:"/api/demo/audio-room",DEMO_MODE:true,BRAND:"Lluvia Audio Live"};</script><script src="/api/demo/audio-room-static/js/api.js"></script>
+  <script src="/api/demo/audio-room-static/js/webrtc.js"></script>
+  <script src="/api/demo/audio-room-static/js/app.js"></script>
+</body>
+</html>

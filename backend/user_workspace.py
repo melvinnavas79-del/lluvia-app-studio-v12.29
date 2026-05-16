@@ -241,6 +241,52 @@ async def do_push(user: dict, app_name: Optional[str] = None,
             ),
             "help_url": "https://github.com/settings/tokens/new?scopes=repo",
         }
+    # Si el repo no existe, lo creamos automaticamente (UX: el cliente no
+    # tiene que ir a github.com manualmente). Requiere scope 'repo'.
+    if validation.get("repo_access") == "not_found":
+        try:
+            owner_repo = repo.split("/", 1)
+            if len(owner_repo) == 2 and validation.get("has_repo_scope"):
+                async with httpx.AsyncClient(timeout=15.0) as cli:
+                    # Si el owner es el propio login del token, usar /user/repos.
+                    # Si es una org, usar /orgs/{org}/repos.
+                    headers = {
+                        "Authorization": f"Bearer {token}",
+                        "Accept": "application/vnd.github+json",
+                        "X-GitHub-Api-Version": "2022-11-28",
+                    }
+                    owner, reponame = owner_repo
+                    if owner.lower() == (validation.get("login") or "").lower():
+                        create_resp = await cli.post(
+                            "https://api.github.com/user/repos",
+                            headers=headers,
+                            json={"name": reponame, "private": False,
+                                  "description": f"Generado por Lluvia App Studio · workspace de {user.get('email','')}"},
+                        )
+                    else:
+                        create_resp = await cli.post(
+                            f"https://api.github.com/orgs/{owner}/repos",
+                            headers=headers,
+                            json={"name": reponame, "private": False,
+                                  "description": f"Generado por Lluvia App Studio · workspace de {user.get('email','')}"},
+                        )
+                    if create_resp.status_code not in (200, 201):
+                        return {
+                            "ok": False, "auth_failed": True,
+                            "error": (
+                                f"El repo '{repo}' no existe y no pude crearlo automaticamente: "
+                                f"{create_resp.status_code} {create_resp.text[:160]}. "
+                                f"Crealo a mano en https://github.com/new (nombre exacto: {reponame})."
+                            ),
+                            "help_url": f"https://github.com/new?name={reponame}",
+                        }
+                    logger.info(f"Repo {repo} creado automaticamente para {user.get('email')}")
+        except Exception as e:
+            return {
+                "ok": False, "auth_failed": True,
+                "error": f"Error creando el repo {repo}: {e}",
+                "help_url": "https://github.com/new",
+            }
 
     # Definir que directorio empujar
     base_dir = _user_apps_dir(user["id"])

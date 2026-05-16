@@ -411,6 +411,8 @@ api_router.include_router(legal_module.router)
 api_router.include_router(gmail_module.router)
 api_router.include_router(gmail_maestro_module.router)
 api_router.include_router(site_content_module.router)
+import demo_audio_room as demo_ar_module
+api_router.include_router(demo_ar_module.router)
 api_router.include_router(telegram_unified_module.router_link)
 app.include_router(api_router)
 
@@ -418,6 +420,11 @@ app.include_router(api_router)
 UPLOADS_DIR = ROOT_DIR / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/api/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
+
+# Servir el frontend del demo publico de Audio Room (template materializado).
+# Asi el visitante navega las 4 pantallas reales sin registrarse.
+from demo_audio_room import SERVE_DIR as DEMO_AR_DIR
+app.mount("/api/demo/audio-room-static", StaticFiles(directory=str(DEMO_AR_DIR), html=True), name="demo_audio_room")
 
 app.add_middleware(
     CORSMiddleware,

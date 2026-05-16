@@ -113,6 +113,35 @@ export default function PublicChat({ onLoginClick, onRegisterClick }) {
           <span>✓ Tu código, tu GitHub</span>
         </p>
 
+        <a
+          href="/api/demo/audio-room-static/"
+          target="_blank"
+          rel="noreferrer"
+          className="landing-live-demo"
+          data-testid="hero-live-demo-btn"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "0.55rem",
+            marginTop: "1.1rem",
+            padding: "0.65rem 1.15rem",
+            background: "linear-gradient(135deg, #2563EB22, #7C3AED22)",
+            border: "1px solid rgba(37,99,235,0.35)",
+            borderRadius: "999px",
+            color: "var(--text-primary)",
+            fontSize: "0.92rem",
+            fontWeight: 600,
+            textDecoration: "none",
+            transition: "transform 0.18s ease, box-shadow 0.18s ease",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(37,99,235,0.25)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "none"; }}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#EF4444", display: "inline-block", boxShadow: "0 0 0 4px rgba(239,68,68,0.15)" }} />
+          🎙 Probá una Audio Room en vivo — armada por App Builder Pro en 30 seg
+          <span style={{ opacity: 0.6 }}>→</span>
+        </a>
+
         {heroBots.length > 0 && (
           <div className="landing-bots-strip" aria-hidden="true">
             {heroBots.map((a) => (
