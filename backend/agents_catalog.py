@@ -17,6 +17,7 @@ TOOL_NAMES = {
     "cancel_appointment": 2,
     "paypal_invoice_card": 4,
     "service_card": 1,
+    "push_to_my_github": 8,
 }
 
 COST_CHAT_MESSAGE = 1
@@ -78,7 +79,8 @@ AGENTS = {
             "github_read_file. Respuestas en MAX 3 lineas."
         ),
         "tools": ["shell_run", "github_list_repos", "github_list_files",
-                  "github_read_file", "github_search_code", "provision_client_quick"],
+                  "github_read_file", "github_search_code", "provision_client_quick",
+                  "push_to_my_github"],
     },
     "app_builder": {
         "id": "app_builder", "name": "App Builder", "emoji": "🏗️",
@@ -102,10 +104,16 @@ AGENTS = {
             "Cuando pidan 'crea una radio/tienda/app para X', llamas "
             "provision_client_quick(display_name=X) y describes que pantallas "
             "incluira (las 7 minimo). NUNCA entregas un solo screen.\n\n"
+            "PUSH A GITHUB: Cuando el cliente diga 'pushea mi app' / 'subir a "
+            "GitHub' / 'guardar en mi repo' / 'subir codigo', llamas la tool "
+            "`push_to_my_github`. Despues del push, si fue exitoso, muestrale al "
+            "cliente el repo_url y avisale que su codigo ya esta en su GitHub. "
+            "Si needs_setup=true, pidele que vaya a Mi Cuenta -> Settings y "
+            "pegue su GITHUB_TOKEN + repo.\n\n"
             "Si te piden solo wireframe: respondes con lista numerada de las 7 "
             "pantallas + 3 componentes clave por pantalla. Cero teoria de stack."
         ),
-        "tools": ["provision_client_quick"],
+        "tools": ["provision_client_quick", "push_to_my_github"],
     },
     "vendedor": {
         "id": "vendedor", "name": "Vendedor & Estratega", "emoji": "💰",

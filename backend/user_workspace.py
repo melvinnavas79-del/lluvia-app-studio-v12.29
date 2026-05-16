@@ -142,15 +142,22 @@ class PushIn(BaseModel):
     app_name: Optional[str] = None  # si es None empuja toda la carpeta user_apps/{user_id}
 
 
-@router.post("/github/push")
-async def my_github_push(data: PushIn, user: dict = Depends(get_current_user)):
+async def do_push(user: dict, app_name: Optional[str] = None,
+                  commit_message: Optional[str] = None) -> dict:
+    """Funcion reusable: ejecuta el git push para el user. Usada tanto por
+    el endpoint /me/github/push como por la tool push_to_my_github del chat.
+    Devuelve dict con ok/repo/branch/url/steps. Si el user no tiene token
+    o repo configurados devuelve ok=False con 'needs_setup': True (no lanza
+    HTTPException, asi la tool puede sugerir la accion al cliente)."""
     db = _db_ref["db"]
     settings = await db.user_settings.find_one({"user_id": user["id"]}, {"_id": 0})
     if not settings or not settings.get("github_token") or not settings.get("github_repo"):
-        raise HTTPException(
-            status_code=400,
-            detail="Configura tu GITHUB_TOKEN y repositorio en Mi cuenta -> Settings antes de hacer push.",
-        )
+        return {
+            "ok": False,
+            "needs_setup": True,
+            "message": "Necesitas configurar tu GITHUB_TOKEN y repositorio en Mi cuenta -> Settings antes de hacer push.",
+            "settings_url": "/dashboard/settings",
+        }
 
     token = settings["github_token"]
     repo = settings["github_repo"]
@@ -158,10 +165,10 @@ async def my_github_push(data: PushIn, user: dict = Depends(get_current_user)):
 
     # Definir que directorio empujar
     base_dir = _user_apps_dir(user["id"])
-    if data.app_name:
-        push_dir = os.path.join(base_dir, data.app_name)
+    if app_name:
+        push_dir = os.path.join(base_dir, app_name)
         if not os.path.isdir(push_dir):
-            raise HTTPException(status_code=404, detail=f"App '{data.app_name}' no existe")
+            return {"ok": False, "error": f"App '{app_name}' no existe en tu workspace"}
     else:
         push_dir = base_dir
         os.makedirs(push_dir, exist_ok=True)
@@ -172,7 +179,7 @@ async def my_github_push(data: PushIn, user: dict = Depends(get_current_user)):
                 f.write(f"# Mis apps de {user.get('email','')}\n\n"
                         f"Generadas con Lluvia App Studio.\n")
 
-    commit_msg = data.commit_message or f"backup {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}"
+    commit_msg = commit_message or f"backup {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}"
     remote_url = f"https://x-access-token:{token}@github.com/{repo}.git"
 
     def _run(cmd: list[str]) -> tuple[int, str]:
@@ -186,8 +193,6 @@ async def my_github_push(data: PushIn, user: dict = Depends(get_current_user)):
     steps = []
     _run(["git", "init"])
     # Forzar el nombre de la rama local que va a coincidir con la rama destino.
-    # En git nuevo init crea 'main' por defecto, pero en algunas distros sigue
-    # creando 'master' — sin esto, el push -u origin {branch} fallaria.
     _run(["git", "checkout", "-B", branch])
     _run(["git", "config", "user.email", user.get("email", "user@lluvia.app")])
     _run(["git", "config", "user.name", user.get("name", "Lluvia User")])
@@ -202,30 +207,39 @@ async def my_github_push(data: PushIn, user: dict = Depends(get_current_user)):
 
     rc, out = _run(["git", "commit", "-m", commit_msg])
     steps.append({"step": "commit", "rc": rc, "out": out[-200:]})
-    # Si commit falla porque no hay nada que commitear, igual intentamos push
-    # (puede ser un re-push de algo ya commiteado antes en el mismo workspace).
 
-    # Asegurar que el push sube la rama correcta aunque git init haya creado 'master'.
     _run(["git", "branch", "-M", branch])
     rc, out = _run(["git", "push", "-u", "origin", branch, "--force"])
     steps.append({"step": "push", "rc": rc, "out": out[-300:]})
 
     success = steps[-1]["rc"] == 0
+    repo_url = f"https://github.com/{repo}"
+
     # Bitacora (sin token)
     await db.user_github_pushes.insert_one({
         "id": str(uuid.uuid4()),
         "user_id": user["id"], "user_email": user.get("email"),
         "repo": repo, "branch": branch,
-        "app_name": data.app_name or "(todo el workspace)",
+        "app_name": app_name or "(todo el workspace)",
         "commit_message": commit_msg,
         "success": success,
         "steps": steps,
         "ts": datetime.now(timezone.utc).isoformat(),
     })
+
     return {
-        "ok": success, "repo": repo, "branch": branch,
-        "app_name": data.app_name, "steps": steps,
+        "ok": success, "repo": repo, "repo_url": repo_url,
+        "branch": branch, "app_name": app_name, "commit_message": commit_msg,
+        "steps": steps,
     }
+
+
+@router.post("/github/push")
+async def my_github_push(data: PushIn, user: dict = Depends(get_current_user)):
+    result = await do_push(user, app_name=data.app_name, commit_message=data.commit_message)
+    if result.get("needs_setup"):
+        raise HTTPException(status_code=400, detail=result["message"])
+    return result
 
 
 @router.get("/github/history")

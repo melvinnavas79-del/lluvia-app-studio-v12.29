@@ -329,9 +329,9 @@ export default function BossConsole() {
 
 function Message({ msg, agent, onPlay }) {
   const isUser = msg.role === "user";
-  // Extraer rich cards desde tool_calls (paypal_invoice_card / service_card)
+  // Extraer rich cards desde tool_calls (paypal_invoice_card / service_card / push_to_my_github)
   const cards = (msg.tool_calls || []).map((tc) => {
-    if (!["paypal_invoice_card", "service_card"].includes(tc.name)) return null;
+    if (!["paypal_invoice_card", "service_card", "push_to_my_github"].includes(tc.name)) return null;
     try {
       const r = JSON.parse(tc.result_preview || "{}");
       if (r.card_type) return r;
@@ -360,11 +360,11 @@ function Message({ msg, agent, onPlay }) {
           </div>
         )}
         {msg.content && <div className="bc-msg-text">{msg.content}</div>}
-        {cards.map((c, i) => (
-          c.card_type === "payment"
-            ? <PaymentCard key={i} card={c} agent={agent} />
-            : <ServiceCard key={i} card={c} agent={agent} />
-        ))}
+        {cards.map((c, i) => {
+          if (c.card_type === "payment") return <PaymentCard key={i} card={c} agent={agent} />;
+          if (c.card_type === "github_push") return <GitHubPushCard key={i} card={c} />;
+          return <ServiceCard key={i} card={c} agent={agent} />;
+        })}
         {msg.superadmin_takeover && (
           <div className="bc-takeover-badge">👑 SuperAdmin · {msg.by}</div>
         )}
@@ -429,6 +429,68 @@ function ServiceCard({ card, agent }) {
           {card.cta_label || "Ver más"}
         </button>
       </div>
+    </div>
+  );
+}
+
+function GitHubPushCard({ card }) {
+  const isOk = card.ok === true;
+  const needsSetup = card.needs_setup === true;
+  const stateColor = isOk ? "#059669" : needsSetup ? "#D97706" : "#DC2626";
+  const stateLabel = isOk ? "Push exitoso" : needsSetup ? "Setup pendiente" : "Push fallido";
+  const stateIcon = isOk ? "✓" : needsSetup ? "!" : "✕";
+  return (
+    <div className="rich-card github-push-card" data-testid="github-push-card"
+         style={{ borderColor: stateColor }}>
+      <div className="rc-head" style={{ background: `${stateColor}14` }}>
+        <div className="rc-brand">
+          <div className="rc-logo" style={{ background: stateColor, fontSize: "1rem" }}>{stateIcon}</div>
+          <div>
+            <div className="rc-brand-name">{stateLabel}</div>
+            <div className="rc-brand-sub">Push a GitHub · Lluvia Workspace</div>
+          </div>
+        </div>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"
+             style={{ color: "var(--text-primary)" }}>
+          <path d="M12 .297a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.02c-3.34.72-4.04-1.61-4.04-1.61-.55-1.4-1.35-1.78-1.35-1.78-1.1-.75.08-.74.08-.74 1.22.09 1.86 1.25 1.86 1.25 1.09 1.86 2.85 1.32 3.54 1.01.11-.79.42-1.32.77-1.62-2.66-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.31-.54-1.53.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.65.25 2.87.12 3.18.78.84 1.24 1.91 1.24 3.22 0 4.61-2.81 5.62-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.83.58A12 12 0 0 0 12 .297z"/>
+        </svg>
+      </div>
+      <div className="rc-body">
+        {card.repo && (
+          <div className="rc-desc">
+            <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>Repositorio:</span>{" "}
+            <strong>{card.repo}</strong>
+            {card.branch && <span style={{ color: "var(--text-muted)" }}> · rama <code>{card.branch}</code></span>}
+          </div>
+        )}
+        {card.commit_message && (
+          <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.35rem" }}>
+            Commit: <em>{card.commit_message}</em>
+          </div>
+        )}
+        {card.message && !isOk && (
+          <div className="rc-desc" style={{ color: stateColor, marginTop: "0.5rem" }}>
+            {card.message}
+          </div>
+        )}
+        {card.error && (
+          <div className="rc-desc" style={{ color: stateColor, marginTop: "0.5rem", fontFamily: "var(--font-mono)", fontSize: "0.78rem" }}>
+            {card.error}
+          </div>
+        )}
+      </div>
+      {isOk && card.repo_url && (
+        <a href={card.repo_url} target="_blank" rel="noreferrer"
+           className="rc-cta" style={{ background: stateColor }}
+           data-testid="github-push-card-cta">
+          Ver en GitHub →
+        </a>
+      )}
+      {needsSetup && (
+        <div className="rc-cta" style={{ background: stateColor, cursor: "default", fontSize: "0.85rem" }}>
+          Configura tu token en Mi Cuenta → Settings
+        </div>
+      )}
     </div>
   );
 }

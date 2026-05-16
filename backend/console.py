@@ -180,12 +180,49 @@ OPENAI_TOOLS = [
             "cta_action": {"type": "string", "description": "Accion sugerida, ej: 'book' | 'info'"},
         }, "required": ["title"]},
     }},
+    {"type": "function", "function": {
+        "name": "push_to_my_github",
+        "description": (
+            "Hace git push del workspace del usuario actual a SU repositorio de GitHub. "
+            "Usa el token + repo que el cliente configuro en Mi Cuenta -> Settings. "
+            "Devuelve una rich card con el estado del push, URL del repo y steps detallados. "
+            "Si el cliente NO configuro su token todavia, devuelve needs_setup=true y el agente "
+            "debe pedirle al cliente que lo configure (no es un error, es un setup pendiente). "
+            "Despues de un push exitoso, mostrarle al cliente la URL del repo."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "commit_message": {"type": "string", "description": "Mensaje del commit (opcional)"},
+            "app_name": {"type": "string", "description": "Nombre de la subcarpeta a pushear. Si se omite, empuja todo el workspace del usuario."},
+        }},
+    }},
 ]
 
 
-def _filter_tools(allowed: list) -> list:
-    """Filtra OPENAI_TOOLS a las allowed para este agente."""
-    return [t for t in OPENAI_TOOLS if t["function"]["name"] in allowed]
+# Tools que SOLO admins pueden invocar (shell, provisioning, agent CRUD,
+# github_* del catalogo de la plataforma). El resto de tools son seguras
+# para cualquier usuario registrado (book_appointment, push_to_my_github,
+# paypal_invoice_card, service_card, etc).
+ADMIN_ONLY_TOOLS = {
+    "shell_run",
+    "provision_client_quick",
+    "create_agent",
+    "update_agent",
+    "delete_agent",
+    "github_list_repos",
+    "github_list_files",
+    "github_read_file",
+    "github_search_code",
+}
+
+
+def _filter_tools(allowed: list, is_admin: bool = True) -> list:
+    """Filtra OPENAI_TOOLS a las allowed para este agente.
+    Si is_admin=False, ademas excluye las tools admin-only."""
+    return [
+        t for t in OPENAI_TOOLS
+        if t["function"]["name"] in allowed
+        and (is_admin or t["function"]["name"] not in ADMIN_ONLY_TOOLS)
+    ]
 
 
 VOICES = {"alloy", "echo", "fable", "onyx", "nova", "shimmer"}
@@ -368,12 +405,20 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
                 return json.dumps({"error": f"Comando bloqueado: {reason}"}), 0
             data = {"command": cmd, "output": srv.run_command(cmd)}
         elif name == "github_list_repos":
+            if not is_admin:
+                return json.dumps({"error": "github_list_repos requiere admin"}), 0
             data = gh.tool_list_repos_short()
         elif name == "github_list_files":
+            if not is_admin:
+                return json.dumps({"error": "github_list_files requiere admin"}), 0
             data = gh.tool_list_files(args.get("repo", ""), args.get("path", ""))
         elif name == "github_read_file":
+            if not is_admin:
+                return json.dumps({"error": "github_read_file requiere admin"}), 0
             data = gh.tool_read_file(args.get("repo", ""), args.get("file_path", ""))
         elif name == "github_search_code":
+            if not is_admin:
+                return json.dumps({"error": "github_search_code requiere admin"}), 0
             data = gh.tool_search_code(args.get("repo", ""), args.get("query", ""))
         elif name == "provision_client_quick":
             if not is_admin:
@@ -413,6 +458,30 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
             data = await _tool_paypal_card(args, user_id)
         elif name == "service_card":
             data = _tool_service_card(args)
+        elif name == "push_to_my_github":
+            import user_workspace as uw
+            udoc = await _db_ref["db"].users.find_one({"id": user_id}, {"_id": 0})
+            if not udoc:
+                data = {"error": "Usuario no encontrado"}
+            else:
+                result = await uw.do_push(
+                    udoc,
+                    app_name=args.get("app_name"),
+                    commit_message=args.get("commit_message"),
+                )
+                # Wrap como rich card para que el frontend lo renderice
+                data = {
+                    "card_type": "github_push",
+                    "ok": result.get("ok", False),
+                    "needs_setup": result.get("needs_setup", False),
+                    "message": result.get("message"),
+                    "repo": result.get("repo"),
+                    "repo_url": result.get("repo_url"),
+                    "branch": result.get("branch"),
+                    "app_name": result.get("app_name"),
+                    "commit_message": result.get("commit_message"),
+                    "error": result.get("error"),
+                }
         else:
             return json.dumps({"error": f"Tool desconocida: {name}"}), 0
         return json.dumps(data, ensure_ascii=False)[:30000], cost
@@ -568,7 +637,12 @@ async def send_message(
 
     is_admin = user.get("role") == "admin"
     agent_tools = agent.get("tools") or []
-    tools = _filter_tools(agent_tools) if (is_admin and agent_tools) else None
+    # Ahora todos los usuarios pueden invocar tools "user-safe" (push_to_my_github,
+    # book_appointment, paypal_invoice_card, service_card, etc). Los tools admin-only
+    # son filtrados aqui y ademas re-validados dentro de _exec_tool.
+    tools = _filter_tools(agent_tools, is_admin=is_admin) if agent_tools else None
+    if tools is not None and len(tools) == 0:
+        tools = None  # OpenAI rechaza tools=[]
     tool_calls_made = []
     extra_cost = 0
 
