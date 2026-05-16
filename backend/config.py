@@ -47,6 +47,15 @@ VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "12345")
 # TELEGRAM
 # ==========================================
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
+# Soporte de tokens secundarios separados por coma (TELEGRAM_TOKEN_EXTRA).
+# Permite tener simultaneamente bot de produccion + bot de preview.
+_extra = os.environ.get("TELEGRAM_TOKEN_EXTRA", "")
+TELEGRAM_TOKENS = [t.strip() for t in ([TELEGRAM_TOKEN] + _extra.split(",")) if t.strip()]
+
+
+def is_valid_telegram_token(token: str) -> bool:
+    """True si `token` es uno de los tokens autorizados."""
+    return token in TELEGRAM_TOKENS
 
 
 # ==========================================

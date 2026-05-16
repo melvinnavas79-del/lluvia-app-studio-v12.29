@@ -227,6 +227,14 @@ export default function PublicChat({ onLoginClick, onRegisterClick }) {
       </section>
 
       <footer className="pc-footer">
+        <div style={{ marginBottom: "0.5rem" }}>
+          <a href="/api/legal/terms" target="_blank" rel="noreferrer" style={{ color: "var(--text-muted)", marginRight: "1rem" }}
+             data-testid="footer-terms-link">Términos</a>
+          <a href="/api/legal/privacy" target="_blank" rel="noreferrer" style={{ color: "var(--text-muted)", marginRight: "1rem" }}
+             data-testid="footer-privacy-link">Privacidad</a>
+          <a href="/api/legal/cookies" target="_blank" rel="noreferrer" style={{ color: "var(--text-muted)" }}
+             data-testid="footer-cookies-link">Cookies</a>
+        </div>
         Powered by {brandName} · {new Date().getFullYear()}
       </footer>
     </div>

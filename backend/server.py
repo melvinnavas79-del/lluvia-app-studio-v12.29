@@ -13,7 +13,9 @@ NOTA INFRAESTRUCTURA:
 """
 
 import logging
+import os
 from pathlib import Path
+from typing import Optional
 
 import requests
 from dotenv import load_dotenv
@@ -50,6 +52,7 @@ import super_admin as super_admin_module
 import appointments as appointments_module
 import public_chat as public_chat_module
 import user_workspace as user_workspace_module
+import legal as legal_module
 from rate_limit import limiter, rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -109,7 +112,6 @@ async def on_startup():
     logger.info("Startup OK: indices creados, admin seeded")
 
     # Telegram long polling (alternativa a webhook). Activar con TELEGRAM_POLLING=1
-    import os
     if os.environ.get("TELEGRAM_POLLING", "0") == "1" and config.TELEGRAM_TOKEN:
         telegram_poller.start()
         logger.info("Telegram polling activado")
@@ -278,14 +280,14 @@ def send_whatsapp(to: str, msg: str) -> None:
 # ============================================================
 @api_router.post("/webhook/telegram/{token}")
 async def telegram_webhook(token: str, request: Request):
-    if not config.TELEGRAM_TOKEN or token != config.TELEGRAM_TOKEN:
+    if not config.is_valid_telegram_token(token):
         raise HTTPException(status_code=403, detail="Telegram token invalido")
     data = await request.json()
     try:
         text = data["message"]["text"]
         chat_id = data["message"]["chat"]["id"]
         reply = await process_command(text, str(chat_id))
-        send_telegram(chat_id, reply)
+        send_telegram(chat_id, reply, token=token)
     except (KeyError, TypeError) as e:
         logger.warning(f"Telegram webhook sin mensaje procesable: {e}")
     except Exception as e:
@@ -293,11 +295,14 @@ async def telegram_webhook(token: str, request: Request):
     return {"ok": True}
 
 
-def send_telegram(chat_id, msg: str) -> None:
-    if not config.TELEGRAM_TOKEN:
+def send_telegram(chat_id, msg: str, token: Optional[str] = None) -> None:
+    """Envia mensaje usando el token que recibio el update (multi-bot).
+    Si token es None, usa el TELEGRAM_TOKEN principal (compat. con codigo legacy)."""
+    use_token = token or config.TELEGRAM_TOKEN
+    if not use_token:
         logger.info(f"[Telegram simulado] chat_id={chat_id} msg={msg[:80]}")
         return
-    url = f"https://api.telegram.org/bot{config.TELEGRAM_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{use_token}/sendMessage"
     try:
         requests.post(url, json={"chat_id": chat_id, "text": msg[:4000]}, timeout=10)
     except Exception as e:
@@ -345,6 +350,27 @@ def send_instagram(user_id: str, msg: str) -> None:
 
 
 # ============================================================
+# HEALTH CHECK (para UptimeRobot / monitoring)
+# ============================================================
+@api_router.get("/healthz")
+async def health_check():
+    """Endpoint público liviano para monitoring (UptimeRobot, BetterStack, etc).
+    Verifica que el backend responde y que Mongo está accesible."""
+    try:
+        await db.command("ping")
+        mongo_ok = True
+    except Exception:
+        mongo_ok = False
+    return {
+        "ok": True,
+        "service": "lluvia-app-studio",
+        "mongo": mongo_ok,
+        "telegram_bots": len(config.TELEGRAM_TOKENS),
+        "ts": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+    }
+
+
+# ============================================================
 # REGISTRAR ROUTERS + CORS
 # ============================================================
 api_router.include_router(affiliates_module.router)
@@ -361,6 +387,7 @@ api_router.include_router(super_admin_module.router)
 api_router.include_router(appointments_module.router)
 api_router.include_router(public_chat_module.router)
 api_router.include_router(user_workspace_module.router)
+api_router.include_router(legal_module.router)
 app.include_router(api_router)
 
 app.add_middleware(
