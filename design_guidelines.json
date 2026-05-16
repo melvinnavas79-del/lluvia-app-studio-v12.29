@@ -1,0 +1,131 @@
+{
+  "theme_and_archetype": {
+    "primary": "Archetype 4 (Swiss & High-Contrast) + Archetype 1 (Organic & Earthy)",
+    "description": "A refined, premium 'Emergent-like' aesthetic. Shifting from a dark 'developer/console' vibe to a bright, trustworthy, enterprise-ready look. We emphasize warm off-white backgrounds, deep charcoal/navy text, and high-contrast minimal borders to establish authority and trust."
+  },
+  "typography": {
+    "strategy": "The 'Old Money Tech' & 'Swiss Brutalist' mix.",
+    "headings": {
+      "font": "Cabinet Grotesk",
+      "fallback": "Outfit",
+      "weight": "font-medium to font-bold",
+      "tracking": "tracking-tight"
+    },
+    "body": {
+      "font": "Satoshi",
+      "fallback": "Inter",
+      "weight": "font-normal",
+      "tracking": "tracking-normal"
+    },
+    "mono_traces": {
+      "font": "JetBrains Mono",
+      "weight": "font-light",
+      "usage": "Only for tool call traces and code snippets to retain the developer vibe locally."
+    }
+  },
+  "color_system_css_variables": {
+    "light_theme_premium": {
+      "--brand-bg": "#FDFBF7",
+      "--brand-surface": "#FFFFFF",
+      "--brand-text-primary": "#111827",
+      "--brand-text-secondary": "#4B5563",
+      "--brand-primary": "#0F172A",
+      "--brand-primary-hover": "#1E293B",
+      "--brand-accent": "#2563EB",
+      "--brand-border": "#E5E7EB",
+      "--brand-ring": "#BFDBFE",
+      "--brand-muted": "#F3F4F6",
+      "--brand-success": "#10B981"
+    },
+    "dark_theme_premium": {
+      "--brand-bg": "#0B0F19",
+      "--brand-surface": "#111827",
+      "--brand-text-primary": "#F9FAFB",
+      "--brand-text-secondary": "#9CA3AF",
+      "--brand-primary": "#FDFBF7",
+      "--brand-primary-hover": "#E5E7EB",
+      "--brand-accent": "#3B82F6",
+      "--brand-border": "#1F2937",
+      "--brand-ring": "#1D4ED8",
+      "--brand-muted": "#1F2937",
+      "--brand-success": "#059669"
+    }
+  },
+  "agent_avatar_system": {
+    "primary_strategy": "DiceBear API (bottts-neutral). Provides stylized, consistent, and geometric robot faces that look modern and non-threatening.",
+    "implementation": "Use consistent seeds per agent role with soft pastel background colors to differentiate them while keeping the avatars monochrome or strictly aligned to the brand.",
+    "examples": {
+      "DevOps": "https://api.dicebear.com/8.x/bottts-neutral/svg?seed=DevOps&backgroundColor=e0f2fe&radius=20",
+      "Builder": "https://api.dicebear.com/8.x/bottts-neutral/svg?seed=Builder&backgroundColor=fef08a&radius=20",
+      "Marketing": "https://api.dicebear.com/8.x/bottts-neutral/svg?seed=Marketing&backgroundColor=fbcfe8&radius=20",
+      "Sales": "https://api.dicebear.com/8.x/bottts-neutral/svg?seed=Sales&backgroundColor=dcfce3&radius=20",
+      "Receptionist": "https://api.dicebear.com/8.x/bottts-neutral/svg?seed=Receptionist&backgroundColor=f3f4f6&radius=20"
+    }
+  },
+  "component_blueprints": {
+    "PublicChat_Landing": {
+      "layout": "Bento Grid pattern. Asymmetric.",
+      "hero": "Warm off-white background with subtle generated grain (use premium_hero_bg URL). Large typography (Cabinet Grotesk text-5xl to text-6xl tracking-tighter).",
+      "cta": "Solid dark navy button (var(--brand-primary)), heavy padding (px-8 py-4), text-white, no border radius (or very subtle rounded-md).",
+      "demo_preview": "Glassmorphism card (backdrop-blur-xl bg-white/70) hovering over the hero, showing a static or scrolling chat preview."
+    },
+    "Login_Register": {
+      "layout": "Split screen or centered premium card. If card: max-w-md, heavy shadow (shadow-2xl), 1px subtle border.",
+      "oros_highlight": "A subtle pill/badge near the title: 'bg-brand-muted text-brand-text-primary text-xs font-mono uppercase tracking-widest px-3 py-1 rounded-full'. No loud neon colors."
+    },
+    "ClientDashboard": {
+      "sidebar": "bg-brand-bg, border-r border-brand-border. Links use hover:bg-brand-muted. Active state uses border-l-2 border-brand-primary.",
+      "balance_widget": "Neumorphic or crisp flat design. White card, 1px border. Big typography for the number (Cabinet Grotesk text-4xl).",
+      "github_workspace": "Grid borders (The 'Technical' Look). border-collapse style. Crisp table."
+    },
+    "BossConsole": {
+      "chat_ui": "Linear/Notion inspired. Background: var(--brand-bg).",
+      "bubbles": "Flat. User: bg-brand-primary text-white. AI: bg-brand-surface border border-brand-border text-brand-text-primary. Radius: rounded-2xl but rounded-br-sm for user, rounded-bl-sm for AI.",
+      "tool_traces": "Accordion-style mini cards. bg-brand-muted, font-mono text-xs text-brand-text-secondary, 1px border, rounded-md. Collapsed by default.",
+      "composer": "Sticky bottom. bg-brand-surface, border border-brand-border, shadow-lg. rounded-full or heavy rounded-2xl. Mic button glows on active (ring-2 ring-brand-accent)."
+    },
+    "Recharge_Cards": {
+      "layout": "Flex/Grid cards. 3-column pricing style.",
+      "design": "Standard cards: bg-brand-surface border-brand-border. Popular card: bg-brand-primary text-white scale-105 shadow-xl.",
+      "button": "Standard: border border-brand-border. Popular: bg-white text-brand-primary."
+    }
+  },
+  "motion_and_microinteractions": {
+    "buttons": "transition-transform duration-200 active:scale-95 hover:-translate-y-0.5. Colors use transition-colors.",
+    "chat_bubbles": "Entrance: opacity-0 translate-y-2 -> opacity-100 translate-y-0 (framer-motion).",
+    "tool_traces": "Animate height from 0 to auto on expand."
+  },
+  "spacing_radii_shadows": {
+    "spacing": "Generous. Use p-6 to p-12 for containers. Containers with borders MUST have internal padding.",
+    "radii": "Soft but structural. Cards: rounded-xl. Buttons: rounded-lg. Chat Bubbles: rounded-2xl. Avatars: rounded-2xl.",
+    "shadows": {
+      "sm": "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
+      "ambient": "0 8px 32px -8px rgba(0, 0, 0, 0.08)",
+      "floating_nav": "0 20px 40px -12px rgba(0,0,0,0.1)"
+    },
+    "glassmorphism": "backdrop-blur-xl bg-white/70 border border-white/20"
+  },
+  "testing_data_testids": {
+    "chat_input": "boss-console-chat-input",
+    "send_button": "boss-console-send-message-button",
+    "mic_button": "boss-console-voice-mic-button",
+    "recharge_button": "dashboard-recharge-oros-button",
+    "agent_select_card": "agent-selector-{agentName}-card",
+    "register_submit": "auth-register-submit-button"
+  },
+  "media_urls": {
+    "hero_background_abstract": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/3756fb7d-3c39-45c5-ab0a-0c1511ebc96c/images/774071f32bc4e119714096734f466f78c4ff40687e847c65f00d8894af342f98.png",
+      "description": "Premium warm off-white minimalist aesthetic background for landing page hero section."
+    },
+    "fallback_bot_avatar_concept": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/3756fb7d-3c39-45c5-ab0a-0c1511ebc96c/images/ab2d166913b5dd5d03317b2725964300d2fdda4961a12ae86d42d4edb6ba823d.png",
+      "description": "Concept image for corporate AI bot. Use DiceBear primarily, but this can be used for custom marketing graphics."
+    },
+    "clean_architecture_reference": {
+      "url": "https://images.unsplash.com/photo-1707248985080-954ad8466006?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTF8MHwxfHNlYXJjaHwzfHxjbGVhbiUyMG1pbmltYWxpc3QlMjBhYnN0cmFjdCUyMG9mZi13aGl0ZSUyMGFyY2hpdGVjdHVyZXxlbnwwfHx8fDE3Nzg4OTg0NjV8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Wavy minimal off-white shape texture for secondary sections (Recharge or AdminDashboard)."
+    }
+  },
+  "instructions_to_main_agent": "Inject the CSS variables into /app/frontend/src/App.css at the :root level. Update typography imports to use Cabinet Grotesk and Satoshi. For the agent avatars, dynamically generate DiceBear URLs using the agent's name as the seed. Implement plain CSS mapping to standard Tailwind utilities to keep the code clean while preserving dynamic white-labeling."
+}
