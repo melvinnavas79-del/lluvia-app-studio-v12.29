@@ -20,6 +20,7 @@ export default function SuperAdminPanel() {
           ["sessions", "💬 Sesiones de todos"],
           ["users", "👥 Usuarios"],
           ["backup", "📦 Push & Backup"],
+          ["integrations", "🔗 Integraciones"],
         ].map(([k, label]) => (
           <button
             key={k}
@@ -36,6 +37,128 @@ export default function SuperAdminPanel() {
       {tab === "sessions" && <SessionsPanel />}
       {tab === "users" && <UsersPanel />}
       {tab === "backup" && <BackupPanel />}
+      {tab === "integrations" && <IntegrationsPanel />}
+    </div>
+  );
+}
+
+function IntegrationsPanel() {
+  const [status, setStatus] = useState(null);
+  const [err, setErr] = useState("");
+  const [magic, setMagic] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = () => {
+    api.get("/integrations/gmail/status")
+      .then((r) => setStatus(r.data))
+      .catch((e) => setErr(formatError(e)));
+  };
+  useEffect(() => { refresh(); }, []);
+
+  const vincular = async () => {
+    setBusy(true); setErr("");
+    try {
+      const { data } = await api.get("/integrations/gmail/oauth/magic-link");
+      setMagic(data);
+      // Abrir en nueva pestaña — funciona en desktop. En móvil dejamos la URL visible.
+      window.open(data.url, "_blank", "noopener");
+    } catch (e) {
+      setErr(formatError(e));
+    } finally { setBusy(false); }
+  };
+
+  const desvincular = async () => {
+    if (!window.confirm("¿Desvincular Gmail Maestro?")) return;
+    await api.post("/integrations/gmail/disconnect");
+    setMagic(null);
+    refresh();
+  };
+
+  if (err) return <div className="alert" data-testid="integrations-error">{err}</div>;
+  if (!status) return <div className="empty">Cargando...</div>;
+
+  return (
+    <div data-testid="integrations-panel">
+      <div className="form-card" style={{ marginTop: "1.5rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
+          <div style={{ width: 48, height: 48, borderRadius: 12,
+                        background: "#FEE2E2", display: "flex",
+                        alignItems: "center", justifyContent: "center", fontSize: "1.4rem" }}>
+            📧
+          </div>
+          <div>
+            <h3 style={{ margin: 0, fontFamily: "var(--font-display)", fontSize: "1.2rem" }}>
+              Gmail Maestro
+            </h3>
+            <div style={{ color: "var(--text-muted)", fontSize: "0.88rem" }}>
+              Agente 24/7 que lee y responde correos del cliente.
+            </div>
+          </div>
+          <span className={`badge ${status.linked ? "ok" : "no"}`} style={{ marginLeft: "auto" }}>
+            {status.linked ? "Vinculado" : "No vinculado"}
+          </span>
+        </div>
+
+        {status.linked && status.account && (
+          <div style={{ background: "var(--surface-soft)", padding: "0.85rem 1rem",
+                        borderRadius: 8, marginBottom: "1rem", fontSize: "0.9rem" }}>
+            Cuenta de Google: <strong>{status.account.google_email}</strong><br/>
+            Vinculada: {new Date(status.account.linked_at).toLocaleString()}
+          </div>
+        )}
+
+        <div style={{ marginBottom: "1rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+          <div>Client ID: {status.client_id_configured ? "✓ configurado" : "✕ falta"}</div>
+          <div>Client Secret: {status.client_secret_configured ? "✓ configurado" : "✕ falta"}</div>
+        </div>
+
+        {!status.linked ? (
+          <button
+            className="login-btn"
+            onClick={vincular}
+            disabled={busy || !status.client_id_configured || !status.client_secret_configured}
+            data-testid="gmail-link-btn"
+            style={{ width: "auto", padding: "0.75rem 1.5rem", marginTop: 0 }}
+          >
+            {busy ? "Generando enlace..." : "🔗 Vincular Gmail Maestro"}
+          </button>
+        ) : (
+          <button
+            className="login-btn"
+            onClick={desvincular}
+            data-testid="gmail-unlink-btn"
+            style={{ width: "auto", padding: "0.75rem 1.5rem", marginTop: 0,
+                     background: "#DC2626", borderColor: "#DC2626" }}
+          >
+            Desvincular
+          </button>
+        )}
+
+        {magic && (
+          <div style={{ marginTop: "1.5rem", padding: "1rem", borderRadius: 8,
+                        background: "var(--surface-warm)", border: "1px solid var(--border)" }}>
+            <strong style={{ display: "block", marginBottom: "0.4rem" }}>
+              ¿Estás en el móvil o no se abrió la pestaña?
+            </strong>
+            <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: "0 0 0.5rem" }}>
+              Copiá y pegá este enlace en el navegador (válido 60 min):
+            </p>
+            <code style={{ display: "block", wordBreak: "break-all", padding: "0.6rem",
+                           background: "var(--surface)", border: "1px solid var(--border)",
+                           borderRadius: 6, fontSize: "0.78rem" }}
+                  data-testid="gmail-magic-link-url">
+              {magic.url}
+            </code>
+            <button
+              className="copy-btn" style={{ marginTop: "0.6rem" }}
+              onClick={() => { navigator.clipboard.writeText(magic.url); }}
+              data-testid="gmail-magic-link-copy"
+            >
+              Copiar enlace
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

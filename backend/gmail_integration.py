@@ -27,8 +27,9 @@ from typing import Optional
 import requests
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.security import HTTPBearer
 
-from auth import get_current_user
+from auth import get_current_user, decode_token
 
 logger = logging.getLogger("gmail_integration")
 router = APIRouter(prefix="/integrations/gmail", tags=["gmail"])
@@ -61,39 +62,74 @@ def _client_secret() -> str:
 
 
 def _redirect_uri(request: Request) -> str:
-    """Permite override por env. Si no hay env, autodetecta desde el request."""
-    env_uri = os.environ.get("GMAIL_OAUTH_REDIRECT_URI", "").strip()
-    if env_uri:
-        return env_uri
+    """Devuelve el callback URI segun el dominio publico del request.
+    Asi soportamos preview y produccion simultaneos sin hardcoding."""
+    public_base = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
+    host = request.headers.get("host", "")
+    forwarded = request.headers.get("x-forwarded-host", "")
+    # Prioridad 1: si el header dice produccion, usar el dominio de produccion
+    if "lluvia-live.com" in (host + forwarded):
+        return "https://lluvia-app-studio.lluvia-live.com/api/integrations/gmail/oauth/callback"
+    # Prioridad 2: si PUBLIC_BASE_URL apunta a preview, usar ese
+    if public_base:
+        return f"{public_base}/api/integrations/gmail/oauth/callback"
+    # Fallback: autodetect
     base = str(request.base_url).rstrip("/")
     return f"{base}/api/integrations/gmail/oauth/callback"
 
 
 # ============================================================
 # START — redirige al admin al consent de Google
+# Acepta auth de DOS formas:
+#   - Header `Authorization: Bearer <jwt>` (lo usa el boton del SuperAdmin)
+#   - Query param `?token=<jwt>` (permite pegar la URL directo desde el movil)
 # ============================================================
 @router.get("/oauth/start")
-async def oauth_start(request: Request, user: dict = Depends(get_current_user)):
-    if user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Solo admin puede vincular Gmail Maestro")
-    if not _client_id() or not _client_secret():
-        raise HTTPException(
-            status_code=503,
-            detail="Falta configurar GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET en backend/.env",
+async def oauth_start(request: Request, token: Optional[str] = None):
+    user: Optional[dict] = None
+    # 1. Intentar con header
+    try:
+        from fastapi import Header
+        auth = request.headers.get("authorization", "")
+        if auth.lower().startswith("bearer "):
+            payload = decode_token(auth.split(" ", 1)[1])
+            db = _db_ref["db"]
+            user = await db.users.find_one({"id": payload.get("sub")}, {"_id": 0})
+    except Exception:
+        user = None
+    # 2. Intentar con query param ?token=
+    if not user and token:
+        try:
+            payload = decode_token(token)
+            db = _db_ref["db"]
+            user = await db.users.find_one({"id": payload.get("sub")}, {"_id": 0})
+        except Exception:
+            user = None
+    if not user:
+        return _err_page(
+            "No autenticado. Iniciá sesión como admin primero en "
+            "<a href='/'>la app</a> y volvé a hacer click en el botón "
+            "'Vincular Gmail' del panel SuperAdmin."
         )
+    if user.get("role") != "admin":
+        return _err_page("Solo el admin puede vincular Gmail Maestro.")
+    if not _client_id() or not _client_secret():
+        return _err_page("Falta configurar GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET en backend/.env")
 
     state = secrets.token_urlsafe(24)
+    redirect_uri = _redirect_uri(request)
     db = _db_ref["db"]
     await db.gmail_oauth_states.insert_one({
         "state": state,
         "user_id": user["id"],
+        "redirect_uri": redirect_uri,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat(),
     })
 
     params = {
         "client_id": _client_id(),
-        "redirect_uri": _redirect_uri(request),
+        "redirect_uri": redirect_uri,
         "response_type": "code",
         "scope": " ".join(SCOPES),
         "access_type": "offline",
@@ -125,13 +161,16 @@ async def oauth_callback(request: Request,
         return _err_page("State invalido o expirado. Reintenta la vinculacion.")
     await db.gmail_oauth_states.delete_one({"state": state})
 
+    # Usar el MISMO redirect_uri que se mando en el start (Google lo valida byte-a-byte)
+    used_redirect_uri = st.get("redirect_uri") or _redirect_uri(request)
+
     # Intercambiar code por tokens
     try:
         r = requests.post(GOOGLE_TOKEN_URL, data={
             "code": code,
             "client_id": _client_id(),
             "client_secret": _client_secret(),
-            "redirect_uri": _redirect_uri(request),
+            "redirect_uri": used_redirect_uri,
             "grant_type": "authorization_code",
         }, timeout=15)
         if r.status_code != 200:
@@ -186,6 +225,30 @@ async def status(user: dict = Depends(get_current_user)):
         "redirect_uri_preview": "https://ai-bot-cost-calc.preview.emergentagent.com/api/integrations/gmail/oauth/callback",
         "redirect_uri_production": "https://lluvia-app-studio.lluvia-live.com/api/integrations/gmail/oauth/callback",
         "account": acc or None,
+    }
+
+
+@router.get("/oauth/magic-link")
+async def magic_link(request: Request, user: dict = Depends(get_current_user)):
+    """Devuelve una URL lista para pegar en el navegador del telefono.
+    La URL incluye el token JWT del admin como query param para que el
+    oauth/start lo acepte sin necesidad de cookie de sesion."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="admin only")
+    # Obtener el token original desde el header (lo manda el frontend)
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(status_code=400, detail="Falta header Authorization")
+    jwt_token = auth.split(" ", 1)[1]
+    # Usar el dominio publico (env PUBLIC_BASE_URL) en vez del cluster interno
+    base = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
+    if not base:
+        base = str(request.base_url).rstrip("/")
+    link = f"{base}/api/integrations/gmail/oauth/start?token={urllib.parse.quote(jwt_token)}"
+    return {
+        "url": link,
+        "expires_in_minutes": 60,
+        "instructions": "Pega esta URL en el navegador o tocá el botón. Te lleva al consent de Google.",
     }
 
 
