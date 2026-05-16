@@ -5,7 +5,30 @@
 - Producción: https://lluvia-app-studio.lluvia-live.com (Emergent Native Deploy)
 - Telegram: https://t.me/LluviaAppStudioBot
 
-## Estado actual: v12.22 — Push Lock + Panel admin de Precios (Feb 2026)
+## Estado actual: v12.23 — Gmail Maestro Auto-Send (Opción C) (Feb 2026)
+
+### Iteración 12.23 — Auto-envío inteligente de respuestas Gmail (HECHO)
+**📧 Auto-send con threshold de confianza**
+- `gmail_maestro.py` ahora tiene constantes `AUTOSEND_CONFIDENCE_THRESHOLD = 0.9` y `AUTOSEND_CATEGORIES = {"lead-caliente", "soporte"}`.
+- Nueva función `_send_gmail_draft(token, draft_id)` que llama a `POST /gmail/v1/users/me/drafts/send`. Maneja 200/201 → message_id, otros → None con log.
+- Flujo `_process_inbox_for_user` ahora:
+  1. Clasifica el email con GPT-4o-mini.
+  2. Si NO es spam/personal y hay reply_draft, crea draft en Gmail.
+  3. **NUEVO**: si `confidence >= 0.9` AND `category in AUTOSEND_CATEGORIES`, llama a `_send_gmail_draft` y guarda `auto_sent=True` + `sent_message_id` en el doc. Log visible: *"AUTO-ENVIADO user=X category=lead-caliente conf=0.95 to=..."*
+  4. Si confidence < 0.9 o category es comercial: queda como draft para revisión manual.
+- Métricas `/metrics` ahora exponen: `auto_sent` (int), `autosend_threshold` (0.9), `autosend_categories` (list).
+
+**🧹 System prompt del clasificador mejorado**
+- Reglas duras para que TODA notificación automática (Facebook, Instagram, Google, GitHub, no-reply, newsletters) sea forzosamente category=`spam` con confidence≥0.9 y reply_draft=`""`. Antes el LLM clasificaba estas como "soporte" generando drafts inútiles.
+
+**📊 Verificación E2E real**
+- Manual: enviado `message_id 19e32c6e8a94dc20` a `melvinnavas79@gmail.com` con la respuesta auto-generada al lead-caliente "¿qué servicios ofrecen?".
+- 14/14 tests pytest unitarios (iteration_21) verifican: constantes, _send_gmail_draft happy/error paths, _process_inbox_for_user con 5 casos (auto-envío activado por lead conf 0.95, NO activado por lead conf 0.8 / comercial conf 0.99 / spam), system prompt con reglas auto-senders, endpoint metrics con campos nuevos.
+- 12/12 regresión iteration_20 verde (push lock + admin pricing intactos).
+
+
+
+## Estado anterior: v12.22 — Push Lock + Panel admin de Precios (Feb 2026)
 
 ### Iteración 12.22 — Candado de exportación + Control admin de precios (HECHO)
 **🔒 Push Lock (candado de exportación)**
