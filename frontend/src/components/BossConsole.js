@@ -937,6 +937,11 @@ function BeforeAfterCard({ card, agent, backendBase }) {
           <div className="rc-desc" style={{ color: "#DC2626" }}>
             {card.error || "No pude generar la vista previa. Pedile al cliente una foto clara."}
           </div>
+          {card.refunded_oros > 0 && (
+            <div style={{ marginTop: "0.5rem", color: "#059669", fontSize: "0.85rem", fontWeight: 600 }}>
+              💸 Te reembolsamos {card.refunded_oros} oros automáticamente.
+            </div>
+          )}
         </div>
       )}
       {ok && (
@@ -1169,7 +1174,7 @@ function VideoJobCard({ card, agent, backendBase }) {
             </div>
             <div className="vj-hint">
               Podés cerrar el chat, el video sigue generándose. Te notificamos al volver.
-              <br/><span style={{ color: "#DC2626" }}>⚠ El cobro se aplica al iniciar; si Sora 2 falla, no es reembolsable.</span>
+              <br/><span style={{ color: "#059669" }}>✓ Si Sora 2 falla, los oros se devuelven automáticamente.</span>
             </div>
           </div>
         )}
@@ -1201,6 +1206,16 @@ function VideoJobCard({ card, agent, backendBase }) {
         {isError && (
           <div className="vj-error" data-testid="vj-error">
             ✕ {job.error || "La generación falló. Reintentá con otro prompt."}
+            {job.refunded && (
+              <div style={{ marginTop: "0.5rem", color: "#059669", fontWeight: 600 }}>
+                💸 Te reembolsamos los oros automáticamente. Saldo restaurado.
+              </div>
+            )}
+            {!job.refunded && (
+              <div style={{ marginTop: "0.5rem", fontSize: "0.78rem", opacity: 0.85 }}>
+                Si el cobro no se devolvió, avisanos para revisarlo manualmente.
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -75,6 +75,33 @@ async def charge(user_id: str, amount: int, reason: str, meta: Optional[dict] = 
     return True
 
 
+async def refund(user_id: str, amount: int, reason: str, meta: Optional[dict] = None) -> int:
+    """Reembolsa `amount` oros al usuario por un servicio fallido (ej: Sora 2
+    devolvio archivo vacio, Nano Banana fallo). Para admin no hace nada
+    (porque admin_free nunca cobra). Retorna el balance nuevo."""
+    if amount <= 0:
+        return await get_balance(user_id)
+    db = _db_ref["db"]
+    from auth import _db_ref as auth_db
+    udoc = await auth_db["db"].users.find_one({"id": user_id}, {"_id": 0, "role": 1})
+    if udoc and udoc.get("role") == "admin":
+        return await get_balance(user_id)
+    await get_balance(user_id)
+    await db.credits.update_one(
+        {"user_id": user_id},
+        {"$inc": {"balance": amount, "lifetime_spent": -amount}},
+    )
+    await db.credit_txns.insert_one({
+        "user_id": user_id,
+        "type": "refund",
+        "amount": amount,
+        "reason": reason,
+        "meta": meta or {},
+        "ts": datetime.now(timezone.utc).isoformat(),
+    })
+    return await get_balance(user_id)
+
+
 async def topup(user_id: str, amount: int, reason: str = "manual_topup") -> int:
     """Recarga `amount` oros. Devuelve balance nuevo."""
     db = _db_ref["db"]

@@ -5,7 +5,22 @@
 - Producción: https://lluvia-app-studio.lluvia-live.com (Emergent Native Deploy)
 - Telegram: https://t.me/LluviaAppStudioBot
 
-## Estado actual: v12.14 — Fixes UX urgentes (Feb 2026)
+## Estado actual: v12.15 — Refund automático Sora 2 / Nano Banana (Feb 2026)
+
+### Iteración 12.15 — Bug crítico: budget EMERGENT_LLM_KEY agotado (HECHO)
+**🐛 Causa raíz descubierta**
+- Sora 2 venía fallando con "archivo vacío" desde las 12:54hs. El error real era `Budget has been exceeded! Current cost: 1.34609861, Max budget: 1.34609861` del Universal Key. Los oros del cliente se cobraban antes de saber si Sora 2 funcionaría → cliente sin video y sin oros = pérdida directa para el negocio del usuario.
+
+**🛡 Refund automático implementado**
+- Nuevo helper `credits.refund(user_id, amount, reason, meta)` con log de transacción tipo `refund`.
+- `video_gen._run_job` ahora: (a) detecta cualquier fallo, (b) busca el `charged_oros` guardado en el doc del job, (c) devuelve los oros al usuario, (d) marca `refunded=true` en el job, (e) si el error es "budget exceeded" lo reescribe a un mensaje claro ("Recarga saldo en Emergent → Profile → Universal Key → Add Balance").
+- `console.py` ahora pasa `charged_oros=cost` (o 0 si admin) al encolar el video Sora 2.
+- `generate_haircut_preview` (Nano Banana) también hace refund automático del costo (15 oros) si falla.
+- Frontend `VideoJobCard` y `BeforeAfterCard` ahora muestran "💸 Te reembolsamos X oros automáticamente" cuando el job falla con `refunded=true`. Quitado el aviso engañoso de "no reembolsable".
+
+**Verificado E2E**: usuario test no-admin con 100 oros → Sora 2 falla por budget exceeded → refund automático aplicado → balance restaurado.
+
+
 
 ### Iteración 12.14 — 4 bugs reportados en screenshots (HECHO)
 **🐛 Bug 1: Marketing Lab solo devolvía guion, no video**

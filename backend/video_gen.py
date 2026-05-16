@@ -97,11 +97,38 @@ async def _run_job(job_id: str, prompt: str, model: str, size: str, duration: in
         logger.info(f"video_job {job_id} READY ({fpath.stat().st_size} bytes)")
     except Exception as e:
         logger.exception(f"video_job {job_id} FAILED: {e}")
+        # Detectar mensaje de budget agotado para dar feedback claro al admin
+        err_text = str(e)
+        if "budget" in err_text.lower() or "exceeded" in err_text.lower():
+            err_text = (
+                "Presupuesto del Universal Key (EMERGENT_LLM_KEY) agotado. "
+                "Recarga saldo en Emergent → Profile → Universal Key → Add Balance. "
+                "Detalle: " + str(e)[:200]
+            )
+        # Refund automatico al usuario: si Sora 2 falla, no le cobramos.
+        # Buscamos cuanto se cobro para devolverselo.
+        try:
+            import credits as credits_mod
+            job_doc = await db.video_jobs.find_one({"id": job_id}, {"_id": 0, "charged_oros": 1, "user_id": 1})
+            charged = int((job_doc or {}).get("charged_oros") or 0)
+            uid = (job_doc or {}).get("user_id")
+            refunded = False
+            if charged > 0 and uid:
+                new_bal = await credits_mod.refund(
+                    uid, charged, "sora2_failed",
+                    {"job_id": job_id, "error": err_text[:200]},
+                )
+                refunded = True
+                logger.info(f"video_job {job_id} REFUNDED {charged} oros -> balance {new_bal}")
+        except Exception as re:
+            logger.exception(f"video_job {job_id} REFUND FAILED: {re}")
+            refunded = False
         await db.video_jobs.update_one(
             {"id": job_id},
             {"$set": {
                 "status": "error",
-                "error": str(e)[:300],
+                "error": err_text[:400],
+                "refunded": refunded,
                 "finished_at": datetime.now(timezone.utc).isoformat(),
             }},
         )
@@ -113,6 +140,7 @@ async def enqueue_video(
     duration: int = DEFAULT_DURATION,
     size: str = DEFAULT_SIZE,
     model: str = "sora-2",
+    charged_oros: int = 0,
 ) -> dict:
     """Encola un job de video, lo dispara en background y retorna metadatos."""
     db = _db_ref["db"]
@@ -133,6 +161,8 @@ async def enqueue_video(
         "status": "queued",
         "video_url": None,
         "error": None,
+        "charged_oros": int(charged_oros),
+        "refunded": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.video_jobs.insert_one(doc)

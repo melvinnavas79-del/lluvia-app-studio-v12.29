@@ -599,6 +599,15 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
                     look_description=args.get("look_description", ""),
                     user_id=user_id,
                 )
+                # Refund automatico si Nano Banana fallo
+                if not result.get("ok") and not is_admin:
+                    import credits as credits_mod
+                    refund_amt = agents_catalog.TOOL_NAMES.get("generate_haircut_preview", 15)
+                    await credits_mod.refund(
+                        user_id, refund_amt, "nano_banana_failed",
+                        {"error": str(result.get("error"))[:200]},
+                    )
+                    result["refunded_oros"] = refund_amt
                 data = {
                     "card_type": "before_after",
                     "ok": result.get("ok", False),
@@ -607,6 +616,7 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
                     "before_url": result.get("before_url"),
                     "after_url": result.get("after_url"),
                     "error": result.get("error"),
+                    "refunded_oros": result.get("refunded_oros", 0),
                 }
         elif name == "video_script_card":
             data = {
@@ -635,12 +645,15 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
             quality = "sora-2-pro" if (args.get("quality") or "").lower() == "pro" else "sora-2"
             # Cost dinamico por duracion (sobrescribe el del catalogo)
             cost = video_gen.COST_BY_DURATION.get(duration, 40)
+            # Guardamos el cargo dentro del job para que el refund automatico
+            # (en caso de fallo de Sora 2) sepa cuanto devolver.
             job = await video_gen.enqueue_video(
                 user_id=user_id,
                 prompt=args.get("prompt", ""),
                 duration=duration,
                 size=size,
                 model=quality,
+                charged_oros=(0 if is_admin else cost),
             )
             data = {
                 "card_type": "video_job",
