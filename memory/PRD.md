@@ -5,7 +5,28 @@
 - Producción: https://lluvia-app-studio.lluvia-live.com (Emergent Native Deploy)
 - Telegram: https://t.me/LluviaAppStudioBot
 
-## Estado actual: v12.23 — Gmail Maestro Auto-Send (Opción C) (Feb 2026)
+## Estado actual: v12.24 — Hotfix Push a GitHub vía REST API (Feb 2026)
+
+### Iteración 12.24 — Eliminar dependencia del binario `git` en producción (HECHO)
+**🔥 Bug crítico en producción**: el contenedor de Emergent prod no trae `git` instalado → `[Errno 2] No such file or directory: 'git'` cada vez que un cliente intentaba pushear.
+
+**🛠 Fix completa de `do_push`**:
+- Eliminado todo uso de `subprocess.run(['git', ...])`. Ya no necesita el binario `git` instalado en el contenedor.
+- Reescrito con **GitHub REST API** vía httpx: blobs → trees → commits → refs.
+- Maneja 3 escenarios de init: (a) repo con commits → usa parent_sha del HEAD, (b) branch nueva (404) → orphan commit, (c) **repo completamente vacío (409 "Git Repository is empty")** → bootstrap con `PUT /contents/README.md` primero, luego flujo normal.
+- Skips inteligentes: dirs `.git`, `__pycache__`, `node_modules`, `.venv`, `venv`, `.next`, `dist`, `build`, `.DS_Store`. Extensions `.pyc`, `.pyo`, `.log`, `.db`, `.db-journal`. Archivos >1.5MB se skipean.
+
+**🛠 Mensajes de error mucho más útiles**:
+- `_validate_github_token` ahora detecta formato del PAT antes de tocar la red: rechaza tokens con formato inválido al toque, devuelve mensaje claro distinguiendo "Classic vs Fine-grained", expone el mensaje exacto que devuelve GitHub (typo / vencido / revocado / scope faltante).
+- `BossConsole.pushNow` ahora muestra `data.error` o `data.message` o el último step en lugar del genérico "ver consola".
+
+**🐛 Bug que casi se va a producción**: el testing agent v3 encontró un `NameError: 'base64' not defined` en la rama de "repo vacío" — yo había puesto el `import base64` adentro de un `async with` block, pero el código del bootstrap lo necesitaba antes. Lo movió al top-level del módulo. Cero usuarios afectados (encontrado antes del deploy).
+
+**Verificación (iteration_22.json)**: 14/14 nuevos tests PASS + 26/26 regresión (iter_20 push lock + iter_21 gmail autosend). Cero subprocess, cero `git` binario, los 3 escenarios cubiertos con mocks deterministicos.
+
+
+
+## Estado anterior: v12.23 — Gmail Maestro Auto-Send (Opción C) (Feb 2026)
 
 ### Iteración 12.23 — Auto-envío inteligente de respuestas Gmail (HECHO)
 **📧 Auto-send con threshold de confianza**
