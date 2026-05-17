@@ -95,6 +95,11 @@ export default function SettingsTab() {
             />
           </div>
         </div>
+        <CreateRepoCard hasToken={hasToken} onCreated={(repoName) => {
+          setForm((f) => ({ ...f, github_repo: repoName }));
+          setMsg(`✓ Repo creado y seleccionado como destino: ${repoName}`);
+          setTimeout(() => setMsg(""), 6000);
+        }} />
         <h3 style={{ marginTop: "1.5rem" }}>Notificaciones</h3>
         <div className="field">
           <label>Email de notificación</label>
@@ -238,6 +243,134 @@ function TelegramLinkCard() {
               </button>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+
+// ====================================================================
+// CREATE GITHUB REPO CARD — botón 1-click para crear un repo nuevo y
+// dejarlo seleccionado como destino del próximo push, sin abrir GitHub.
+// ====================================================================
+function CreateRepoCard({ hasToken, onCreated }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [err, setErr] = useState("");
+
+  const slug = name.toLowerCase().replace(/[^a-z0-9_.-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
+
+  const create = async () => {
+    if (!slug || slug.length < 2) { setErr("Poné un nombre de al menos 2 caracteres"); return; }
+    setBusy(true); setErr(""); setResult(null);
+    try {
+      const r = await api.post("/me/github/create-repo", {
+        name: slug, private: isPrivate, set_as_default: true,
+      });
+      setResult(r.data);
+      onCreated && onCreated(r.data.repo);
+    } catch (e) {
+      setErr(formatError(e));
+    } finally { setBusy(false); }
+  };
+
+  if (!hasToken) {
+    return (
+      <div style={{
+        marginTop: "1rem", padding: "0.75rem 1rem", borderRadius: 10,
+        background: "rgba(148,163,184,0.08)", border: "1px dashed rgba(148,163,184,0.4)",
+        fontSize: "0.85rem", color: "var(--text-muted)",
+      }} data-testid="create-repo-card-disabled">
+        🔒 Guardá tu token de GitHub primero para poder crear repos desde acá.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: "1rem" }} data-testid="create-repo-card">
+      {!open ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          data-testid="create-repo-toggle"
+          style={{
+            padding: "0.7rem 1.15rem", borderRadius: 10, fontWeight: 600, fontSize: "0.92rem",
+            background: "linear-gradient(135deg,#0F172A,#1F2937)", color: "#fff",
+            border: 0, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "0.5rem",
+          }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .297a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.02c-3.34.72-4.04-1.61-4.04-1.61-.55-1.4-1.35-1.78-1.35-1.78-1.1-.75.08-.74.08-.74 1.22.09 1.86 1.25 1.86 1.25 1.09 1.86 2.85 1.32 3.54 1.01.11-.79.42-1.32.77-1.62-2.66-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.31-.54-1.53.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.65.25 2.87.12 3.18.78.84 1.24 1.91 1.24 3.22 0 4.61-2.81 5.62-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.83.58A12 12 0 0 0 12 .297z"/></svg>
+          Crear repo nuevo en GitHub
+        </button>
+      ) : (
+        <div style={{
+          padding: "1rem 1.1rem", borderRadius: 12,
+          background: "var(--surface-elevated, rgba(15,23,42,0.04))",
+          border: "1px solid var(--border, rgba(15,23,42,0.1))",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.7rem" }}>
+            <strong style={{ fontSize: "0.95rem" }}>📦 Crear repo nuevo en GitHub</strong>
+            <button type="button" onClick={() => { setOpen(false); setResult(null); setErr(""); }}
+                    data-testid="create-repo-close"
+                    style={{ background: "transparent", border: 0, fontSize: "1.2rem", cursor: "pointer", color: "var(--text-muted)" }}>×</button>
+          </div>
+          <div className="field" style={{ marginBottom: "0.5rem" }}>
+            <label style={{ fontSize: "0.8rem" }}>Nombre del repo</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="mi-app-audio-room"
+              data-testid="create-repo-name"
+              maxLength={80}
+              autoFocus
+            />
+            {slug && slug !== name && (
+              <small style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>
+                Se guardará como: <code>{slug}</code>
+              </small>
+            )}
+          </div>
+          <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontSize: "0.85rem", cursor: "pointer", margin: "0.6rem 0" }}>
+            <input
+              type="checkbox"
+              checked={isPrivate}
+              onChange={(e) => setIsPrivate(e.target.checked)}
+              data-testid="create-repo-private"
+            />
+            🔒 Hacerlo privado (solo vos lo ves)
+          </label>
+          {err && <div className="alert" style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>{err}</div>}
+          {result && result.ok && (
+            <div className="success" data-testid="create-repo-result"
+                 style={{ marginTop: "0.5rem", fontSize: "0.88rem" }}>
+              {result.already_existed ? "ℹ️ El repo ya existía. " : "✅ "}
+              Repo: <a href={result.html_url} target="_blank" rel="noreferrer">
+                <strong>{result.repo}</strong>
+              </a>
+              <div style={{ fontSize: "0.8rem", marginTop: "0.3rem", color: "var(--text-muted)" }}>
+                {result.message}
+              </div>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={create}
+            disabled={busy || !slug}
+            data-testid="create-repo-submit"
+            style={{
+              marginTop: "0.7rem", padding: "0.7rem 1.2rem", borderRadius: 10,
+              background: "linear-gradient(135deg,#2563EB,#7C3AED)", color: "#fff",
+              fontWeight: 700, border: 0, cursor: busy ? "wait" : "pointer",
+              opacity: busy || !slug ? 0.6 : 1, width: "100%",
+            }}
+          >
+            {busy ? "Creando en GitHub..." : "🚀 Crear y seleccionar como destino"}
+          </button>
         </div>
       )}
     </div>

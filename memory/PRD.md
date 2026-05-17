@@ -5,7 +5,36 @@
 - Producción: https://lluvia-app-studio.lluvia-live.com (Emergent Native Deploy)
 - Telegram: https://t.me/LluviaAppStudioBot
 
-## Estado actual: v12.24 — Hotfix Push a GitHub vía REST API (Feb 2026)
+## Estado actual: v12.25 — Botón "Crear repo nuevo en GitHub" (Feb 2026)
+
+### Iteración 12.25 — Crear repos GitHub desde Lluvia con 1 click (HECHO)
+**🛠 Backend**: nuevo endpoint `POST /api/me/github/create-repo` con body `{name, private, description, set_as_default}`. Flujo:
+1. Lee `user_settings.github_token`.
+2. Pre-valida el token via `_validate_github_token` (rechaza tokens vencidos sin tocar nada).
+3. Verifica `has_repo_scope` (sino → 403 con mensaje claro).
+4. Sanitiza el nombre del repo (slug-friendly: solo alphanumeric + `-_.`, máx 80 chars).
+5. Si ya existe → guarda como default + devuelve `already_existed:true`.
+6. Si no existe → `POST /user/repos` con `auto_init:false` (do_push lo inicializa con bootstrap si hace falta).
+7. Si `set_as_default:true` → actualiza `user_settings.github_repo` + `github_branch`.
+
+**🎨 Frontend `SettingsTab.js`**: nuevo componente `CreateRepoCard` debajo del campo "Nombre del proyecto":
+- Estado cerrado: botón negro elegante con logo octocat "📦 Crear repo nuevo en GitHub" (`data-testid='create-repo-toggle'`).
+- Estado abierto: card expandida con input de nombre (con preview del slug si se va a sanitizar), checkbox "🔒 Hacerlo privado", botón gradient "🚀 Crear y seleccionar como destino".
+- Si NO hay token guardado: muestra dashed-card con "🔒 Guardá tu token de GitHub primero".
+- Al crear, actualiza el campo `github_repo` del form principal con el repo nuevo y muestra success-msg + link al repo.
+
+**Flujo de usuario**:
+1. Cliente arma una app con App Builder Pro.
+2. Quiere pushearla pero no tiene repo aún.
+3. Mi Cuenta → Settings → tap "Crear repo nuevo" → nombre + privado/público → tap "Crear".
+4. Lluvia crea el repo en GitHub, lo deja seleccionado como destino default.
+5. Vuelve al chat → tap ⬆ Push → archivos arriba. 1-click end-to-end sin abrir github.com.
+
+**Verificado**: Endpoint responde con mensaje detallado al token muerto del preview (validación previa funciona). UI testeada con Playwright: botón visible cerrado, form expand correcto con autocompletes, submit gradient. Lint ✅.
+
+
+
+## Estado anterior: v12.24 — Hotfix Push a GitHub vía REST API (Feb 2026)
 
 ### Iteración 12.24 — Eliminar dependencia del binario `git` en producción (HECHO)
 **🔥 Bug crítico en producción**: el contenedor de Emergent prod no trae `git` instalado → `[Errno 2] No such file or directory: 'git'` cada vez que un cliente intentaba pushear.

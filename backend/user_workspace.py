@@ -638,6 +638,139 @@ async def my_github_push(data: PushIn, user: dict = Depends(get_current_user)):
     return result
 
 
+class CreateRepoIn(BaseModel):
+    name: str
+    private: bool = False
+    description: Optional[str] = None
+    set_as_default: bool = True
+
+
+@router.post("/github/create-repo")
+async def create_my_github_repo(
+    data: CreateRepoIn, user: dict = Depends(get_current_user)
+):
+    """Crea un repo nuevo en GitHub usando el token del usuario. Si el flag
+    set_as_default=True, queda guardado en user_settings.github_repo asi el
+    proximo push apunta solo. Tomo el slug y lo sanitizo, devolvemos un error
+    claro si ya existe o si el token no tiene permisos.
+    """
+    db = _db_ref["db"]
+    settings = await db.user_settings.find_one({"user_id": user["id"]}, {"_id": 0})
+    if not settings or not settings.get("github_token"):
+        raise HTTPException(
+            status_code=400,
+            detail="No tenes token de GitHub configurado. Andá a Mi Cuenta -> Settings y pegá tu PAT antes de crear repos.",
+        )
+    token = settings["github_token"]
+    # Validar token primero (rapido + barato)
+    val = await _validate_github_token(token, repo=None)
+    if not val.get("ok"):
+        raise HTTPException(status_code=401, detail=val.get("error") or "Token invalido")
+    if not val.get("has_repo_scope"):
+        raise HTTPException(
+            status_code=403,
+            detail="Tu token no tiene scope 'repo'. Regeneralo en https://github.com/settings/tokens/new con esa caja marcada.",
+        )
+
+    # Sanitizar el nombre del repo (GitHub: solo alphanumeric, -, _, .)
+    raw_name = (data.name or "").strip()
+    name = re.sub(r"[^a-zA-Z0-9_.-]", "-", raw_name).strip("-")
+    name = re.sub(r"-+", "-", name)[:80]
+    if not name or len(name) < 2:
+        raise HTTPException(status_code=400, detail="Nombre de repo invalido. Probá con algo tipo 'mi-app-audio'.")
+
+    login = val.get("login")
+    if not login:
+        raise HTTPException(status_code=500, detail="No pude obtener tu username de GitHub")
+
+    description = (
+        data.description
+        or f"Repositorio creado por Lluvia App Studio para {user.get('email','user')}."
+    )[:240]
+
+    # Pedir creacion del repo a GitHub
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    async with httpx.AsyncClient(timeout=15.0, headers=headers) as cli:
+        # Chequeo preventivo: existe ya?
+        r_check = await cli.get(f"https://api.github.com/repos/{login}/{name}")
+        if r_check.status_code == 200:
+            full_name = f"{login}/{name}"
+            # Ya existe - solo guardamos como default y devolvemos OK con flag
+            if data.set_as_default:
+                await db.user_settings.update_one(
+                    {"user_id": user["id"]},
+                    {"$set": {"github_repo": full_name,
+                              "updated_at": datetime.now(timezone.utc).isoformat()}},
+                    upsert=True,
+                )
+            return {
+                "ok": True,
+                "already_existed": True,
+                "repo": full_name,
+                "html_url": f"https://github.com/{full_name}",
+                "default_branch": r_check.json().get("default_branch", "main"),
+                "message": f"El repo '{full_name}' ya existia. Lo dejamos seleccionado como destino default.",
+            }
+
+        # Crearlo
+        create_resp = await cli.post(
+            "https://api.github.com/user/repos",
+            json={
+                "name": name,
+                "description": description,
+                "private": bool(data.private),
+                "auto_init": False,   # lo inicializa do_push si hace falta
+                "has_issues": True,
+                "has_wiki": False,
+                "has_projects": False,
+            },
+        )
+        if create_resp.status_code not in (200, 201):
+            try:
+                err_body = create_resp.json()
+                gh_msg = err_body.get("message") or str(err_body)
+                errors = err_body.get("errors") or []
+                if errors:
+                    gh_msg += " - " + "; ".join(str(e.get("message", e)) for e in errors)
+            except Exception:
+                gh_msg = create_resp.text[:200]
+            raise HTTPException(
+                status_code=400,
+                detail=f"GitHub rechazo crear el repo: {gh_msg}",
+            )
+        body = create_resp.json()
+
+    full_name = body.get("full_name") or f"{login}/{name}"
+    html_url = body.get("html_url") or f"https://github.com/{full_name}"
+
+    # Setearlo como default destino si el cliente lo pidio
+    if data.set_as_default:
+        await db.user_settings.update_one(
+            {"user_id": user["id"]},
+            {"$set": {
+                "github_repo": full_name,
+                "github_branch": body.get("default_branch") or "main",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }},
+            upsert=True,
+        )
+
+    logger.info(f"Repo creado: {full_name} para user {user.get('email')}")
+    return {
+        "ok": True,
+        "already_existed": False,
+        "repo": full_name,
+        "html_url": html_url,
+        "default_branch": body.get("default_branch") or "main",
+        "private": bool(body.get("private")),
+        "message": f"✅ Repo '{full_name}' creado. Ya esta seleccionado como destino: tu proximo Push lo va a llenar con los archivos.",
+    }
+
+
 @router.get("/github/history")
 async def my_push_history(user: dict = Depends(get_current_user)):
     db = _db_ref["db"]
