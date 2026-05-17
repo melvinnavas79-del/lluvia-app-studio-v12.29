@@ -47,6 +47,27 @@ async def _validate_github_token(token: str, repo: Optional[str] = None) -> dict
     Asi evitamos cobrarle al cliente 9 oros por un push que va a fallar."""
     if not token or len(token) < 10:
         return {"ok": False, "error": "Token vacio o invalido (muy corto)."}
+    # Sanity check del formato. PATs validos:
+    #  - Classic:      ghp_  (40 chars total, comienza con 'ghp_')
+    #  - Fine-grained: github_pat_  (mas largo, pero distinto API)
+    #  - OAuth:        gho_  / ghu_  / ghs_  / ghr_
+    token_clean = token.strip()
+    token_prefix = token_clean[:11].lower()
+    is_classic = token_prefix.startswith("ghp_")
+    is_fine_grained = token_prefix.startswith("github_pat_")
+    if not (is_classic or is_fine_grained or token_prefix.startswith(("gho_", "ghu_", "ghs_", "ghr_"))):
+        return {
+            "ok": False,
+            "error": (
+                "El token no tiene un formato de Personal Access Token de GitHub valido. "
+                "Los Classic empiezan con 'ghp_' y los Fine-grained con 'github_pat_'. "
+                "Verifica que copiaste el token completo y sin espacios desde "
+                "https://github.com/settings/tokens"
+            ),
+        }
+    if token_clean != token:
+        # Limpiamos espacios al inicio/final para el resto de la validacion
+        token = token_clean
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
@@ -56,20 +77,53 @@ async def _validate_github_token(token: str, repo: Optional[str] = None) -> dict
         # 1) /user para validar el token
         r = await cli.get("https://api.github.com/user", headers=headers)
         if r.status_code == 401:
+            # GitHub a veces incluye un sub-mensaje util en el body
+            try:
+                gh_msg = r.json().get("message", "")
+            except Exception:
+                gh_msg = r.text[:120]
+            hint = ""
+            if "bad credentials" in gh_msg.lower():
+                hint = " (causa: token incorrecto, vencido o revocado)"
+            elif "expired" in gh_msg.lower():
+                hint = " (causa: el token expiro)"
             return {
                 "ok": False,
                 "error": (
-                    "Token rechazado por GitHub. Crealo nuevo en "
-                    "https://github.com/settings/tokens/new con scope 'repo' "
-                    "y pegalo en Mi Cuenta → GITHUB_TOKEN."
+                    f"GitHub rechazo el token con 401{hint}. GitHub dijo: '{gh_msg}'. "
+                    "Posibles causas: (a) typo o espacio invisible al copiarlo, "
+                    "(b) el token expiro, (c) lo revocaste. Crea uno NUEVO en "
+                    "https://github.com/settings/tokens/new tipo Classic con scope 'repo' "
+                    "y expiracion al menos 90 dias."
+                ),
+            }
+        if r.status_code == 403:
+            return {
+                "ok": False,
+                "error": (
+                    f"GitHub bloqueo el token con 403 (rate limit o token sin permisos). "
+                    f"GitHub dijo: '{r.text[:200]}'"
                 ),
             }
         if r.status_code >= 400:
             return {"ok": False, "error": f"GitHub respondio {r.status_code}: {r.text[:200]}"}
         login = r.json().get("login")
         scopes = r.headers.get("X-OAuth-Scopes", "")
-        # Verificar que tenga scope repo (fine-grained o classic)
-        has_repo_scope = "repo" in scopes
+        # Verificar que tenga scope repo (fine-grained o classic).
+        # Fine-grained tokens NO devuelven X-OAuth-Scopes; verificamos otra forma.
+        has_repo_scope = "repo" in scopes if scopes else is_fine_grained
+        if is_classic and scopes and "repo" not in scopes:
+            return {
+                "ok": False,
+                "login": login,
+                "scopes": scopes,
+                "has_repo_scope": False,
+                "error": (
+                    f"El token es valido pero NO tiene el scope 'repo' marcado. "
+                    f"Scopes actuales: '{scopes or '(ninguno)'}'. Crea uno nuevo en "
+                    f"https://github.com/settings/tokens/new MARCANDO la casilla grande 'repo'."
+                ),
+            }
         # 2) Si dieron repo, verificar acceso de escritura
         repo_access = None
         if repo:

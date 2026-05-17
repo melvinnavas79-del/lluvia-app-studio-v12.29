@@ -418,13 +418,19 @@ export default function BossConsole() {
       if (data.ok) {
         alert(`✅ Push exitoso!\n\nRepo: ${data.repo}\nRama: ${data.branch}\n\nVer en GitHub: ${data.repo_url || `https://github.com/${data.repo}`}`);
       } else if (data.export_locked) {
-        // Modal premium: el visitor armó la app pero no tiene oros para llevársela.
         const go = window.confirm(
           `🔒 ${data.message}\n\n¿Querés ir a recargar oros ahora?`
         );
         if (go) window.location.hash = "#/recharge";
       } else {
-        alert(`⚠ Push falló:\n\n${data.message || (data.steps || []).slice(-1)[0]?.out || "ver consola"}`);
+        // Mostrar el detalle real (puede venir en error, message o en el ultimo step)
+        const lastStep = (data.steps || []).slice(-1)[0];
+        const detail =
+          data.error ||
+          data.message ||
+          (lastStep && (lastStep.out || lastStep.err || JSON.stringify(lastStep))) ||
+          "Error desconocido, contactá soporte.";
+        alert(`⚠ Push falló:\n\n${detail}`);
       }
     } catch (e) {
       const detail = e?.response?.data?.detail || formatError(e);
