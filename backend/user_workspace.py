@@ -18,7 +18,6 @@ Endpoints:
 """
 
 import os
-import subprocess
 import logging
 import uuid
 import re
@@ -388,69 +387,185 @@ async def do_push(user: dict, app_name: Optional[str] = None,
                         f"Generadas con Lluvia App Studio.\n")
 
     commit_msg = commit_message or f"backup {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}"
-    remote_url = f"https://x-access-token:{token}@github.com/{repo}.git"
-    # Mascara para nunca loggear el token en los steps que se persisten en mongo
-    def _mask(s: str) -> str:
-        if not s:
-            return s
-        return s.replace(token, "***").replace(remote_url, f"https://x-access-token:***@github.com/{repo}.git")
-
-    def _run(cmd: list[str]) -> tuple[int, str]:
-        try:
-            r = subprocess.run(cmd, cwd=push_dir, capture_output=True,
-                                text=True, timeout=90)
-            return r.returncode, (r.stdout + r.stderr)[-2000:]
-        except Exception as e:
-            return -1, str(e)
-
-    steps = []
-    _run(["git", "init"])
-    # Forzar el nombre de la rama local que va a coincidir con la rama destino.
-    _run(["git", "checkout", "-B", branch])
-    _run(["git", "config", "user.email", user.get("email", "user@lluvia.app")])
-    _run(["git", "config", "user.name", user.get("name", "Lluvia User")])
-
-    rc, out = _run(["git", "remote", "set-url", "origin", remote_url])
-    if rc != 0:
-        rc, out = _run(["git", "remote", "add", "origin", remote_url])
-    steps.append({"step": "remote", "rc": rc, "out": _mask(out)[-200:]})
-
-    rc, out = _run(["git", "add", "-A"])
-    steps.append({"step": "add", "rc": rc, "out": _mask(out)[-200:]})
-
-    rc, out = _run(["git", "commit", "-m", commit_msg])
-    steps.append({"step": "commit", "rc": rc, "out": _mask(out)[-200:]})
-
-    _run(["git", "branch", "-M", branch])
-    rc, out = _run(["git", "push", "-u", "origin", branch, "--force"])
-    steps.append({"step": "push", "rc": rc, "out": _mask(out)[-300:]})
-
-    success = steps[-1]["rc"] == 0
     repo_url = f"https://github.com/{repo}"
 
-    # Si el push fallo, traducir el error de git a algo claro en español
+    # Estrategia: usar la GitHub REST API directamente (NO binario git).
+    # Asi funciona en cualquier contenedor (incluyendo el de produccion de
+    # Emergent que NO trae git instalado). Ademas es mas rapido para repos
+    # chicos (<100 archivos) que es el caso de las apps de App Builder Pro.
+    #
+    # Flujo:
+    #  1. Listar todos los archivos locales del push_dir.
+    #  2. Obtener el HEAD del branch (o crearlo si no existe).
+    #  3. Crear un blob por cada archivo (PUT /repos/.../git/blobs).
+    #  4. Crear un tree con todos los blobs (POST /repos/.../git/trees).
+    #  5. Crear un commit apuntando al tree (POST /repos/.../git/commits).
+    #  6. Actualizar la ref del branch (PATCH /repos/.../git/refs/heads/branch).
+    steps: list[dict] = []
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    api_base = f"https://api.github.com/repos/{repo}"
+
+    # Recolectar archivos respetando .gitignore basico
+    SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv",
+                 ".next", "dist", "build", ".DS_Store"}
+    SKIP_EXTS = {".pyc", ".pyo", ".log", ".db", ".db-journal"}
+    MAX_FILE_BYTES = 1_500_000  # 1.5 MB hard cap por archivo (limite api blobs)
+
+    files_to_push: list[tuple[str, bytes]] = []
+    for root, dirs, files in os.walk(push_dir):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+        for fname in files:
+            if fname in {".DS_Store"}:
+                continue
+            if any(fname.endswith(ext) for ext in SKIP_EXTS):
+                continue
+            full = os.path.join(root, fname)
+            rel = os.path.relpath(full, push_dir).replace(os.sep, "/")
+            try:
+                size = os.path.getsize(full)
+                if size > MAX_FILE_BYTES:
+                    steps.append({"step": "skip_large", "out": f"{rel} ({size} bytes)"})
+                    continue
+                with open(full, "rb") as fh:
+                    files_to_push.append((rel, fh.read()))
+            except Exception as e:
+                steps.append({"step": "read_error", "out": f"{rel}: {e}"})
+
+    if not files_to_push:
+        return {
+            "ok": False,
+            "error": "No hay archivos para pushear en tu workspace. Genera una app primero.",
+            "repo": repo, "branch": branch,
+        }
+
+    steps.append({"step": "collect", "rc": 0, "out": f"{len(files_to_push)} archivos a subir"})
+
+    async with httpx.AsyncClient(timeout=30.0, headers=headers) as cli:
+        # 1) Obtener SHA del HEAD del branch (puede no existir si el repo
+        # esta vacio o si la rama es nueva).
+        ref_resp = await cli.get(f"{api_base}/git/refs/heads/{branch}")
+        parent_sha: Optional[str] = None
+        base_tree_sha: Optional[str] = None
+        if ref_resp.status_code == 200:
+            parent_sha = ref_resp.json()["object"]["sha"]
+            commit_resp = await cli.get(f"{api_base}/git/commits/{parent_sha}")
+            if commit_resp.status_code == 200:
+                base_tree_sha = commit_resp.json().get("tree", {}).get("sha")
+            steps.append({"step": "ref_existing", "rc": 0, "out": f"HEAD={parent_sha[:7]}"})
+        elif ref_resp.status_code == 404:
+            # Rama nueva - tenemos que crear el primer commit "huerfano"
+            steps.append({"step": "ref_new", "rc": 0, "out": f"Rama '{branch}' es nueva"})
+        elif ref_resp.status_code == 409:
+            # Repo vacio
+            steps.append({"step": "ref_empty_repo", "rc": 0, "out": "Repo vacio, inicializando"})
+        else:
+            steps.append({"step": "ref_error", "rc": ref_resp.status_code, "out": ref_resp.text[:200]})
+            return {
+                "ok": False, "repo": repo, "repo_url": repo_url, "branch": branch,
+                "app_name": app_name, "commit_message": commit_msg, "steps": steps,
+                "error": f"No pude leer la rama '{branch}' del repo: HTTP {ref_resp.status_code}",
+                "auth_failed": ref_resp.status_code == 401,
+            }
+
+        # 2) Crear blobs (en paralelo seria mejor, pero serial es mas seguro
+        # para no saturar la API)
+        import base64 as _b64
+        tree_items: list[dict] = []
+        for rel_path, raw in files_to_push:
+            content_b64 = _b64.b64encode(raw).decode("ascii")
+            blob_resp = await cli.post(
+                f"{api_base}/git/blobs",
+                json={"content": content_b64, "encoding": "base64"},
+            )
+            if blob_resp.status_code not in (200, 201):
+                steps.append({"step": "blob_fail", "rc": blob_resp.status_code,
+                              "out": f"{rel_path}: {blob_resp.text[:150]}"})
+                return {
+                    "ok": False, "repo": repo, "repo_url": repo_url, "branch": branch,
+                    "app_name": app_name, "commit_message": commit_msg, "steps": steps,
+                    "error": f"GitHub rechazo subir '{rel_path}': {blob_resp.text[:200]}",
+                    "auth_failed": blob_resp.status_code == 401,
+                }
+            tree_items.append({
+                "path": rel_path,
+                "mode": "100644",
+                "type": "blob",
+                "sha": blob_resp.json()["sha"],
+            })
+        steps.append({"step": "blobs", "rc": 0, "out": f"{len(tree_items)} blobs creados"})
+
+        # 3) Crear tree
+        tree_body: dict = {"tree": tree_items}
+        if base_tree_sha:
+            # Reemplazo total (no merge) usando un tree NUEVO desde cero
+            # (no pasamos base_tree porque queremos que el push reemplace 100%
+            # como hacia git push --force antes).
+            pass
+        tree_resp = await cli.post(f"{api_base}/git/trees", json=tree_body)
+        if tree_resp.status_code not in (200, 201):
+            steps.append({"step": "tree_fail", "rc": tree_resp.status_code, "out": tree_resp.text[:200]})
+            return {
+                "ok": False, "repo": repo, "repo_url": repo_url, "branch": branch,
+                "app_name": app_name, "commit_message": commit_msg, "steps": steps,
+                "error": f"Crear tree fallo: {tree_resp.text[:200]}",
+                "auth_failed": tree_resp.status_code == 401,
+            }
+        tree_sha = tree_resp.json()["sha"]
+        steps.append({"step": "tree", "rc": 0, "out": f"tree={tree_sha[:7]}"})
+
+        # 4) Crear commit
+        commit_body: dict = {
+            "message": commit_msg,
+            "tree": tree_sha,
+            "author": {
+                "name": user.get("name") or "Lluvia User",
+                "email": user.get("email") or "user@lluvia.app",
+                "date": datetime.now(timezone.utc).isoformat(),
+            },
+        }
+        if parent_sha:
+            commit_body["parents"] = [parent_sha]
+        commit_resp = await cli.post(f"{api_base}/git/commits", json=commit_body)
+        if commit_resp.status_code not in (200, 201):
+            steps.append({"step": "commit_fail", "rc": commit_resp.status_code, "out": commit_resp.text[:200]})
+            return {
+                "ok": False, "repo": repo, "repo_url": repo_url, "branch": branch,
+                "app_name": app_name, "commit_message": commit_msg, "steps": steps,
+                "error": f"Crear commit fallo: {commit_resp.text[:200]}",
+                "auth_failed": commit_resp.status_code == 401,
+            }
+        commit_sha = commit_resp.json()["sha"]
+        steps.append({"step": "commit", "rc": 0, "out": f"commit={commit_sha[:7]}"})
+
+        # 5) Actualizar/crear ref del branch
+        if parent_sha:
+            # Rama existe - actualizar
+            ref_update = await cli.patch(
+                f"{api_base}/git/refs/heads/{branch}",
+                json={"sha": commit_sha, "force": True},
+            )
+        else:
+            # Rama nueva - crear
+            ref_update = await cli.post(
+                f"{api_base}/git/refs",
+                json={"ref": f"refs/heads/{branch}", "sha": commit_sha},
+            )
+        if ref_update.status_code not in (200, 201):
+            steps.append({"step": "ref_update_fail", "rc": ref_update.status_code, "out": ref_update.text[:200]})
+            return {
+                "ok": False, "repo": repo, "repo_url": repo_url, "branch": branch,
+                "app_name": app_name, "commit_message": commit_msg, "steps": steps,
+                "error": f"Actualizar branch fallo: {ref_update.text[:200]}",
+                "auth_failed": ref_update.status_code == 401,
+            }
+        steps.append({"step": "push", "rc": 0, "out": f"Branch '{branch}' apuntando a {commit_sha[:7]}"})
+
+    success = True
     user_facing_error = None
-    if not success:
-        last_out = steps[-1]["out"]
-        if "Invalid username or token" in last_out or "Password authentication" in last_out:
-            user_facing_error = (
-                "GitHub rechazó tu token. Pasos:\n"
-                "1) Andá a https://github.com/settings/tokens/new\n"
-                "2) Tildá el scope 'repo' (completo)\n"
-                "3) Generá el token, copialo (empieza con ghp_ o github_pat_)\n"
-                "4) Pegalo en Mi Cuenta → GITHUB_TOKEN\n"
-                "5) Tocá 'Guardar configuración' y reintentá el push."
-            )
-        elif "could not read Username" in last_out or "remote: Repository not found" in last_out:
-            user_facing_error = (
-                f"El repo '{repo}' no existe o tu token no lo ve. "
-                "Verificá que el nombre sea owner/repo correcto y que sea público o que tu token tenga acceso."
-            )
-        elif "failed to push" in last_out or "rejected" in last_out:
-            user_facing_error = (
-                f"GitHub rechazó el push (puede ser por protección de rama o conflicto). "
-                f"Detalle: {last_out[-200:]}"
-            )
 
     # Bitacora (sin token)
     await db.user_github_pushes.insert_one({
