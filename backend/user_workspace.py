@@ -18,6 +18,7 @@ Endpoints:
 """
 
 import os
+import base64
 import logging
 import uuid
 import re
@@ -460,8 +461,33 @@ async def do_push(user: dict, app_name: Optional[str] = None,
             # Rama nueva - tenemos que crear el primer commit "huerfano"
             steps.append({"step": "ref_new", "rc": 0, "out": f"Rama '{branch}' es nueva"})
         elif ref_resp.status_code == 409:
-            # Repo vacio
-            steps.append({"step": "ref_empty_repo", "rc": 0, "out": "Repo vacio, inicializando"})
+            # REPO VACIO - bootstrap con Contents API primero, asi luego el
+            # flujo normal de blobs/tree/commit funciona. La Git Data API NO
+            # acepta blobs en repos sin commits previos.
+            bootstrap_readme = base64.b64encode(
+                f"# {repo.split('/')[-1]}\n\n"
+                f"Repo inicializado por Lluvia App Studio. "
+                f"El contenido real llega en el siguiente commit.\n".encode("utf-8")
+            ).decode("ascii")
+            boot_resp = await cli.put(
+                f"{api_base}/contents/README.md",
+                json={
+                    "message": "init: bootstrap del repo vacio",
+                    "content": bootstrap_readme,
+                    "branch": branch,
+                },
+            )
+            if boot_resp.status_code not in (200, 201):
+                steps.append({"step": "bootstrap_fail", "rc": boot_resp.status_code, "out": boot_resp.text[:200]})
+                return {
+                    "ok": False, "repo": repo, "repo_url": repo_url, "branch": branch,
+                    "app_name": app_name, "commit_message": commit_msg, "steps": steps,
+                    "error": f"No pude inicializar el repo vacio: {boot_resp.text[:200]}",
+                    "auth_failed": boot_resp.status_code == 401,
+                }
+            parent_sha = boot_resp.json()["commit"]["sha"]
+            base_tree_sha = boot_resp.json()["commit"]["tree"]["sha"]
+            steps.append({"step": "bootstrap", "rc": 0, "out": f"Repo inicializado, HEAD={parent_sha[:7]}"})
         else:
             steps.append({"step": "ref_error", "rc": ref_resp.status_code, "out": ref_resp.text[:200]})
             return {
@@ -473,10 +499,9 @@ async def do_push(user: dict, app_name: Optional[str] = None,
 
         # 2) Crear blobs (en paralelo seria mejor, pero serial es mas seguro
         # para no saturar la API)
-        import base64 as _b64
         tree_items: list[dict] = []
         for rel_path, raw in files_to_push:
-            content_b64 = _b64.b64encode(raw).decode("ascii")
+            content_b64 = base64.b64encode(raw).decode("ascii")
             blob_resp = await cli.post(
                 f"{api_base}/git/blobs",
                 json={"content": content_b64, "encoding": "base64"},
