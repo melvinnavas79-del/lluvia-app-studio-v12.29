@@ -5,7 +5,37 @@
 - Producción: https://lluvia-app-studio.lluvia-live.com (Emergent Native Deploy)
 - Telegram: https://t.me/LluviaAppStudioBot
 
-## Estado actual: v12.25 — Botón "Crear repo nuevo en GitHub" (Feb 2026)
+## Estado actual: v12.26 — Audio Room multi-provider deploy + Gmail OAuth fix (Feb 2026)
+
+### Iteración 12.26 — Apps que SI deployan en Render/VPS/Docker + magic-link domain-aware (HECHO)
+**🔥 BUG CRÍTICO REPORTADO POR EL CLIENTE**: app generada por App Builder Pro fallaba en Render con `[Errno 2] No such file or directory: 'requirements.txt'` porque el archivo vivía en `/backend/` y Render lo buscaba en la raíz.
+
+**🛠 Fix: Template ahora trae 6 archivos de deploy multi-provider**:
+- `render.yaml` con `rootDir: backend` → Render encuentra `requirements.txt` correctamente.
+- `railway.toml` para Railway.app (auto-detect).
+- `Procfile` para Heroku/Fly.io.
+- `Dockerfile` + `docker-compose.yml` para Docker genérico (cualquier host).
+- `install.sh` para VPS: instala Python, crea venv, systemd service, arranca solo. Plug & play.
+- `README.md` reescrito con sección "Deploy en 1 click según tu proveedor" + troubleshooting de los 4 errores más comunes.
+
+**🪄 App Builder Pro ahora pregunta WHERE va a deployar**:
+- System prompt actualizado: pide 3 datos en un mensaje (nombre + color + deploy_target).
+- Targets soportados: `render | railway | heroku | fly | vps | docker | local`.
+- Si no sabe, sugiere `render` (free tier + más simple).
+- Tool `generate_audio_room_app` ahora acepta `deploy_target` y la rich card `next_step` se adapta: si elige render → muestra "Render leerá render.yaml automáticamente, tu app va a quedar en {slug}.onrender.com"; si vps → muestra "corre install.sh, configura HTTPS con certbot"; etc.
+
+**🐛 Bug del OAuth de Gmail mostrando URL de preview en producción**:
+- `gmail_integration.py::magic_link()` ahora detecta el dominio del request HOST en cascada: lluvia-live.com → emergentagent.com/.host → PUBLIC_BASE_URL → base_url. Antes confiaba ciegamente en el env var que estaba seteado al preview.
+
+**Nuevo placeholder de template**: `{{APP_NAME_SLUG}}` (slug-safe del nombre) → se sustituye automáticamente en render.yaml, railway.toml, docker-compose.yml e install.sh. `app_builder.py` ahora soporta extensiones `.sh`, `.conf` y filenames literales `Dockerfile`, `Procfile`.
+
+**Verificación (iteration_23.json)**: 13/13 nuevos PASS + 40/40 regresión (iter_20, iter_21, iter_22) = **53/53 verde**. Validado: archivos físicos materializados, ZERO placeholders huérfanos, next_step adaptado a cada provider, magic-link domain detection, todos los endpoints existentes intactos.
+
+**Archivos generados por una app ahora**: 16 (vs 10 antes). De los nuevos: 1 render.yaml, 1 railway.toml, 1 Procfile, 1 Dockerfile, 1 docker-compose.yml, 1 install.sh.
+
+
+
+## Estado anterior: v12.25 — Botón "Crear repo nuevo en GitHub" (Feb 2026)
 
 ### Iteración 12.25 — Crear repos GitHub desde Lluvia con 1 click (HECHO)
 **🛠 Backend**: nuevo endpoint `POST /api/me/github/create-repo` con body `{name, private, description, set_as_default}`. Flujo:
