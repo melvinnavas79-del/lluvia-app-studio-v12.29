@@ -1,0 +1,53 @@
+{
+  "summary": "Iteration 23 — v12.26 fixes críticos (template multi-provider deploy + App Builder Pro pregunta deploy_target + Gmail OAuth magic-link detecta dominio). 13/13 nuevos tests PASS + 40/40 regresión (iter_20 + iter_21 + iter_22) PASS. Validaciones realizadas: (a) Tool generate_audio_room_app ejecuta OK con deploy_target render/vps/railway/heroku/fly/docker/local y next_step se adapta correctamente, (b) deploy_target inválido o vacío cae a 'render' por default (fallback robusto), (c) files_written=18 (vs 10 antes) — los 6 archivos de deploy se materializan junto con backend/ + frontend/ + README, (d) ZERO ocurrencias de placeholders {{APP_NAME_SLUG}}/{{APP_NAME}}/{{BRAND_COLOR}} en TODOS los archivos finales (verificado recursivamente con rglob), (e) render.yaml contiene 'name: ai-bot-cost-calc' y 'rootDir: backend' (FIX CRÍTICO del cliente — Render ahora encuentra requirements.txt), (f) railway.toml, docker-compose.yml (image:ai-bot-cost-calc:latest), install.sh (/opt/ai-bot-cost-calc + ai-bot-cost-calc.service systemd) todos con sustituciones correctas, (g) Gmail magic-link detecta lluvia-live.com → devuelve URL con dominio prod, detecta preview emergentagent.com → devuelve URL preview, host desconocido → cae a PUBLIC_BASE_URL/base_url (verificado via unit test directo porque el ingress override x-forwarded-host), (h) endpoint POST /api/me/github/create-repo (v12.25) sigue funcionando: rechaza sin auth (401/403), rechaza nombre inválido y devuelve 400/401/403 con detail claro (nunca 500), (i) regresión 100% verde: iter_20 (push lock + pricing) 12/12, iter_21 (gmail autosend) 14/14, iter_22 (github REST push) 14/14.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/integrations/gmail/oauth/magic-link",
+        "issue": "El ingress preview (Kubernetes) overrida los headers x-forwarded-host y host con el dominio real, por lo que la validación E2E con curl/requests setteando x-forwarded-host=lluvia-app-studio.lluvia-live.com NO funciona — el backend siempre recibe el host del ingress. La lógica del helper SÍ funciona correctamente (verificado con unit test directo a la coroutine). En producción detrás de Caddy/Nginx esto debería andar siempre que el reverse proxy pase host correctamente. Recomendación: documentar que para verificar end-to-end hay que hacerlo desde lluvia-live.com en producción o forzar el header desde un cliente sin ingress."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_23_audio_room_deploy.py",
+    "/app/test_reports/pytest/iteration_23_results.xml",
+    "/app/test_reports/pytest/iteration_23_regression.xml"
+  ],
+  "action_items": [
+    "[INFO] Todos los tests pasan. No se requiere acción del main agent.",
+    "[INFO-RUN] Para ejecutar regresión iter_20/21/22: requiere PYTHONPATH=/app/backend (los tests viejos no hacen sys.path.insert). El comando exacto es: cd /app/backend && set -a && . ./.env && set +a && PYTHONPATH=/app/backend pytest tests/test_iteration_20_pricing_pushlock.py tests/test_iteration_21_gmail_autosend.py tests/test_iteration_22_github_rest_push.py -v. Sugerencia menor: agregar sys.path al inicio de esos test files o usar pytest.ini con pythonpath=. en /app/backend para evitar tener que setear var manualmente.",
+    "[INFO-CLEANUP] Tests de TestAudioRoomDeployTargets crean workspaces en /app/user_apps/{admin_id}/{slug} y los limpian con fixture cleanup_workspace al final de cada test. Verificado: no queda data residual.",
+    "[INFO-MAGIC-LINK] El magic-link en preview cluster (probado vía API real) devuelve correctamente 'https://ai-bot-cost-calc.preview.emergentagent.com/api/integrations/gmail/oauth/start?token=...' porque el helper detecta emergentagent.com en el host. ✅ funciona end-to-end en preview."
+  ],
+  "critical_code_review_comments": [
+    "app_builder.py:34 — text_exts ampliado correctamente para incluir .sh/.conf y los filenames literales Dockerfile/Procfile. El branch `or fname in (.env.example, .gitignore, Procfile, Dockerfile, install.sh)` en línea 107 es redundante con el set de text_exts pero defensivo. OK.",
+    "app_builder.py:86 — app_slug_value = target_dir.name es buena fuente de verdad (no se puede desincronizar con el directorio real). Coherente.",
+    "app_builder.py:111-113 — los tres replace son secuenciales (APP_NAME → APP_NAME_SLUG → BRAND_COLOR). Orden correcto: como APP_NAME no contiene la subcadena APP_NAME_SLUG, no hay riesgo de colisión.",
+    "console.py:520-556 — _build_next_step_text() helper: clean, fallback a render en .get(target, extras['render']) lo cual también cubriría un target no listado, pero la validación de línea 730 ya garantiza que target ∈ enum. Doblemente defensivo, OK.",
+    "console.py:729-731 — la normalización deploy_target con whitelist y fallback a 'render' es robusta y refleja lo que pide el brief.",
+    "gmail_integration.py:248-256 — la cascada lluvia-live → emergentagent → PUBLIC_BASE_URL → base_url es correcta. Atención al edge case `full_host = (forwarded or host).split(',')[0]`: si vienen múltiples valores en x-forwarded-host separados por coma, se queda con el primero, que en el RFC 7239 es el cliente original, correcto.",
+    "gmail_integration.py:67-73 — el helper get_redirect_uri tiene la misma lógica que magic_link. Sería bueno extraerla a una función compartida _detect_base_url(request) para no duplicar 5 líneas en dos sitios y evitar drift en el futuro. No es blocker.",
+    "agents_catalog.py:255-265 — el system prompt ahora pide explícitamente los 3 datos en UN solo mensaje, con default 'render' si el cliente no sabe. Buena UX. La frase 'invoca la tool EN EL MISMO TURNO' es directiva clara para el LLM.",
+    "Template files — render.yaml fija rootDir:backend (esto es el FIX CRÍTICO del incidente reportado por el cliente), buildCommand y startCommand correctos, JWT_SECRET con generateValue:true. install.sh crea systemd unit y la habilita. Procfile/Dockerfile/docker-compose.yml conformes a sus convenciones.",
+    "console.py:741-746 — el refund automático en fallo de materializeación solo aplica si no is_admin. Coherente con el resto de cobros (admins no pagan)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_23_audio_room_deploy.py (NEW — 13 tests, all PASS)"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13 nuevos iter_23 + 40/40 regresión iter_20+21+22)",
+    "frontend": "N/A — testing_type=backend only"
+  },
+  "test_credentials": "Admin melvinnavas79@gmail.com / Admin#2026 OK (verificado login + token JWT)",
+  "seed_data_creation": "Tests crean workspaces en /app/user_apps/9d026605-d08f-49ba-a9dc-f4ad0e45d271/{slug} y los limpian con fixture cleanup_workspace. NO se creó ningún repo en GitHub (rate-limit), NO se ejecutó OAuth real de Gmail. Cero residuo en Mongo. Workspace admin limpiado al inicio.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Ejecutar: cd /app/backend && set -a && . ./.env && set +a && PYTHONPATH=/app/backend pytest tests/test_iteration_23_audio_room_deploy.py tests/test_iteration_20_pricing_pushlock.py tests/test_iteration_21_gmail_autosend.py tests/test_iteration_22_github_rest_push.py -v. Los tests de TestGmailMagicLink::test_magic_link_with_lluvia_live_host hacen unit test directo a la coroutine magic_link() con Request mockeado porque el ingress preview overrida x-forwarded-host. Si en producción se quiere validar el host real, hacer GET desde un browser apuntando a https://lluvia-app-studio.lluvia-live.com/api/integrations/gmail/oauth/magic-link con bearer del admin. El test TestFilesMaterialized usa slug='ai-bot-cost-calc' a propósito para validar que la slugificación + sustitución da el resultado del brief.",
+  "rca of the issue": "NO HAY BUGS NUEVOS. El v12.26 entregado por el main agent está correctamente implementado: (1) los 6 archivos deploy + README se materializan con placeholders sustituidos, (2) el next_step se adapta al provider elegido, (3) magic-link detecta lluvia-live.com / emergentagent.com antes de PUBLIC_BASE_URL. El único 'gotcha' es que el ingress preview de Kubernetes overrida x-forwarded-host, por lo que la validación E2E de lluvia-live.com requiere unit test directo. Esto NO es un bug del código - es un comportamiento esperado del ambiente preview."
+}

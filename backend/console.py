@@ -271,6 +271,11 @@ OPENAI_TOOLS = [
             "app_name": {"type": "string", "description": "Nombre visible de la app (ej: Talkly, AudioPro). 1-60 chars."},
             "brand_color": {"type": "string", "description": "Color hex (ej: #5B8DEF) o vacio para default azul Lluvia."},
             "app_slug": {"type": "string", "description": "(Opcional) slug-de-carpeta. Si se omite, se deriva del app_name."},
+            "deploy_target": {
+                "type": "string",
+                "enum": ["render", "railway", "heroku", "fly", "vps", "docker", "local"],
+                "description": "Donde el cliente va a deployar la app. Determina que README y archivos quedan destacados (render.yaml, railway.toml, Dockerfile, install.sh, etc).",
+            },
         }, "required": ["app_name"]},
     }},
     {"type": "function", "function": {
@@ -511,6 +516,47 @@ def _tool_service_card(args: dict) -> dict:
     }
 
 
+
+def _build_next_step_text(target: str, slug: str) -> str:
+    """Devuelve el next step adaptado al provider que eligió el cliente."""
+    target = (target or "render").lower()
+    common = (
+        "Aprieta + → ⬆ Push a GitHub para subir tu repo. "
+        "Si no tenes repo, andá a Mi Cuenta → 📦 Crear repo nuevo. "
+    )
+    extras = {
+        "render": (
+            f"Despues, en https://dashboard.render.com → New → Blueprint y conecta tu repo: "
+            f"Render lee render.yaml y deploya solo (~5 min). Tu app va a quedar en "
+            f"{slug}.onrender.com."
+        ),
+        "railway": (
+            "Despues, en https://railway.app → New Project → Deploy from GitHub. "
+            "Railway detecta railway.toml automaticamente (~3 min)."
+        ),
+        "heroku": (
+            "Despues: heroku create && git push heroku main (Procfile ya esta listo)."
+        ),
+        "fly": (
+            "Despues: fly launch en tu repo, te genera fly.toml y deploya."
+        ),
+        "vps": (
+            "Despues, clona el repo en tu VPS y corre: sudo bash install.sh "
+            "(instala Python + systemd + arranca en puerto 8001). El README tiene "
+            "los pasos para HTTPS con certbot."
+        ),
+        "docker": (
+            "Despues: docker compose up -d (Dockerfile y docker-compose.yml listos)."
+        ),
+        "local": (
+            "Despues: cd backend && pip install -r requirements.txt && python server.py "
+            "para correrla local en http://localhost:8001."
+        ),
+    }
+    return common + extras.get(target, extras["render"])
+
+
+
 async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tuple[str, int]:
     """Ejecuta una tool. Devuelve (resultado_json, costo_oros)."""
     cost = agents_catalog.TOOL_NAMES.get(name, 1)
@@ -680,6 +726,9 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
             cost = await pricing_mod.get_tool_price("generate_audio_room_app")
             app_name_in = (args.get("app_name") or "Mi App").strip()
             brand_color = (args.get("brand_color") or "#5B8DEF").strip()
+            deploy_target = (args.get("deploy_target") or "render").strip().lower()
+            if deploy_target not in {"render", "railway", "heroku", "fly", "vps", "docker", "local"}:
+                deploy_target = "render"
             app_slug = app_builder._slugify(args.get("app_slug") or app_name_in)
             target_dir = os.path.join(uw._user_apps_dir(user_id), app_slug)
             result = app_builder.materialize_template(
@@ -703,11 +752,12 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
                 "app_name": result.get("app_name", app_name_in),
                 "app_slug": result.get("app_slug", app_slug),
                 "brand_color": result.get("brand_color", brand_color),
+                "deploy_target": deploy_target,
                 "files_written": result.get("files_written", 0),
                 "bytes_written": result.get("bytes_written", 0),
                 "screens": ["Inicio", "Tendencias", "Sala Activa", "Perfil"],
                 "stack": "FastAPI + Socket.IO + SQLite + Vanilla JS",
-                "next_step": "Aprieta + → ⬆ Push a GitHub en el composer para subirlo a tu repo. El README tiene los pasos de deploy a Railway/Render.",
+                "next_step": _build_next_step_text(deploy_target, result.get("app_slug", app_slug)),
                 "error": result.get("error"),
                 "refunded_oros": result.get("refunded_oros", 0),
             }

@@ -1,0 +1,13 @@
+version: "3.9"
+services:
+  web:
+    build: .
+    image: {{APP_NAME_SLUG}}:latest
+    ports:
+      - "8001:8001"
+    environment:
+      - JWT_SECRET=${JWT_SECRET:-change-me-en-produccion-please}
+      - PORT=8001
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/backend/data

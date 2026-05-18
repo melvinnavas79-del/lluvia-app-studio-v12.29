@@ -240,10 +240,20 @@ async def magic_link(request: Request, user: dict = Depends(get_current_user)):
     if not auth.lower().startswith("bearer "):
         raise HTTPException(status_code=400, detail="Falta header Authorization")
     jwt_token = auth.split(" ", 1)[1]
-    # Usar el dominio publico (env PUBLIC_BASE_URL) en vez del cluster interno
-    base = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
-    if not base:
-        base = str(request.base_url).rstrip("/")
+    # Detectar el dominio publico desde el host del request (en vez de
+    # confiar ciegamente en PUBLIC_BASE_URL que puede quedar mal seteada).
+    host = request.headers.get("host", "") or ""
+    forwarded = request.headers.get("x-forwarded-host", "") or ""
+    full_host = (forwarded or host).split(",")[0].strip()
+    if "lluvia-live.com" in full_host:
+        base = "https://lluvia-app-studio.lluvia-live.com"
+    elif "emergentagent.com" in full_host or "emergent.host" in full_host:
+        # Cluster preview o deploy nativo Emergent
+        scheme = "https"
+        base = f"{scheme}://{full_host}"
+    else:
+        # Fallback al env var, sino auto-detect
+        base = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/") or str(request.base_url).rstrip("/")
     link = f"{base}/api/integrations/gmail/oauth/start?token={urllib.parse.quote(jwt_token)}"
     return {
         "url": link,

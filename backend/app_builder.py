@@ -31,7 +31,7 @@ TEMPLATES = {
         "description": "App full-stack de salas de audio en vivo con WebRTC, 4 pantallas y monetizacion premium.",
         "path": TEMPLATES_ROOT / "audio_room",
         # Extensiones donde reemplazamos placeholders. Binarios no se tocan.
-        "text_exts": {".html", ".css", ".js", ".py", ".md", ".txt", ".env", ".example", ".json", ".yml", ".yaml", ".toml", ".gitignore"},
+        "text_exts": {".html", ".css", ".js", ".py", ".md", ".txt", ".env", ".example", ".json", ".yml", ".yaml", ".toml", ".gitignore", ".sh", ".conf", "Dockerfile", "Procfile"},
     },
 }
 
@@ -83,6 +83,7 @@ def materialize_template(
     app_name_safe = (app_name or "Mi App").strip()[:60]
     color = _safe_color(brand_color)
     text_exts = tpl["text_exts"]
+    app_slug_value = target_dir.name
 
     files_written = 0
     bytes_written = 0
@@ -102,10 +103,13 @@ def materialize_template(
                     continue
                 src_f = root_p / fname
                 dst_f = dst_root / fname
-                if src_f.suffix.lower() in text_exts or fname in (".env.example", ".gitignore"):
+                is_text = (src_f.suffix.lower() in text_exts
+                           or fname in (".env.example", ".gitignore", "Procfile", "Dockerfile", "install.sh"))
+                if is_text:
                     try:
                         text = src_f.read_text(encoding="utf-8")
                         text = text.replace("{{APP_NAME}}", app_name_safe)
+                        text = text.replace("{{APP_NAME_SLUG}}", app_slug_value)
                         text = text.replace("{{BRAND_COLOR}}", color)
                         dst_f.write_text(text, encoding="utf-8")
                     except UnicodeDecodeError:
