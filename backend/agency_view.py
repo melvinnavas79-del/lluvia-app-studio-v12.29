@@ -29,7 +29,7 @@ async def list_clients(user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="solo admin")
     db = _db_ref["db"]
     items = []
-    async for c in db.deployed_clients.find({}, {"_id": 0}).sort("created_at", -1):
+    async for c in db.deployed_clients.find({}, {"_id": 0}).sort("created_at", -1).limit(500):
         items.append(c)
     # Calculo MRR estimado: cada cliente $199/mes default
     mrr = sum(int(c.get("monthly_usd", 199)) for c in items if c.get("active", True))
