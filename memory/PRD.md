@@ -5,7 +5,45 @@
 - Producción: https://lluvia-app-studio.lluvia-live.com (Emergent Native Deploy)
 - Telegram: https://t.me/LluviaAppStudioBot
 
-## Estado actual: v12.28 — Réplica de Emergent (Lluvia Studio) implementada al ~70% (Feb 2026)
+## Estado actual: v12.29 — Réplica de Emergent 100% completa (Feb 2026)
+
+### Iteración 12.29 — Terminal xterm + Preview Playwright + Logs streaming (HECHO)
+**🎯 PEDIDO DEL USUARIO**: Terminar el 100% de la réplica de Emergent (Fases 4, 5, 6 del plan) para subir a producción y Play Store.
+
+**🆕 Backend (2 módulos nuevos)**:
+- `ws_streams.py` (~220 líneas) — WebSocket endpoints: `/me/vps/{id}/terminal` (PTY via asyncssh con xterm-256color) + `/me/vps/{id}/logs/{service}` (streaming de `journalctl -u {svc} -f`). Auth via query param `?token=` (browsers no soportan headers en WS nativos).
+- `workspace_preview.py` (~250 líneas) — Preview uvicorn temporal con port assignment 9100-9300, TTL 10min, proxy HTTP interno + Playwright screenshots con chromium headless.
+
+**🆕 Endpoints (9 nuevos)**:
+- WS `/me/vps/{id}/terminal`, WS `/me/vps/{id}/logs/{service}`
+- POST `/me/apps/{slug}/preview`, POST `/preview/stop`, GET `/preview/status`, ALL `/preview/proxy/{path}`
+- POST `/me/apps/{slug}/screenshot`, GET `/me/apps/_/screenshots/{id}.png`
+
+**🆕 Frontend (3 componentes nuevos + Studio.js reescrito)**:
+- `VpsTerminal.js` — xterm.js v6 + FitAddon + WebSocket, resize handling, banner de status, botón reconectar. Soporta protocolo custom `\x1bRESIZE:cols,rows` para sincronizar tamaño.
+- `DeployLogs.js` — WebSocket streaming en vivo (reemplaza el polling con botón "Cargar"). Filtros por nivel (ERROR/WARN/INFO/DEBUG), colorizado, autoscroll toggle, buffer de 5000 líneas, botón limpiar.
+- `PreviewIframe.js` — iframe del preview + toggle desktop/mobile (375x812 sandbox), reload, screenshot 1-click via Playwright. Heartbeat cada 60s para mantener vivo el preview.
+- `Studio.js` REESCRITO: 4 tabs ahora (Editor / Preview / Terminal / Logs) integrando todos los nuevos componentes. Click en deploy de la sidebar → auto-cambia a tab Logs con el service del deploy.
+
+**Dependencias agregadas**:
+- Backend: `playwright==1.49.1` (+ chromium headless ~280MB descarga aparte con `playwright install chromium --with-deps`).
+- Frontend: `@xterm/xterm@6.0.0`, `@xterm/addon-fit@0.11.0`.
+
+**Variables de entorno nuevas**:
+- `PLAYWRIGHT_BROWSERS_PATH` (path donde Playwright busca el browser).
+- `PREVIEW_PORT_BASE=9100`, `PREVIEW_PORT_MAX=9300`.
+
+**Testing**: Smoke tests con curl pasaron — endpoint /preview/status responde, screenshot endpoint genera PNG de 18KB con Playwright + chromium en preview de Emergent. UI compila sin errores, app renderiza OK.
+
+**📄 Doc handoff actualizado**: `/app/CLAUDE_V12_29_STATUS.md` con todos los pasos para Claude del VPS (incluye config nginx para WebSocket que es crítica).
+
+**🎯 LISTO PARA**:
+- Producción (push del usuario + git pull en VPS + rebuild + restart).
+- Play Store (PWA con Capacitor o TWA — backend ya no necesita cambios).
+
+---
+
+## Estado anterior: v12.28 — Réplica de Emergent (Lluvia Studio) implementada al ~70% (Feb 2026)
 
 ### Iteración 12.28 — Auto-deploy a VPS + File editor + Lluvia Studio (HECHO)
 **🎯 PEDIDO DEL USUARIO**: Dejar listo el 100% para que Claude (en su Contabo) pueda construir el resto sin más créditos de Emergent. El usuario será operado de la mano.
