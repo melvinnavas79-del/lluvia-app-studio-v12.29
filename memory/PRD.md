@@ -5,7 +5,58 @@
 - Producción: https://lluvia-app-studio.lluvia-live.com (Emergent Native Deploy)
 - Telegram: https://t.me/LluviaAppStudioBot
 
-## Estado actual: v12.26 — Audio Room multi-provider deploy + Gmail OAuth fix (Feb 2026)
+## Estado actual: v12.27 — Multi-Repo Push + Template TikTok/Bigo Live (Feb 2026)
+
+### Iteración 12.27 — Bug "todas las apps al mismo repo" RESUELTO + nuevo template TikTok (HECHO)
+**🔥 BUGS P0 REPORTADOS POR EL CLIENTE EN PRODUCCIÓN**:
+1. "Todas las apps generadas van al mismo repositorio, se sobrescriben entre sí, debería haber opción para crear repo nuevo".
+2. "Necesito apps completas tipo Bigo Live y TikTok".
+
+**🛠 Fix 1: Multi-Repo Push (cada app a SU propio repo)**:
+- Nuevo endpoint `POST /api/me/github/push-app` con payload `{app_slug, repo_name, create_new, target_owner_repo?, set_as_default?, private?}`.
+- Flujo: valida token GitHub → sanitiza repo_name → si `create_new=true`, crea el repo en GitHub (idempotente: si ya existe lo usa) → ejecuta push solo del subfolder `user_apps/{user_id}/{app_slug}/` al repo dedicado.
+- `do_push()` ahora acepta `repo_override`, `branch_override`, `auto_create_repo` — sin tocar el default global del usuario.
+- Endpoint legacy `POST /api/me/github/push` sigue funcionando para compat (acepta los nuevos params como opcionales).
+- Tool `push_to_my_github` del chat también acepta `repo` y `auto_create_repo`.
+
+**🛠 Fix 2: AppBuiltCard rediseñada con flow "Push & Deploy"**:
+- Después de generar una app (rich card), aparece sección destacada con botón **"⬆ Push & Deploy"**.
+- El frontend sugiere automáticamente un repo_name único (`{app-slug}-{random4chars}`) — el usuario lo puede editar.
+- Al confirmar, llama a `/api/me/github/push-app` con `create_new=true` → crea repo dedicado.
+- Después del push exitoso: muestra link "Ver en GitHub" + botón **"⚡ Deploy a Render (1-click)"** con URL `https://render.com/deploy?repo={repo_url}`.
+- Resultado: cada app generada va a un repo SEPARADO, listo para deploy en Render en 1 click.
+
+**🆕 Template TikTok / Bigo Live Clone (Feed Vertical en Vivo)**:
+- Nuevo template `/app/backend/app_templates/tiktok_clone/` con 13 archivos (4 frontend + 2 backend + 7 deploy).
+- **Stack**: FastAPI + python-socketio (ASGI) + SQLite + Vanilla JS + Socket.IO client. Cero build, todo se sirve desde el mismo puerto.
+- **4 pantallas**:
+  1. **Feed Vertical**: scroll snap full-screen, autoplay, double-tap heart, mute, like/comment/gift/share, bottom drawer.
+  2. **Descubrir**: top creadores + grid de videos trending.
+  3. **Subir Video**: form para publicar (URL mp4/HLS, caption, tags, thumbnail).
+  4. **Perfil**: stats, follow, recarga de créditos, grid de videos.
+- **Features comerciales**: registros anónimos (JWT 1-click), likes persistentes, comentarios en tiempo real (Socket.IO), follows, regalos virtuales (Rosa 5cr, Corazón 10cr, Cohete 50cr, Diamante 200cr, Corona 500cr) con cobro de credits + creator share 70%.
+- **Seed automático**: 3 creadores demo (Luna Star, DJ Neo, Chef Mia) + 6 videos con thumbnails Unsplash y videos de muestra Google CDN. Funciona "out of the box" sin configuración.
+- **Deploy files**: render.yaml, railway.toml, Dockerfile, docker-compose.yml, Procfile, install.sh, README.md exhaustivo con troubleshooting.
+
+**🛠 Fix 3: render.yaml de Audio Room simplificado**:
+- Removida la sobreescritura conflictiva de `PORT=10000`. Render asigna `$PORT` automáticamente; antes el doble seteo causaba healthcheck en puerto incorrecto en algunos casos.
+
+**🪄 App Builder Pro actualizado**:
+- System prompt menciona ambos templates (Audio Room + TikTok) con precios y stack.
+- Pregunta los 4 datos en UN turno: tipo (audio_room | tiktok), nombre, color, deploy_target.
+- Regla dura agregada: "Cada app generada debe ir a SU PROPIO REPO. Nunca sugieras pushear varias apps al mismo repo (se sobrescriben)."
+
+**Pricing**:
+- `generate_tiktok_app` = 50 oros (default, editable desde panel admin).
+- TEMPLATE_METADATA actualizada con TikTok como template ACTIVO (ya no coming_soon).
+
+**Testing (iteration_24.json)**: **19/19 PASS** en tests nuevos + 38/39 en regresión (1 fallo esperado por test stale de iter_20 que asumía 4 coming_soon — hoy son 3 porque TikTok pasó a activo).
+
+**Archivos generados por una app TikTok**: 13 (vs 16 del audio_room, no usa Socket.IO server file separado).
+
+---
+
+## Estado anterior: v12.26 — Audio Room multi-provider deploy + Gmail OAuth fix (Feb 2026)
 
 ### Iteración 12.26 — Apps que SI deployan en Render/VPS/Docker + magic-link domain-aware (HECHO)
 **🔥 BUG CRÍTICO REPORTADO POR EL CLIENTE**: app generada por App Builder Pro fallaba en Render con `[Errno 2] No such file or directory: 'requirements.txt'` porque el archivo vivía en `/backend/` y Render lo buscaba en la raíz.
@@ -456,7 +507,7 @@ Telegram unificado, App Builder multi-página, Call Center, Promos, Proposals, B
 ## Backlog futuro
 
 **P0 (próximo)**:
-- Templates adicionales para App Builder Pro: Radio Online (streaming continuo + DJ-AI), Feed Vertical estilo TikTok (videos + likes + follows), Landing Peluquería (1 pager + servicios + booking inline), Ecommerce simple (catálogo + carrito + Stripe).
+- Templates adicionales para App Builder Pro: ✅ **Audio Room (HECHO v12.19)**, ✅ **TikTok/Bigo Live Clone (HECHO v12.27)**, Radio Online (streaming continuo + DJ-AI), Landing Peluquería (1 pager + servicios + booking inline), Ecommerce simple (catálogo + carrito + Stripe).
 
 **P1**:
 - Gmail OAuth2 — agente "Soporte Lluvia" auto-responder. Requiere Google Cloud (client_id + secret + redirect_uri).
