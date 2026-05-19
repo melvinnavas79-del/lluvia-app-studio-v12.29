@@ -1236,6 +1236,47 @@ function AppBuiltCard({ card }) {
   const ok = card.ok === true;
   const stateColor = ok ? "#059669" : "#DC2626";
   const accent = card.brand_color || "#5B8DEF";
+
+  const [pushState, setPushState] = useState("idle"); // idle | pushing | done | err
+  const [pushResult, setPushResult] = useState(null);
+  const [pushError, setPushError] = useState("");
+  const [repoName, setRepoName] = useState(card.repo_suggestion || card.app_slug || "");
+  const [showRepoForm, setShowRepoForm] = useState(false);
+
+  const doPushAndDeploy = async () => {
+    if (!repoName || repoName.length < 2) {
+      setPushError("Elegí un nombre de repo (mínimo 2 caracteres).");
+      return;
+    }
+    setPushState("pushing");
+    setPushError("");
+    try {
+      const { data } = await api.post("/me/github/push-app", {
+        app_slug: card.app_slug,
+        repo_name: repoName,
+        create_new: true,
+        commit_message: `deploy: ${card.app_name || card.app_slug}`,
+        set_as_default: false,
+      });
+      if (data.ok) {
+        setPushResult(data);
+        setPushState("done");
+      } else {
+        setPushError(data.error || data.message || "Push falló sin detalle");
+        setPushState("err");
+      }
+    } catch (e) {
+      const detail = e?.response?.data?.detail || e?.message || "Error desconocido";
+      if (detail.toLowerCase().includes("token") || detail.toLowerCase().includes("configura")) {
+        if (window.confirm("Falta tu token de GitHub. ¿Ir a configurarlo?")) {
+          window.dispatchEvent(new CustomEvent("lluvia:goto-settings"));
+        }
+      }
+      setPushError(detail);
+      setPushState("err");
+    }
+  };
+
   return (
     <div className="rich-card app-built-card" data-testid="app-built-card"
          style={{ borderColor: stateColor, overflow: "hidden" }}>
@@ -1284,6 +1325,103 @@ function AppBuiltCard({ card }) {
                 💡 {card.next_step}
               </div>
             )}
+
+            {/* Push & Deploy section: SIEMPRE crea un repo nuevo para evitar
+                que las apps generadas se sobrescriban entre sí */}
+            <div style={{
+              marginTop: "0.9rem", padding: "0.85rem",
+              background: `${accent}0D`, border: `1.5px dashed ${accent}66`,
+              borderRadius: 12,
+            }}>
+              {pushState === "done" && pushResult ? (
+                <div data-testid="app-built-pushed">
+                  <div style={{ fontWeight: 700, color: "#059669", marginBottom: "0.4rem" }}>
+                    ✅ Subido a tu propio repo
+                  </div>
+                  <div style={{ fontSize: "0.85rem", marginBottom: "0.6rem" }}>
+                    <code style={{ background: "rgba(0,0,0,0.05)", padding: "2px 6px", borderRadius: 4 }}>
+                      {pushResult.repo}
+                    </code>
+                  </div>
+                  <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                    <a href={pushResult.repo_url} target="_blank" rel="noreferrer"
+                       style={{
+                         background: "#0d1117", color: "#fff", padding: "0.55rem 0.9rem",
+                         borderRadius: 8, fontWeight: 700, fontSize: "0.85rem", textDecoration: "none",
+                         display: "inline-flex", alignItems: "center", gap: "0.4rem",
+                       }}
+                       data-testid="app-built-repo-link">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .297a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.02c-3.34.72-4.04-1.61-4.04-1.61-.55-1.4-1.35-1.78-1.35-1.78-1.1-.75.08-.74.08-.74 1.22.09 1.86 1.25 1.86 1.25 1.09 1.86 2.85 1.32 3.54 1.01.11-.79.42-1.32.77-1.62-2.66-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.31-.54-1.53.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.65.25 2.87.12 3.18.78.84 1.24 1.91 1.24 3.22 0 4.61-2.81 5.62-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.83.58A12 12 0 0 0 12 .297z"/></svg>
+                      Ver en GitHub
+                    </a>
+                    <a href={pushResult.render_deploy_url || `https://render.com/deploy?repo=${encodeURIComponent(pushResult.repo_url)}`}
+                       target="_blank" rel="noreferrer"
+                       style={{
+                         background: "#46E3B7", color: "#000", padding: "0.55rem 0.9rem",
+                         borderRadius: 8, fontWeight: 700, fontSize: "0.85rem", textDecoration: "none",
+                       }}
+                       data-testid="app-built-deploy-render">
+                      ⚡ Deploy a Render (1-click)
+                    </a>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontWeight: 700, fontSize: "0.92rem", marginBottom: "0.3rem", color: "var(--text-primary)" }}>
+                    🚀 Publicar esta app en su propio repo
+                  </div>
+                  <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: "0.55rem", lineHeight: 1.45 }}>
+                    Cada app va a un repositorio dedicado: así no se mezclan ni se sobrescriben tus apps anteriores.
+                  </div>
+                  {showRepoForm && (
+                    <input
+                      type="text" value={repoName}
+                      onChange={(e) => setRepoName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))}
+                      placeholder="nombre-del-repo"
+                      data-testid="app-built-repo-name"
+                      style={{
+                        width: "100%", padding: "0.55rem 0.75rem", borderRadius: 8,
+                        border: "1px solid rgba(0,0,0,0.15)", marginBottom: "0.55rem",
+                        fontSize: "0.9rem", fontFamily: "monospace",
+                      }}
+                    />
+                  )}
+                  <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap" }}>
+                    {!showRepoForm ? (
+                      <button onClick={() => setShowRepoForm(true)}
+                              data-testid="app-built-push-cta"
+                              style={{
+                                background: accent, color: "#fff", padding: "0.6rem 1rem",
+                                borderRadius: 8, fontWeight: 700, fontSize: "0.88rem",
+                                border: "none", cursor: "pointer",
+                              }}>
+                        ⬆ Push & Deploy
+                      </button>
+                    ) : (
+                      <button onClick={doPushAndDeploy} disabled={pushState === "pushing"}
+                              data-testid="app-built-push-confirm"
+                              style={{
+                                background: accent, color: "#fff", padding: "0.55rem 1rem",
+                                borderRadius: 8, fontWeight: 700, fontSize: "0.88rem",
+                                border: "none", cursor: pushState === "pushing" ? "not-allowed" : "pointer",
+                                opacity: pushState === "pushing" ? 0.6 : 1,
+                              }}>
+                        {pushState === "pushing" ? "⏳ Creando repo y pusheando..." : `✓ Crear repo "${repoName}" y push`}
+                      </button>
+                    )}
+                  </div>
+                  {pushError && (
+                    <div style={{
+                      marginTop: "0.55rem", padding: "0.55rem 0.7rem",
+                      background: "#FEE2E2", color: "#991B1B",
+                      borderRadius: 8, fontSize: "0.8rem", lineHeight: 1.4,
+                    }} data-testid="app-built-push-err">
+                      ⚠ {pushError}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </>
         ) : (
           <>

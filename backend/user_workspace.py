@@ -248,10 +248,16 @@ async def list_my_apps(user: dict = Depends(get_current_user)):
 class PushIn(BaseModel):
     commit_message: Optional[str] = None
     app_name: Optional[str] = None  # si es None empuja toda la carpeta user_apps/{user_id}
+    repo: Optional[str] = None      # override: pushear a otro repo distinto al default
+    branch: Optional[str] = None    # override: usar otra rama
+    auto_create_repo: bool = False  # crear el repo si no existe (con scope repo)
 
 
 async def do_push(user: dict, app_name: Optional[str] = None,
-                  commit_message: Optional[str] = None) -> dict:
+                  commit_message: Optional[str] = None,
+                  repo_override: Optional[str] = None,
+                  branch_override: Optional[str] = None,
+                  auto_create_repo: bool = False) -> dict:
     """Funcion reusable: ejecuta el git push para el user. Usada tanto por
     el endpoint /me/github/push como por la tool push_to_my_github del chat.
     Devuelve dict con ok/repo/branch/url/steps. Si el user no tiene token
@@ -288,17 +294,32 @@ async def do_push(user: dict, app_name: Optional[str] = None,
         except Exception as e:
             logger.warning(f"Push-lock check skipped por error: {e}")
     settings = await db.user_settings.find_one({"user_id": user["id"]}, {"_id": 0})
-    if not settings or not settings.get("github_token") or not settings.get("github_repo"):
+    if not settings or not settings.get("github_token"):
         return {
             "ok": False,
             "needs_setup": True,
-            "message": "Necesitas configurar tu GITHUB_TOKEN y repositorio en Mi cuenta -> Settings antes de hacer push.",
+            "message": "Necesitas configurar tu GITHUB_TOKEN en Mi cuenta -> Settings antes de hacer push.",
             "settings_url": "/dashboard/settings",
         }
 
     token = settings["github_token"]
-    repo = settings["github_repo"]
-    branch = settings.get("github_branch") or "main"
+    # Override de repo/branch (push de UNA app a un repo dedicado, sin tocar
+    # el default global del usuario). Asi cada app generada puede ir a su
+    # propio repo sin sobrescribir las anteriores.
+    if repo_override:
+        repo = _safe_repo(repo_override)
+        if not repo:
+            return {"ok": False, "error": "repo_override invalido (formato esperado owner/repo)"}
+    else:
+        repo = settings.get("github_repo")
+    if not repo:
+        return {
+            "ok": False,
+            "needs_setup": True,
+            "message": "Necesitas configurar tu repositorio destino en Mi cuenta -> Settings, o pasarlo en la llamada.",
+            "settings_url": "/dashboard/settings",
+        }
+    branch = (branch_override or settings.get("github_branch") or "main").strip() or "main"
 
     # PRE-VALIDACION: probar el token con la API de GitHub antes de gastar
     # ciclos de git. Si el token esta mal, devolvemos error claro al cliente
@@ -326,7 +347,9 @@ async def do_push(user: dict, app_name: Optional[str] = None,
         }
     # Si el repo no existe, lo creamos automaticamente (UX: el cliente no
     # tiene que ir a github.com manualmente). Requiere scope 'repo'.
-    if validation.get("repo_access") == "not_found":
+    # Tambien podemos forzar la creacion via auto_create_repo=True aunque el
+    # validation diga not_found (caso: pushear app1 a repo-app1 nuevo).
+    if validation.get("repo_access") == "not_found" or (auto_create_repo and validation.get("repo_access") in (None, "not_found")):
         try:
             owner_repo = repo.split("/", 1)
             if len(owner_repo) == 2 and validation.get("has_repo_scope"):
@@ -632,9 +655,144 @@ async def validate_my_github(user: dict = Depends(get_current_user)):
 
 @router.post("/github/push")
 async def my_github_push(data: PushIn, user: dict = Depends(get_current_user)):
-    result = await do_push(user, app_name=data.app_name, commit_message=data.commit_message)
+    result = await do_push(
+        user,
+        app_name=data.app_name,
+        commit_message=data.commit_message,
+        repo_override=data.repo,
+        branch_override=data.branch,
+        auto_create_repo=bool(data.auto_create_repo),
+    )
     if result.get("needs_setup"):
         raise HTTPException(status_code=400, detail=result["message"])
+    return result
+
+
+class PushAppIn(BaseModel):
+    """Payload del Push-One-App: empuja UNA app del workspace a UN repo
+    dedicado (existente o nuevo). El backend decide si crea el repo o no
+    segun el flag create_new. Esto evita que apps generadas se sobreescriban
+    entre si en el mismo repo del usuario."""
+    app_slug: str = Field(..., min_length=1, max_length=80)
+    repo_name: Optional[str] = None       # solo el slug (sin owner/). Si vacio = pedir
+    create_new: bool = True                # si True y repo_name no existe, lo crea
+    target_owner_repo: Optional[str] = None  # alternativo: owner/repo existente del user (NO crear)
+    commit_message: Optional[str] = None
+    private: bool = False
+    set_as_default: bool = False           # actualizar github_repo en user_settings tambien
+
+
+@router.post("/github/push-app")
+async def my_github_push_app(data: PushAppIn, user: dict = Depends(get_current_user)):
+    """Empuja UNA app especifica del workspace a un repo DEDICADO. Si
+    create_new=True, se crea el repo bajo el usuario logueado en GitHub.
+    Si target_owner_repo viene seteado, lo usa directamente (sin crear)."""
+    db = _db_ref["db"]
+    settings = await db.user_settings.find_one({"user_id": user["id"]}, {"_id": 0})
+    if not settings or not settings.get("github_token"):
+        raise HTTPException(
+            status_code=400,
+            detail="No tenés token de GitHub configurado. Andá a Mi Cuenta → Settings.",
+        )
+    token = settings["github_token"]
+
+    # Sanity check de la carpeta de la app
+    apps_root = _user_apps_dir(user["id"])
+    app_dir = os.path.join(apps_root, data.app_slug)
+    if not os.path.isdir(app_dir):
+        raise HTTPException(
+            status_code=404,
+            detail=f"La app '{data.app_slug}' no existe en tu workspace. Generá una primero.",
+        )
+
+    # Determinar el repo destino
+    final_repo: Optional[str] = None
+    created_new = False
+    if data.target_owner_repo:
+        repo = _safe_repo(data.target_owner_repo)
+        if not repo:
+            raise HTTPException(status_code=400, detail="target_owner_repo invalido (owner/repo)")
+        final_repo = repo
+    else:
+        # Necesitamos el login del usuario para armar owner/repo
+        val = await _validate_github_token(token)
+        if not val.get("ok"):
+            raise HTTPException(status_code=401, detail=val.get("error") or "Token invalido")
+        login = val.get("login")
+        if not login:
+            raise HTTPException(status_code=500, detail="No pude obtener tu username de GitHub.")
+        # Sanitizar el nombre propuesto
+        raw_name = (data.repo_name or data.app_slug or "").strip()
+        name = re.sub(r"[^a-zA-Z0-9_.-]", "-", raw_name).strip("-")
+        name = re.sub(r"-+", "-", name)[:80]
+        if not name or len(name) < 2:
+            raise HTTPException(status_code=400, detail="Nombre de repo invalido.")
+        final_repo = f"{login}/{name}"
+
+        # Si create_new, crear el repo (o aceptarlo si ya existe).
+        if data.create_new:
+            if not val.get("has_repo_scope"):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Tu token no tiene scope 'repo'. Regeneralo en https://github.com/settings/tokens/new",
+                )
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+            async with httpx.AsyncClient(timeout=15.0, headers=headers) as cli:
+                r_check = await cli.get(f"https://api.github.com/repos/{final_repo}")
+                if r_check.status_code == 200:
+                    pass  # ya existe - usamos y pusheamos
+                elif r_check.status_code == 404:
+                    create_resp = await cli.post(
+                        "https://api.github.com/user/repos",
+                        json={
+                            "name": name,
+                            "description": f"App '{data.app_slug}' generada por Lluvia App Studio para {user.get('email','user')}.",
+                            "private": bool(data.private),
+                            "auto_init": False,
+                            "has_issues": True,
+                            "has_wiki": False,
+                            "has_projects": False,
+                        },
+                    )
+                    if create_resp.status_code not in (200, 201):
+                        try:
+                            err = create_resp.json().get("message") or create_resp.text[:160]
+                        except Exception:
+                            err = create_resp.text[:160]
+                        raise HTTPException(status_code=400, detail=f"No pude crear el repo '{final_repo}': {err}")
+                    created_new = True
+
+    # Ejecutar push apuntando a final_repo. Pasamos auto_create_repo=True por las dudas.
+    result = await do_push(
+        user,
+        app_name=data.app_slug,
+        commit_message=data.commit_message or f"deploy: {data.app_slug} {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}",
+        repo_override=final_repo,
+        branch_override="main",
+        auto_create_repo=True,
+    )
+    result["created_new_repo"] = created_new
+    result["repo"] = final_repo
+    result["repo_url"] = f"https://github.com/{final_repo}"
+
+    # Si el cliente quiere, guardamos este repo como el "default" para futuros push genericos.
+    if data.set_as_default and result.get("ok"):
+        await db.user_settings.update_one(
+            {"user_id": user["id"]},
+            {"$set": {"github_repo": final_repo, "github_branch": "main",
+                      "updated_at": datetime.now(timezone.utc).isoformat()}},
+            upsert=True,
+        )
+        result["default_updated"] = True
+
+    # Generar URL de "1-click deploy to Render" como bonus
+    if result.get("ok"):
+        result["render_deploy_url"] = f"https://render.com/deploy?repo=https://github.com/{final_repo}"
+
     return result
 
 

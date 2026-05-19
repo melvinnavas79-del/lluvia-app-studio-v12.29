@@ -7,6 +7,7 @@ CHAT MULTI-AGENTE CON TOOLS Y CREDITOS (v9)
 import json
 import os
 import uuid
+import re
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -195,6 +196,8 @@ OPENAI_TOOLS = [
         "parameters": {"type": "object", "properties": {
             "commit_message": {"type": "string", "description": "Mensaje del commit (opcional)"},
             "app_name": {"type": "string", "description": "Nombre de la subcarpeta a pushear. Si se omite, empuja todo el workspace del usuario."},
+            "repo": {"type": "string", "description": "(Opcional) owner/repo destino. Si se omite, usa el repo configurado en Settings."},
+            "auto_create_repo": {"type": "boolean", "description": "(Opcional) Si true y el repo no existe, lo crea automaticamente."},
         }},
     }},
     {"type": "function", "function": {
@@ -275,6 +278,28 @@ OPENAI_TOOLS = [
                 "type": "string",
                 "enum": ["render", "railway", "heroku", "fly", "vps", "docker", "local"],
                 "description": "Donde el cliente va a deployar la app. Determina que README y archivos quedan destacados (render.yaml, railway.toml, Dockerfile, install.sh, etc).",
+            },
+        }, "required": ["app_name"]},
+    }},
+    {"type": "function", "function": {
+        "name": "generate_tiktok_app",
+        "description": (
+            "MATERIALIZA en el workspace del usuario una app de VIDEO VERTICAL en vivo "
+            "estilo TikTok / Bigo Live / Kuaishou, lista para deployar. Copia un template "
+            "pre-construido (FastAPI + SQLite + Vanilla JS + HLS) con 4 pantallas: Feed "
+            "vertical con scroll-snap, Descubrir/Trending, Subir video, Perfil. Incluye "
+            "likes, comentarios en vivo, follows, regalos virtuales y monetizacion. "
+            "Despues el cliente puede usar push_to_my_github para subirlo a su repo. "
+            "Usar SOLO despues de que el cliente confirmo nombre + color de marca."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "app_name": {"type": "string", "description": "Nombre visible de la app (ej: VibeShort, LiveStar)."},
+            "brand_color": {"type": "string", "description": "Color hex (ej: #FF0050). Default: rosa TikTok."},
+            "app_slug": {"type": "string", "description": "(Opcional) slug-de-carpeta."},
+            "deploy_target": {
+                "type": "string",
+                "enum": ["render", "railway", "heroku", "fly", "vps", "docker", "local"],
+                "description": "Donde el cliente va a deployar.",
             },
         }, "required": ["app_name"]},
     }},
@@ -517,6 +542,15 @@ def _tool_service_card(args: dict) -> dict:
 
 
 
+def _suggest_repo_name(app_slug: str) -> str:
+    """Genera un nombre de repo unico sugerido para que cada app generada
+    vaya a su propio repositorio en GitHub. Asi el usuario no sobrescribe
+    apps anteriores. Ejemplo: 'mi-audio-room' -> 'mi-audio-room-x9k4'."""
+    import secrets
+    base = re.sub(r"[^a-z0-9-]+", "-", (app_slug or "app").lower()).strip("-")[:40] or "lluvia-app"
+    return f"{base}-{secrets.token_hex(2)}"
+
+
 def _build_next_step_text(target: str, slug: str) -> str:
     """Devuelve el next step adaptado al provider que eligió el cliente."""
     target = (target or "render").lower()
@@ -633,6 +667,8 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
                     udoc,
                     app_name=args.get("app_name"),
                     commit_message=args.get("commit_message"),
+                    repo_override=args.get("repo"),
+                    auto_create_repo=bool(args.get("auto_create_repo")),
                 )
                 # Refund automatico si el push fallo (token mal, repo no existe, etc).
                 # NO refundamos si:
@@ -758,6 +794,49 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
                 "screens": ["Inicio", "Tendencias", "Sala Activa", "Perfil"],
                 "stack": "FastAPI + Socket.IO + SQLite + Vanilla JS",
                 "next_step": _build_next_step_text(deploy_target, result.get("app_slug", app_slug)),
+                "repo_suggestion": _suggest_repo_name(result.get("app_slug", app_slug)),
+                "error": result.get("error"),
+                "refunded_oros": result.get("refunded_oros", 0),
+            }
+        elif name == "generate_tiktok_app":
+            import app_builder
+            import user_workspace as uw
+            import pricing as pricing_mod
+            cost = await pricing_mod.get_tool_price("generate_tiktok_app")
+            app_name_in = (args.get("app_name") or "Mi TikTok").strip()
+            brand_color = (args.get("brand_color") or "#FF0050").strip()
+            deploy_target = (args.get("deploy_target") or "render").strip().lower()
+            if deploy_target not in {"render", "railway", "heroku", "fly", "vps", "docker", "local"}:
+                deploy_target = "render"
+            app_slug = app_builder._slugify(args.get("app_slug") or app_name_in)
+            target_dir = os.path.join(uw._user_apps_dir(user_id), app_slug)
+            result = app_builder.materialize_template(
+                template_id="tiktok_clone",
+                target_dir=target_dir,
+                app_name=app_name_in,
+                brand_color=brand_color,
+            )
+            if not result.get("ok") and not is_admin:
+                await credits_mod.refund(
+                    user_id, cost, "app_builder_failed",
+                    {"error": str(result.get("error"))[:200], "template": "tiktok_clone"},
+                )
+                result["refunded_oros"] = cost
+            data = {
+                "card_type": "app_built",
+                "ok": result.get("ok", False),
+                "template_id": "tiktok_clone",
+                "template_name": result.get("template_name", "TikTok / Bigo Live Clone"),
+                "app_name": result.get("app_name", app_name_in),
+                "app_slug": result.get("app_slug", app_slug),
+                "brand_color": result.get("brand_color", brand_color),
+                "deploy_target": deploy_target,
+                "files_written": result.get("files_written", 0),
+                "bytes_written": result.get("bytes_written", 0),
+                "screens": ["Feed Vertical", "Descubrir", "Subir Video", "Perfil"],
+                "stack": "FastAPI + SQLite + Vanilla JS + HLS Player",
+                "next_step": _build_next_step_text(deploy_target, result.get("app_slug", app_slug)),
+                "repo_suggestion": _suggest_repo_name(result.get("app_slug", app_slug)),
                 "error": result.get("error"),
                 "refunded_oros": result.get("refunded_oros", 0),
             }

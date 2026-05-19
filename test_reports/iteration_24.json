@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 24 - v12.27 valida backend de bugs P0 reportados por usuario: (1) NUEVO endpoint POST /api/me/github/push-app que crea repo dedicado por app (resuelve bug 'todas las apps se sobreescriben en mismo repo'); (2) Template TikTok / Bigo Live COMPLETO materializable; (3) App Builder Pro reconoce TikTok como template activo. 19/19 tests NUEVOS PASS. Regresion iter_20+22+23: 38/39 PASS, con 1 unico fallo en iter_20 que es ESPERADO (test stale que asumia 4 coming_soon templates; ahora son 3 porque tiktok fue movido de coming_soon a ACTIVO - comportamiento correcto del v12.27, no es bug). Validaciones realizadas: (a) push-app sin auth -> 401/403, payload vacio -> 422, app inexistente con admin sin github_token -> 400 con detail claro 'No tenes token de GitHub configurado', target_owner_repo invalido -> 400 (nunca 500); (b) push original sigue funcionando con payload legacy {commit_message} y acepta payload extendido {repo, branch, auto_create_repo} sin reventar; (c) GET /api/admin/pricing incluye generate_tiktok_app=50 en tool_prices y entry en templates[] con coming_soon=false y name='TikTok / Bigo Live Clone (Feed Vertical)'; (d) GET /api/console/agents devuelve app_builder_pro con las 3 tools (generate_audio_room_app, generate_tiktok_app, push_to_my_github); (e) system prompt de app_builder_pro menciona generate_tiktok_app + TikTok/Bigo + pregunta los 4 datos (tipo, nombre, color, deploy_target); (f) app_builder.list_templates() incluye 'tiktok_clone'; (g) materialize_template('tiktok_clone',...) crea los 13 archivos del brief (backend/server.py + backend/requirements.txt + frontend/index.html + frontend/css/styles.css + frontend/js/{app.js,api.js} + README.md + render.yaml + railway.toml + Dockerfile + docker-compose.yml + Procfile + install.sh); (h) ZERO placeholders {{APP_NAME}}/{{APP_NAME_SLUG}}/{{BRAND_COLOR}} sin resolver verificado recursivamente; (i) Backend TikTok arranca en <25s con SQLite vacio y seedea automaticamente 3 creators + 6 videos demo; endpoints /api/health, /api/videos/feed (>=6 videos), /api/videos/trending, /api/users/top (>=3 creators), /api/users/anonymous (devuelve token), /api/gifts responden 200 con shape correcto.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "tests/test_iteration_20_pricing_pushlock.py::test_admin_get_pricing",
+        "issue": "Test stale: asume que hay 4 templates con coming_soon=true, pero v12.27 movio TikTok de coming_soon a ACTIVO (lo cual es correcto y el cambio pedido). El conteo correcto ahora es 3 (Radio, Peluqueria, Ecommerce). No es bug del codigo - el main agent puede actualizar la assertion a >= 3 o filtrar mejor en el siguiente refresh de tests."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_24_tiktok_pushapp.py",
+    "/app/test_reports/pytest/iteration_24_results.xml",
+    "/app/test_reports/pytest/iteration_24_regression.xml"
+  ],
+  "action_items": [
+    "[NICE-TO-HAVE] Actualizar tests/test_iteration_20_pricing_pushlock.py::test_admin_get_pricing para reflejar nuevo conteo (3 coming_soon en lugar de 4) o reescribir con assertion mas resiliente tipo 'al menos 1 coming_soon y tiktok activo'.",
+    "[INFO-CMD] Ejecutar iter_24: cd /app/backend && PYTHONPATH=/app/backend pytest tests/test_iteration_24_tiktok_pushapp.py -v. Para incluir regresion: agregar tests/test_iteration_22_github_rest_push.py tests/test_iteration_23_audio_room_deploy.py al comando.",
+    "[INFO-DEPENDENCIES] Los tests de TestTiktokBackendBoots usan el python del runtime actual (root /.venv) y asumen que fastapi+socketio+pyjwt ya estan instalados (estan, por ser deps del backend principal). Si en CI no estuvieran, el fixture intenta pip install desde requirements.txt del template - puede tomar ~120s extra."
+  ],
+  "critical_code_review_comments": [
+    "user_workspace.py:685-796 (push-app NUEVO) - flujo correcto: valida token github -> valida app_slug existe en workspace -> sanitiza repo_name -> crea repo en GitHub si create_new=true con check previo de existencia (idempotente) -> delega en do_push() con repo_override+auto_create_repo=true. Devuelve repo_url + render_deploy_url. Buen manejo de errores con detail strings claros (400/401/403/404/500 separados).",
+    "user_workspace.py:711-715 - branch target_owner_repo (sin crear) tiene validacion via _safe_repo() pero NO valida que el repo realmente pertenezca al login del usuario - un user malicioso podria intentar pushear a octocat/Hello-World y fallaria por permisos. No es bug critico (GitHub rechaza), pero podria devolverse un 403 claro upfront. NICE-TO-HAVE.",
+    "user_workspace.py:744-767 - el manejo de status 200/404/otro en GET /repos/{owner}/{repo} esta correcto. Si el repo ya existe (200) usa el mismo y pushea - esto es deseable para idempotencia. Si 404 lo crea. Si otro (ej 403) NO tiene branch - cae al final del bloque async with sin asignar created_new y deja el flujo seguir con final_repo... el push fallaria pero el error vendria del do_push, no del check. Mejorable: agregar elif r_check.status_code not in (200, 404): raise HTTPException con el status_code de GitHub.",
+    "app_builder.py:36-41 - tiktok_clone agregado con mismos text_exts que audio_room. Reutilizar text_exts en un set compartido a nivel de modulo evitaria drift. NICE-TO-HAVE.",
+    "pricing.py:22-27 - DEFAULT_TOOL_PRICES tiene los dos templates activos. La logica de get_all_pricing() filtra `if k in DEFAULT_TOOL_PRICES` lo cual cierra la puerta a precios de templates fantasma en DB - bueno.",
+    "agents_catalog.py:246-289 - system prompt extenso pero claro, incluye los 2 templates activos con precio, pregunta los 4 datos (tipo, nombre, color, deploy_target) en UN solo turno como recomienda iter_23. La frase 'Cada app generada debe ir a SU PROPIO REPO. Nunca sugieras pushear varias apps al mismo repo' es directiva para evitar el bug original.",
+    "app_templates/tiktok_clone/backend/server.py:140-145 - _seed_demo() se llama al startup si la DB esta vacia, seedea 3 creators + 6 videos + gifts catalog. Endpoint /api/users/top devuelve clave 'creators' (no 'users') - el frontend del template debe estar alineado.",
+    "console.py:801-828 - tool generate_tiktok_app: cobra credits, llama materialize_template, retorna AppBuiltCard con repo_suggestion+render_deploy_url. Faltaria refund automatico en fallo - pero leyendo el patron del audio_room (iter_23 :741-746), si el patron es 'refund si no is_admin', deberia tenerlo aqui tambien. CHECK: el grep mostro 'cost = ' en linea 805, sin verificar reembolso en fallo en mi vista parcial. RECOMENDACION para main agent: verificar que generate_tiktok_app refunda si materialize_template devuelve ok=False y user no es admin (paridad con audio_room)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_24_tiktok_pushapp.py (NEW - 19 tests, all PASS)"
+  ],
+  "success_rate": {
+    "backend": "100% en iter_24 (19/19). Regresion 38/39 con 1 fallo esperado por test stale en iter_20.",
+    "frontend": "N/A - testing_type=backend only"
+  },
+  "test_credentials": "Admin melvinnavas79@gmail.com / Admin#2026 OK (login + JWT obtenidos exitosamente).",
+  "seed_data_creation": "Tests usan tmp_path/tmp_path_factory de pytest - workspaces materializados se borran al final de cada test. Backend TikTok corre en localhost con SQLite en archivo temporal. CERO datos residuales en Mongo de produccion ni en /app/user_apps/. NO se crearon repos en GitHub (no hay token disponible y se valido que el endpoint falla con detail claro).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Ejecutar iter_24 solo: cd /app/backend && PYTHONPATH=/app/backend pytest tests/test_iteration_24_tiktok_pushapp.py -v. Con regresion: agregar tests/test_iteration_22_github_rest_push.py tests/test_iteration_23_audio_room_deploy.py al comando. NO ejecutar test_iteration_20_pricing_pushlock.py::test_admin_get_pricing tal como esta - falla por test stale (esperaba 4 coming_soon, hoy son 3 - cambio intencional v12.27). El backend del template TikTok requiere ~3s para boot, el fixture espera hasta 25s. Si fastapi/socketio no estan, intenta pip install desde requirements.txt - en este entorno ya estan presentes.",
+  "rca of the issue": "NO HAY BUGS CRITICOS NUEVOS. Los dos bugs P0 reportados por el cliente estan correctamente resueltos en backend: (1) bug 'todas las apps van al mismo repo' SOLUCIONADO por el endpoint NUEVO POST /api/me/github/push-app que crea repo dedicado por app via GitHub REST API (create + push idempotente); el endpoint original /github/push sigue funcionando para casos legacy. (2) bug 'template TikTok completo' SOLUCIONADO por el template tiktok_clone con 13 archivos (4 frontend + 2 backend + 7 deploy/docs) que materializa con cero placeholders pendientes y cuyo backend arranca limpio seedeando 3 creators + 6 videos demo. El bug de 'apps no despliegan en Render' se resuelve indirectamente por (1) repo dedicado + el botón render_deploy_url generado al final del push. UNICO punto de revision para main agent: verificar que generate_tiktok_app en console.py refunda creditos en fallo de materializeacion (paridad con audio_room), no pude confirmarlo en la vista parcial del archivo."
+}

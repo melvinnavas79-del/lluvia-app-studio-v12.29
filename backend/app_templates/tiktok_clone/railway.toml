@@ -1,0 +1,12 @@
+[build]
+builder = "NIXPACKS"
+buildCommand = "cd backend && pip install -r requirements.txt"
+
+[deploy]
+startCommand = "cd backend && uvicorn server:app --host 0.0.0.0 --port $PORT"
+restartPolicyType = "ON_FAILURE"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 30
+
+[[services]]
+name = "{{APP_NAME_SLUG}}"

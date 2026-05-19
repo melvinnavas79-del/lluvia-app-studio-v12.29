@@ -33,6 +33,12 @@ TEMPLATES = {
         # Extensiones donde reemplazamos placeholders. Binarios no se tocan.
         "text_exts": {".html", ".css", ".js", ".py", ".md", ".txt", ".env", ".example", ".json", ".yml", ".yaml", ".toml", ".gitignore", ".sh", ".conf", "Dockerfile", "Procfile"},
     },
+    "tiktok_clone": {
+        "name": "TikTok / Bigo Live Clone (Vertical Video Feed)",
+        "description": "App de feed vertical de videos en vivo con likes, comments, follows, regalos virtuales y monetizacion.",
+        "path": TEMPLATES_ROOT / "tiktok_clone",
+        "text_exts": {".html", ".css", ".js", ".py", ".md", ".txt", ".env", ".example", ".json", ".yml", ".yaml", ".toml", ".gitignore", ".sh", ".conf", "Dockerfile", "Procfile"},
+    },
 }
 
 

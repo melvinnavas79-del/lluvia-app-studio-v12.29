@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>{{APP_NAME}} · Video Vertical en Vivo</title>
+  <meta name="theme-color" content="{{BRAND_COLOR}}" />
+  <link rel="stylesheet" href="/css/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='28'>📱</text></svg>" />
+</head>
+<body>
+  <div id="app"></div>
+
+  <!-- Bottom Nav -->
+  <nav class="bottom-nav" id="bottom-nav">
+    <button data-route="#/feed" class="nav-btn active" aria-label="Feed">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 0h7v7h-7z"/></svg>
+      <span>Para Ti</span>
+    </button>
+    <button data-route="#/discover" class="nav-btn" aria-label="Descubrir">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <span>Discover</span>
+    </button>
+    <button data-route="#/upload" class="nav-btn upload-btn" aria-label="Subir">
+      <span class="upload-plus">+</span>
+    </button>
+    <button data-route="#/profile" class="nav-btn" aria-label="Perfil">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7"/></svg>
+      <span>Perfil</span>
+    </button>
+  </nav>
+
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

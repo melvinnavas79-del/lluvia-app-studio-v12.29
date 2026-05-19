@@ -21,9 +21,9 @@ logger = logging.getLogger("pricing")
 # Defaults conservadores - el admin puede subirlos/bajarlos desde el panel.
 DEFAULT_TOOL_PRICES: dict = {
     "generate_audio_room_app": 40,
+    "generate_tiktok_app": 50,
     # Agregar aqui cada nuevo template del App Builder Pro:
     # "generate_radio_online_app": 50,
-    # "generate_tiktok_feed_app": 60,
 }
 
 # Saldo minimo (en oros) para desbloquear el push a GitHub.
@@ -41,13 +41,17 @@ TEMPLATE_METADATA = [
         "stack": "FastAPI + Socket.IO + SQLite + Vanilla JS",
         "default_price": 40,
     },
+    {
+        "tool_id": "generate_tiktok_app",
+        "name": "TikTok / Bigo Live Clone (Feed Vertical)",
+        "screens": ["Feed Vertical", "Descubrir", "Subir Video", "Perfil"],
+        "stack": "FastAPI + SQLite + Socket.IO + Vanilla JS + HLS",
+        "default_price": 50,
+    },
     # Placeholders para futuros templates (los del backlog del PRD):
     {"tool_id": "generate_radio_online_app", "name": "Radio Online (en backlog)",
      "screens": ["Home", "Player", "Programación", "Locutor"],
      "stack": "FastAPI + HLS streaming", "default_price": 50, "coming_soon": True},
-    {"tool_id": "generate_tiktok_feed_app", "name": "Feed Vertical tipo TikTok (en backlog)",
-     "screens": ["Feed", "Explorar", "Subir video", "Perfil"],
-     "stack": "FastAPI + S3 + HLS", "default_price": 70, "coming_soon": True},
     {"tool_id": "generate_landing_peluqueria_app", "name": "Landing Peluquería + Booking (en backlog)",
      "screens": ["Landing", "Servicios", "Booking", "Mi turno"],
      "stack": "FastAPI + SQLite", "default_price": 35, "coming_soon": True},
