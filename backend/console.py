@@ -344,6 +344,97 @@ OPENAI_TOOLS = [
             "cta": {"type": "string", "description": "Llamado a la accion final (ej: 'Comenta APP y te paso el link')"},
         }, "required": ["title", "platform", "duration_sec", "hook", "scenes", "caption", "hashtags", "cta"]},
     }},
+    # ============================================================
+    # Lluvia Studio tools — operaciones sobre workspace + VPS del usuario
+    # ============================================================
+    {"type": "function", "function": {
+        "name": "list_workspace_files",
+        "description": "Lista el arbol de archivos de una app en el workspace del usuario. Usar antes de leer/editar.",
+        "parameters": {"type": "object", "properties": {
+            "app_slug": {"type": "string", "description": "Slug de la app (ej: 'mi-tiktok')."},
+        }, "required": ["app_slug"]},
+    }},
+    {"type": "function", "function": {
+        "name": "read_workspace_file",
+        "description": "Lee el contenido de un archivo del workspace. Usar antes de editarlo. Limite 2MB.",
+        "parameters": {"type": "object", "properties": {
+            "app_slug": {"type": "string"},
+            "path": {"type": "string", "description": "Path relativo desde la raiz de la app (ej: 'backend/server.py')."},
+        }, "required": ["app_slug", "path"]},
+    }},
+    {"type": "function", "function": {
+        "name": "write_workspace_file",
+        "description": (
+            "Escribe contenido completo a un archivo del workspace. Para edits chicos usar search_replace_workspace. "
+            "Guarda diff automaticamente para rollback. Crea el archivo si no existe."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "app_slug": {"type": "string"},
+            "path": {"type": "string"},
+            "content": {"type": "string", "description": "Contenido nuevo completo del archivo."},
+        }, "required": ["app_slug", "path", "content"]},
+    }},
+    {"type": "function", "function": {
+        "name": "search_replace_workspace",
+        "description": (
+            "Reemplaza una cadena exacta en un archivo del workspace. old_str debe coincidir EXACTAMENTE "
+            "(incluyendo whitespace) y debe ser unico en el archivo (incluir contexto alrededor)."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "app_slug": {"type": "string"},
+            "path": {"type": "string"},
+            "old_str": {"type": "string"},
+            "new_str": {"type": "string"},
+        }, "required": ["app_slug", "path", "old_str", "new_str"]},
+    }},
+    {"type": "function", "function": {
+        "name": "list_my_vps",
+        "description": "Lista los VPS conectados del usuario actual. Devuelve nombre, host, status.",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "run_vps_command",
+        "description": (
+            "Ejecuta un comando shell en uno de los VPS conectados del usuario. "
+            "Devuelve stdout/stderr/exit_code. Comandos destructivos (rm -rf /, mkfs, shutdown) bloqueados."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "vps_id": {"type": "string", "description": "ID del VPS (de list_my_vps)."},
+            "command": {"type": "string", "description": "Comando shell a ejecutar."},
+            "timeout_sec": {"type": "integer", "description": "Timeout en segundos (default 60).", "default": 60},
+        }, "required": ["vps_id", "command"]},
+    }},
+    {"type": "function", "function": {
+        "name": "deploy_app_to_vps",
+        "description": (
+            "Despliega una app del workspace a un VPS via SSH. Hace git clone, pip install, "
+            "crea systemd service, opcionalmente configura nginx + certbot si se da domain. "
+            "Devuelve URL final y deploy_id."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "vps_id": {"type": "string"},
+            "app_slug": {"type": "string", "description": "Slug de la app a deployar."},
+            "repo_url": {"type": "string", "description": "URL del repo GitHub (https://github.com/user/repo)."},
+            "domain": {"type": "string", "description": "(Opcional) Dominio para nginx + HTTPS (ej: tiktok.midominio.com)."},
+        }, "required": ["vps_id", "app_slug", "repo_url"]},
+    }},
+    {"type": "function", "function": {
+        "name": "tail_vps_logs",
+        "description": "Lee las ultimas N lineas del journal de un systemd service en el VPS. Util para debugging deploys.",
+        "parameters": {"type": "object", "properties": {
+            "vps_id": {"type": "string"},
+            "service": {"type": "string", "description": "Nombre del service (ej: 'lluvia-mi-tiktok')."},
+            "lines": {"type": "integer", "default": 100},
+        }, "required": ["vps_id", "service"]},
+    }},
+    {"type": "function", "function": {
+        "name": "restart_vps_service",
+        "description": "Reinicia un systemd service en el VPS (solo services con prefijo 'lluvia-').",
+        "parameters": {"type": "object", "properties": {
+            "vps_id": {"type": "string"},
+            "service": {"type": "string"},
+        }, "required": ["vps_id", "service"]},
+    }},
 ]
 
 
@@ -875,6 +966,148 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
                 "estimated_wait_sec": job["estimated_wait_sec"],
                 "prompt": args.get("prompt", "")[:300],
             }
+        # ============================================================
+        # Lluvia Studio tools (workspace + VPS)
+        # ============================================================
+        elif name == "list_workspace_files":
+            import workspace_files as wf
+            from pathlib import Path
+            slug = re.sub(r"[^a-zA-Z0-9_.-]", "", args.get("app_slug", ""))[:80]
+            base = wf._user_apps_dir(user_id) / slug
+            if not base.exists():
+                data = {"error": f"App '{slug}' no existe en el workspace"}
+            else:
+                data = {"tree": wf._build_tree(base), "app_slug": slug}
+        elif name == "read_workspace_file":
+            import workspace_files as wf
+            slug = re.sub(r"[^a-zA-Z0-9_.-]", "", args.get("app_slug", ""))[:80]
+            base = wf._user_apps_dir(user_id) / slug
+            try:
+                f = wf._safe_path(base, args.get("path", ""))
+                if not f.exists() or not f.is_file():
+                    data = {"error": "Archivo no encontrado"}
+                elif f.stat().st_size > 2_000_000:
+                    data = {"error": "Archivo >2MB"}
+                else:
+                    try:
+                        data = {"path": args.get("path"), "content": f.read_text(encoding="utf-8")}
+                    except UnicodeDecodeError:
+                        data = {"path": args.get("path"), "is_binary": True}
+            except Exception as e:
+                data = {"error": str(e)}
+        elif name == "write_workspace_file":
+            import workspace_files as wf
+            import difflib
+            slug = re.sub(r"[^a-zA-Z0-9_.-]", "", args.get("app_slug", ""))[:80]
+            base = wf._user_apps_dir(user_id) / slug
+            base.mkdir(parents=True, exist_ok=True)
+            try:
+                f = wf._safe_path(base, args.get("path", ""))
+                f.parent.mkdir(parents=True, exist_ok=True)
+                old = f.read_text(encoding="utf-8") if f.exists() else ""
+                new_content = args.get("content", "")
+                f.write_text(new_content, encoding="utf-8")
+                diff = "\n".join(difflib.unified_diff(
+                    old.splitlines(), new_content.splitlines(),
+                    fromfile=f"a/{args.get('path')}", tofile=f"b/{args.get('path')}", lineterm="",
+                ))
+                edit_id = str(uuid.uuid4())
+                await _db_ref["db"].file_edits.insert_one({
+                    "id": edit_id, "user_id": user_id, "app_slug": slug,
+                    "file_path": args.get("path"), "diff": diff[:50000],
+                    "previous_content": old[:500_000], "applied_by": "agent",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                })
+                data = {"ok": True, "edit_id": edit_id, "size": len(new_content), "diff_lines": diff.count("\n")}
+            except Exception as e:
+                data = {"error": str(e)}
+        elif name == "search_replace_workspace":
+            import workspace_files as wf
+            import difflib
+            slug = re.sub(r"[^a-zA-Z0-9_.-]", "", args.get("app_slug", ""))[:80]
+            base = wf._user_apps_dir(user_id) / slug
+            try:
+                f = wf._safe_path(base, args.get("path", ""))
+                if not f.exists():
+                    data = {"error": "Archivo no encontrado"}
+                else:
+                    old_content = f.read_text(encoding="utf-8")
+                    old_str = args.get("old_str", "")
+                    new_str = args.get("new_str", "")
+                    if old_str not in old_content:
+                        data = {"error": "old_str no encontrado en el archivo"}
+                    elif old_content.count(old_str) > 1:
+                        data = {"error": f"old_str aparece {old_content.count(old_str)} veces, debe ser unico"}
+                    else:
+                        new_content = old_content.replace(old_str, new_str)
+                        f.write_text(new_content, encoding="utf-8")
+                        edit_id = str(uuid.uuid4())
+                        await _db_ref["db"].file_edits.insert_one({
+                            "id": edit_id, "user_id": user_id, "app_slug": slug,
+                            "file_path": args.get("path"), "applied_by": "agent",
+                            "previous_content": old_content[:500_000],
+                            "created_at": datetime.now(timezone.utc).isoformat(),
+                        })
+                        data = {"ok": True, "edit_id": edit_id, "replaced": True}
+            except Exception as e:
+                data = {"error": str(e)}
+        elif name == "list_my_vps":
+            db = _db_ref["db"]
+            cur = db.vps_servers.find(
+                {"user_id": user_id},
+                {"_id": 0, "ssh_key_encrypted": 0, "password_encrypted": 0},
+            )
+            data = {"vps": [v async for v in cur]}
+        elif name == "run_vps_command":
+            import vps_manager as vm
+            db = _db_ref["db"]
+            vps = await db.vps_servers.find_one({"id": args.get("vps_id"), "user_id": user_id})
+            if not vps:
+                data = {"error": "VPS no encontrado o no es tuyo"}
+            else:
+                blocked = ["rm -rf /", "mkfs", "shutdown", "reboot", ":(){:|:&};:"]
+                if any(b in args.get("command", "") for b in blocked):
+                    data = {"error": "Comando bloqueado por seguridad"}
+                else:
+                    data = await vm._ssh_run(vps, args.get("command", ""),
+                                              timeout=int(args.get("timeout_sec", 60)))
+        elif name == "deploy_app_to_vps":
+            import vps_manager as vm
+            from vps_manager import DeployIn
+            db = _db_ref["db"]
+            vps = await db.vps_servers.find_one({"id": args.get("vps_id"), "user_id": user_id})
+            if not vps:
+                data = {"error": "VPS no encontrado"}
+            else:
+                udoc = await db.users.find_one({"id": user_id}, {"_id": 0})
+                try:
+                    payload = DeployIn(**{k: v for k, v in args.items() if k != "vps_id"})
+                    data = await vm.deploy_app_to_vps(args.get("vps_id"), payload, udoc)
+                    data["card_type"] = "vps_deploy"
+                except Exception as e:
+                    data = {"error": str(e)}
+        elif name == "tail_vps_logs":
+            import vps_manager as vm
+            db = _db_ref["db"]
+            vps = await db.vps_servers.find_one({"id": args.get("vps_id"), "user_id": user_id})
+            if not vps:
+                data = {"error": "VPS no encontrado"}
+            else:
+                service = re.sub(r"[^a-z0-9._-]", "", args.get("service", ""))
+                n = max(10, min(int(args.get("lines", 100)), 1000))
+                data = await vm._ssh_run(vps, f"sudo journalctl -u {service} -n {n} --no-pager", timeout=15)
+        elif name == "restart_vps_service":
+            import vps_manager as vm
+            db = _db_ref["db"]
+            vps = await db.vps_servers.find_one({"id": args.get("vps_id"), "user_id": user_id})
+            if not vps:
+                data = {"error": "VPS no encontrado"}
+            else:
+                service = re.sub(r"[^a-z0-9._-]", "", args.get("service", ""))
+                if not service.startswith("lluvia-"):
+                    data = {"error": "Solo se pueden reiniciar services con prefijo 'lluvia-'"}
+                else:
+                    data = await vm._ssh_run(vps, f"sudo systemctl restart {service} && sudo systemctl is-active {service}", timeout=30)
         else:
             return json.dumps({"error": f"Tool desconocida: {name}"}), 0
         return json.dumps(data, ensure_ascii=False)[:30000], cost

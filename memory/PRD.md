@@ -5,7 +5,54 @@
 - Producción: https://lluvia-app-studio.lluvia-live.com (Emergent Native Deploy)
 - Telegram: https://t.me/LluviaAppStudioBot
 
-## Estado actual: v12.27 — Multi-Repo Push + Template TikTok/Bigo Live (Feb 2026)
+## Estado actual: v12.28 — Réplica de Emergent (Lluvia Studio) implementada al ~70% (Feb 2026)
+
+### Iteración 12.28 — Auto-deploy a VPS + File editor + Lluvia Studio (HECHO)
+**🎯 PEDIDO DEL USUARIO**: Dejar listo el 100% para que Claude (en su Contabo) pueda construir el resto sin más créditos de Emergent. El usuario será operado de la mano.
+
+**🆕 Backend (3 módulos nuevos, ~620 líneas)**:
+- `crypto_utils.py` — AES-GCM encrypt/decrypt para SSH keys (master key autogenerada y persistida en .env).
+- `vps_manager.py` — CRUD VPS con SSH cifrada, test connection, exec, deploy completo (git clone → venv → pip → systemd → nginx → certbot), restart service, tail logs, undeploy.
+- `workspace_files.py` — File tree recursivo, read/write con guardado de diff para rollback, delete, historial.
+
+**🆕 Endpoints (~14 nuevos)**:
+- `POST /api/me/vps`, `GET /api/me/vps`, `DELETE /api/me/vps/{id}`, `POST /test`, `POST /exec`, `POST /deploy-app`, `POST /restart-service`, `GET /tail-logs`, `GET /deployments`, `DELETE /deployments/{id}`
+- `GET/PUT/DELETE /api/me/apps/{slug}/files|file`, `GET /file-edits`, `POST /file-edits/{id}/rollback`
+
+**🆕 Modelos Mongo**: `vps_servers`, `vps_deployments`, `file_edits`.
+
+**🪄 Nuevo agente IA "Lluvia Studio"** con 10 tools:
+- `list_workspace_files`, `read_workspace_file`, `write_workspace_file` (2 oros), `search_replace_workspace` (1 oro)
+- `list_my_vps`, `run_vps_command` (1 oro), `deploy_app_to_vps` (25 oros), `tail_vps_logs`, `restart_vps_service` (1 oro)
+- Reusable: `push_to_my_github`
+- System prompt completo (~60 líneas) con reglas duras y flujos típicos.
+
+**🆕 Frontend (4 componentes nuevos)**:
+- `Studio.js` — IDE web tipo Emergent: 3 paneles redimensionables (FileTree | Chat/Deploys | Editor/Preview/Logs).
+- `FileTree.js` — Árbol recursivo con iconos por ext, expand/collapse, selección.
+- `CodeEditor.js` — Monaco Editor con auto-save 1.2s debounce, indicador "guardado/sin guardar/guardando", lenguaje auto-detectado.
+- `VpsServersTab.js` — UI completa para conectar VPS: form (alias, host, port, user, ssh_key|password), botón "Probar conexión" con feedback visual, listado con badges de status.
+
+**🪄 Integraciones**:
+- `ClientDashboard.js` — nueva pestaña "🛠 Studio" en top nav.
+- `SettingsTab.js` — refactor: 3 sub-secciones (🔧 GitHub, 🖥 Mis Servidores, ⚙ Cuenta).
+
+**Dependencias agregadas**:
+- Backend: `asyncssh==2.18.0`, `paramiko==3.5.0`, `cryptography==46.0.7` (en `requirements.txt`).
+- Frontend: `@monaco-editor/react`, `react-resizable-panels@4.11.1`, `lucide-react@0.469.0`.
+
+**Testing**: Smoke tests con curl pasaron — endpoints funcionan, Mongo guarda VPS cifrado, listar muestra sin exponer keys, delete funciona, agente con tools registradas, app principal renderiza OK en preview.
+
+**Lo que FALTA (Fases 4-6 del plan, ~5-7h)**:
+- Terminal xterm.js embebido (workaround: tool `run_vps_command` ya funciona desde chat).
+- Preview iframe (workaround: usuario abre URL deployada en otra pestaña).
+- Logs WebSocket streaming (workaround: tab "Logs" del Studio hace polling on-demand).
+
+**📄 Doc handoff para Claude del VPS**: `/app/CLAUDE_V12_28_STATUS.md` con checklist post-deploy + troubleshooting.
+
+---
+
+## Estado anterior: v12.27 — Multi-Repo Push + Template TikTok/Bigo Live (Feb 2026)
 
 ### Iteración 12.27 — Bug "todas las apps al mismo repo" RESUELTO + nuevo template TikTok (HECHO)
 **🔥 BUGS P0 REPORTADOS POR EL CLIENTE EN PRODUCCIÓN**:

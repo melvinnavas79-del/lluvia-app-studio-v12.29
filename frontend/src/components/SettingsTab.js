@@ -1,9 +1,11 @@
-/* SettingsTab - configuración del usuario (GitHub + notificaciones + Telegram).
+/* SettingsTab - configuración del usuario (GitHub + notificaciones + VPS + Telegram).
    Compartido entre ClientDashboard y AdminDashboard. */
 import { useEffect, useState } from "react";
 import { api, formatError } from "../api";
+import VpsServersTab from "./VpsServersTab";
 
 export default function SettingsTab() {
+  const [activeSection, setActiveSection] = useState("github"); // github | vps | account
   const [form, setForm] = useState({
     github_token: "",
     github_repo: "",
@@ -40,6 +42,34 @@ export default function SettingsTab() {
   return (
     <div data-testid="settings-tab">
       <h2>Mi Cuenta</h2>
+
+      {/* Sub-tabs */}
+      <div style={{
+        display: "flex", gap: "0.4rem", marginBottom: "1rem",
+        borderBottom: "1px solid rgba(0,0,0,0.08)", paddingBottom: "0.5rem",
+      }}>
+        {[
+          ["github", "🔧 GitHub"],
+          ["vps", "🖥 Mis Servidores"],
+          ["account", "⚙ Cuenta"],
+        ].map(([k, l]) => (
+          <button key={k} onClick={() => setActiveSection(k)}
+            data-testid={`settings-section-${k}`}
+            style={{
+              padding: "0.45rem 0.9rem",
+              background: activeSection === k ? "#5B8DEF" : "transparent",
+              color: activeSection === k ? "#fff" : "var(--text-primary)",
+              border: activeSection === k ? "none" : "1px solid rgba(0,0,0,0.12)",
+              borderRadius: 8, cursor: "pointer", fontWeight: 600, fontSize: "0.85rem",
+            }}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {activeSection === "vps" && <VpsServersTab />}
+
+      {activeSection === "github" && (
       <form className="form-card" onSubmit={save}>
         <h3>GitHub</h3>
         <p style={{ color: "var(--text-secondary)", fontSize: "0.88rem", margin: "0 0 1rem" }}>
@@ -121,8 +151,9 @@ export default function SettingsTab() {
           <ValidateGitHubButton hasToken={hasToken} />
         </div>
       </form>
+      )}
 
-      <TelegramLinkCard />
+      {activeSection === "account" && <TelegramLinkCard />}
     </div>
   );
 }

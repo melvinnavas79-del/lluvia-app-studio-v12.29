@@ -60,6 +60,8 @@ import gmail_maestro as gmail_maestro_module
 import gmail_scheduler as gmail_scheduler_module
 import site_content as site_content_module
 import video_gen as video_gen_module
+import vps_manager as vps_manager_module
+import workspace_files as workspace_files_module
 from rate_limit import limiter, rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -99,6 +101,8 @@ gmail_maestro_module.set_db(db)
 gmail_scheduler_module.set_db(db)
 site_content_module.set_db(db)
 video_gen_module.set_db(db)
+vps_manager_module.set_db(db)
+workspace_files_module.set_db(db)
 
 
 # ----------------------- APP -----------------------
@@ -407,6 +411,8 @@ api_router.include_router(super_admin_module.router)
 api_router.include_router(appointments_module.router)
 api_router.include_router(public_chat_module.router)
 api_router.include_router(user_workspace_module.router)
+api_router.include_router(vps_manager_module.router)
+api_router.include_router(workspace_files_module.router)
 api_router.include_router(legal_module.router)
 api_router.include_router(gmail_module.router)
 api_router.include_router(gmail_maestro_module.router)
