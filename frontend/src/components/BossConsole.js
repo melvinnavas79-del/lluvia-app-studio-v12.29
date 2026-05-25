@@ -1,6 +1,7 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, memo } from "react";
 import { api, formatError } from "../api";
 import AgentAvatar from "./AgentAvatar";
+import PreviewIframe from "./PreviewIframe";
 
 export default function BossConsole() {
   const [agents, setAgents] = useState([]);
@@ -1232,7 +1233,7 @@ function VideoScriptCard({ card, agent }) {
 
 
 
-function AppBuiltCard({ card }) {
+const AppBuiltCard = memo(function AppBuiltCard({ card }) {
   const ok = card.ok === true;
   const stateColor = ok ? "#059669" : "#DC2626";
   const accent = card.brand_color || "#5B8DEF";
@@ -1242,6 +1243,8 @@ function AppBuiltCard({ card }) {
   const [pushError, setPushError] = useState("");
   const [repoName, setRepoName] = useState(card.repo_suggestion || card.app_slug || "");
   const [showRepoForm, setShowRepoForm] = useState(false);
+  // Auto-expandido si la app se generó con éxito; preserva estado entre re-renders
+  const [showPreview, setShowPreview] = useState(ok);
 
   const doPushAndDeploy = async () => {
     if (!repoName || repoName.length < 2) {
@@ -1422,6 +1425,39 @@ function AppBuiltCard({ card }) {
                 </>
               )}
             </div>
+
+            {/* Live Preview embebido — reutiliza PreviewIframe.js + workspace_preview.py */}
+            <div style={{ marginTop: "0.65rem" }}>
+              <button
+                onClick={() => setShowPreview(p => !p)}
+                data-testid="app-built-preview-toggle"
+                style={{
+                  background: showPreview ? `${accent}22` : "rgba(0,0,0,0.04)",
+                  border: `1px solid ${showPreview ? accent : "rgba(0,0,0,0.1)"}`,
+                  borderRadius: 8, padding: "0.45rem 0.85rem",
+                  fontSize: "0.84rem", fontWeight: 700, cursor: "pointer",
+                  color: showPreview ? accent : "var(--text-secondary)",
+                  width: "100%", textAlign: "left",
+                  display: "flex", alignItems: "center", gap: "0.4rem",
+                }}>
+                <span>{showPreview ? "▼" : "▶"}</span>
+                <span>Vista Previa en vivo</span>
+                {showPreview && (
+                  <span style={{ marginLeft: "auto", fontSize: "0.72rem", fontWeight: 400, opacity: 0.7 }}>
+                    app real · hot reload · desktop/móvil
+                  </span>
+                )}
+              </button>
+              {showPreview && (
+                <div style={{
+                  marginTop: "0.4rem",
+                  border: `1px solid ${accent}33`,
+                  borderRadius: 10, overflow: "hidden", height: 440,
+                }}>
+                  <PreviewIframe appSlug={card.app_slug} autoStart={true} />
+                </div>
+              )}
+            </div>
           </>
         ) : (
           <>
@@ -1438,7 +1474,7 @@ function AppBuiltCard({ card }) {
       </div>
     </div>
   );
-}
+});
 
 function VideoJobCard({ card, agent, backendBase }) {
   const [job, setJob] = useState({

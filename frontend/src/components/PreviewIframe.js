@@ -3,9 +3,9 @@ import { api, formatError } from "../api";
 
 /**
  * PreviewIframe — preview local de la app del workspace + screenshots Playwright.
- * Props: appSlug.
+ * Props: appSlug, autoStart (bool, default false).
  */
-export default function PreviewIframe({ appSlug }) {
+export default function PreviewIframe({ appSlug, autoStart = false }) {
   const [previewState, setPreviewState] = useState("idle"); // idle | starting | running | error | stopped
   const [previewUrl, setPreviewUrl] = useState("");
   const [error, setError] = useState("");
@@ -14,6 +14,7 @@ export default function PreviewIframe({ appSlug }) {
   const [shooting, setShooting] = useState(false);
   const [lastShot, setLastShot] = useState(null);
   const heartbeatRef = useRef(null);
+  const didAutoStart = useRef(false);
 
   // Heartbeat: cada 60s pingeamos /preview/status para que no expire por TTL
   useEffect(() => {
@@ -23,6 +24,15 @@ export default function PreviewIframe({ appSlug }) {
     }, 60000);
     return () => clearInterval(heartbeatRef.current);
   }, [previewState, appSlug]);
+
+  // Auto-start al montar si el padre lo solicita (solo una vez)
+  useEffect(() => {
+    if (!autoStart || !appSlug || didAutoStart.current) return;
+    didAutoStart.current = true;
+    // Pequeño delay para que el DOM esté listo
+    const t = setTimeout(() => startPreview(), 400);
+    return () => clearTimeout(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Al desmontar el componente, NO matamos el preview (puede seguir corriendo)
   // si el usuario quiere apagarlo, hay un botón.

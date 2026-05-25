@@ -122,7 +122,7 @@ async def start_preview(app_slug: str, user: dict = Depends(get_current_user)):
         )
     cmd = (
         f"{setup_cmd}cd {backend_dir} && PORT={port} {venv}/bin/uvicorn server:app "
-        f"--host 127.0.0.1 --port {port} --log-level warning"
+        f"--host 127.0.0.1 --port {port} --log-level warning --reload"
     )
     proc = await asyncio.create_subprocess_shell(
         cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
