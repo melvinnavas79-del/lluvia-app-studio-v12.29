@@ -4,8 +4,7 @@
    profundo, tipografía editorial. White-label-friendly via CSS vars.
    ====================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap');
-@import url('https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@400,500,700,800,900&f[]=satoshi@300,400,500,700,900&display=swap');
+/* Fonts loaded asynchronously via <link> in index.html to avoid render blocking */
 
 /* ─── Tokens ──────────────────────────────────────────────────────── */
 :root {

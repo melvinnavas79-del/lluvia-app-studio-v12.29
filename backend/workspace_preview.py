@@ -36,6 +36,7 @@ _db_ref: dict = {"db": None}
 PREVIEW_PORT_BASE = int(os.environ.get("PREVIEW_PORT_BASE", "9100"))
 PREVIEW_PORT_MAX = int(os.environ.get("PREVIEW_PORT_MAX", "9300"))
 PREVIEW_TTL_SEC = 600   # 10 minutos
+MAX_PREVIEWS_PER_USER = int(os.environ.get("MAX_PREVIEWS_PER_USER", "2"))
 SCREENSHOTS_DIR = Path(os.environ.get("SCREENSHOTS_DIR", "/tmp/lluvia_screenshots"))
 SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -105,6 +106,10 @@ async def start_preview(app_slug: str, user: dict = Depends(get_current_user)):
         return {"ok": True, "port": port, "url": f"http://localhost:{port}",
                 "started_at": _active_previews[key]["started_at"].isoformat(),
                 "reused": True}
+
+    user_previews = [k for k in _active_previews if k[0] == user["id"]]
+    if len(user_previews) >= MAX_PREVIEWS_PER_USER:
+        raise HTTPException(429, f"Máximo {MAX_PREVIEWS_PER_USER} previews activos por usuario")
 
     port = _next_free_port()
     # Instalar deps si no existe venv

@@ -425,6 +425,9 @@ api_router.include_router(gmail_maestro_module.router)
 api_router.include_router(site_content_module.router)
 import demo_audio_room as demo_ar_module
 api_router.include_router(demo_ar_module.router)
+import devops_ai as devops_ai_module
+devops_ai_module.set_db(db)
+api_router.include_router(devops_ai_module.router)
 import pricing as pricing_module
 pricing_module.set_db(db)
 import admin_pricing as admin_pricing_module

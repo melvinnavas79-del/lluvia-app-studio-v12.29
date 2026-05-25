@@ -8,6 +8,7 @@ import { api, formatError } from "../api";
 import BossConsole from "./BossConsole";
 import SettingsTab from "./SettingsTab";
 import Studio from "./Studio";
+import AgentBuilder from "./AgentBuilder";
 
 export default function ClientDashboard() {
   const { user, logout } = useAuth();
@@ -16,7 +17,7 @@ export default function ClientDashboard() {
   // los enlaces internos (ej "Configurá tu GitHub") puedan saltar entre tabs.
   const hashToTab = (h) => {
     const key = (h || "").replace(/^#\/?/, "").trim();
-    return ["chat", "recharge", "github", "settings", "studio"].includes(key) ? key : "chat";
+    return ["chat", "recharge", "github", "settings", "studio", "myapps"].includes(key) ? key : "chat";
   };
   // Si volvemos desde PayPal con ?paypal=success o ?paypal=cancel, forzamos
   // el tab "recharge" para que el RechargeTab procese el callback.
@@ -77,6 +78,7 @@ export default function ClientDashboard() {
       <div className="cd-tabs" data-testid="cd-tabs">
         {[
           ["chat", "Mis Agentes"],
+          ["myapps", "Mis Apps"],
           ["studio", "🛠 Studio"],
           ["recharge", "Recargar Oros"],
           ["github", "Push a GitHub"],
@@ -95,6 +97,7 @@ export default function ClientDashboard() {
 
       <main className="cd-main">
         {tab === "chat" && <BossConsole />}
+        {tab === "myapps" && <AgentBuilder />}
         {tab === "studio" && <Studio />}
         {tab === "recharge" && <RechargeTab onTopup={() => api.get("/credits/me").then((r) => setBalance(r.data.balance))} />}
         {tab === "github" && <GitHubTab />}

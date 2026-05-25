@@ -40,20 +40,19 @@ class AgentIn(BaseModel):
 
 
 @router.get("")
-async def list_custom_agents(_=Depends(get_current_user)):
-    """Devuelve agentes built-in + custom merged."""
+async def list_custom_agents(user: dict = Depends(get_current_user)):
+    """Devuelve agentes built-in + custom merged. Admins ven todos; usuarios solo los suyos."""
     builtins = agents_catalog.list_agents()
     db = _db_ref["db"]
+    query = {} if user.get("role") == "admin" else {"$or": [{"owner_id": user["id"]}, {"owner_id": {"$exists": False}}]}
     customs = []
-    async for a in db.custom_agents.find({}, {"_id": 0}):
+    async for a in db.custom_agents.find(query, {"_id": 0}):
         customs.append(a)
     return {"builtin": builtins, "custom": customs}
 
 
 @router.post("")
 async def create_custom_agent(data: AgentIn, user: dict = Depends(get_current_user)):
-    if user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="solo admin")
     aid = re.sub(r"[^a-z0-9_-]", "", data.id.lower())[:40]
     if not aid:
         raise HTTPException(status_code=400, detail="id invalido")
@@ -69,7 +68,7 @@ async def create_custom_agent(data: AgentIn, user: dict = Depends(get_current_us
         "id": aid, "name": data.name, "emoji": data.emoji, "color": data.color,
         "voice": data.voice, "tagline": data.tagline, "system": data.system,
         "tools": tools, "created_at": datetime.now(timezone.utc).isoformat(),
-        "created_by": user["id"], "is_custom": True,
+        "created_by": user["id"], "owner_id": user["id"], "is_custom": True,
     }
     await db.custom_agents.insert_one(doc)
     doc.pop("_id", None)
@@ -78,26 +77,31 @@ async def create_custom_agent(data: AgentIn, user: dict = Depends(get_current_us
 
 @router.put("/{agent_id}")
 async def update_custom_agent(agent_id: str, data: AgentIn, user: dict = Depends(get_current_user)):
-    if user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="solo admin")
     db = _db_ref["db"]
+    existing = await db.custom_agents.find_one({"id": agent_id}, {"_id": 0, "owner_id": 1})
+    if not existing:
+        raise HTTPException(status_code=404, detail="agente no encontrado")
+    if user.get("role") != "admin" and existing.get("owner_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="no autorizado")
     updates = data.model_dump()
     updates["tools"] = [t for t in updates["tools"] if t in VALID_TOOLS]
     if updates["voice"] not in VOICES:
         updates["voice"] = "alloy"
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
     updates.pop("id", None)
-    res = await db.custom_agents.update_one({"id": agent_id}, {"$set": updates})
-    if res.matched_count == 0:
-        raise HTTPException(status_code=404, detail="agente no encontrado")
+    await db.custom_agents.update_one({"id": agent_id}, {"$set": updates})
     return {"ok": True}
 
 
 @router.delete("/{agent_id}")
 async def delete_custom_agent(agent_id: str, user: dict = Depends(get_current_user)):
-    if user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="solo admin")
-    res = await _db_ref["db"].custom_agents.delete_one({"id": agent_id})
+    db = _db_ref["db"]
+    existing = await db.custom_agents.find_one({"id": agent_id}, {"_id": 0, "owner_id": 1})
+    if not existing:
+        raise HTTPException(status_code=404, detail="agente no encontrado")
+    if user.get("role") != "admin" and existing.get("owner_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="no autorizado")
+    res = await db.custom_agents.delete_one({"id": agent_id})
     return {"deleted": res.deleted_count}
 
 
@@ -109,16 +113,17 @@ class PublicToggleIn(BaseModel):
 async def toggle_public(agent_id: str, data: PublicToggleIn,
                         user: dict = Depends(get_current_user)):
     """Marca un agente como publico (visible en /chat sin login) o privado."""
-    if user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="solo admin")
     db = _db_ref["db"]
-    res = await db.custom_agents.update_one(
+    existing = await db.custom_agents.find_one({"id": agent_id}, {"_id": 0, "owner_id": 1})
+    if not existing:
+        raise HTTPException(status_code=404, detail="agente no encontrado")
+    if user.get("role") != "admin" and existing.get("owner_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="no autorizado")
+    await db.custom_agents.update_one(
         {"id": agent_id},
         {"$set": {"is_public": bool(data.is_public),
                   "updated_at": datetime.now(timezone.utc).isoformat()}},
     )
-    if res.matched_count == 0:
-        raise HTTPException(status_code=404, detail="agente no encontrado")
     return {"ok": True, "is_public": data.is_public}
 
 
