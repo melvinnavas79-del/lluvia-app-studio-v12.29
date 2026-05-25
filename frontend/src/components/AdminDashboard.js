@@ -17,9 +17,10 @@ export default function AdminDashboard() {
   const { user, logout } = useAuth();
   const { branding } = useBranding();
   const ALLOWED_TABS = ["super","overview","console","callcenter","agency","builder","proposals","promos","affiliates","sales","branding","settings"];
+  const MVP_TABS = ["builder","branding","overview","settings"];
   const hashToTab = (h) => {
     const key = (h || "").replace(/^#\/?/, "").trim();
-    return ALLOWED_TABS.includes(key) ? key : "super";
+    return ALLOWED_TABS.includes(key) ? key : "builder";
   };
   const [tab, setTab] = useState(() => hashToTab(window.location.hash));
   const [network, setNetwork] = useState(null);
@@ -91,17 +92,9 @@ export default function AdminDashboard() {
 
       <div className="tabs" data-testid="admin-tabs">
         {[
-          ["super", "👑 SuperAdmin"],
-          ["overview", "Vision general"],
-          ["console", "Boss Console"],
-          ["callcenter", "📞 Call Center"],
-          ["agency", "Agency View"],
-          ["builder", "Arquitecto"],
-          ["proposals", "Propuestas"],
-          ["promos", "Promos"],
-          ["affiliates", "Afiliados"],
-          ["sales", "Ventas"],
+          ["builder", "Mis Apps"],
           ["branding", "Branding"],
+          ["overview", "Vision general"],
           ["settings", "Mi Cuenta"],
         ].map(([k, label]) => (
           <button
