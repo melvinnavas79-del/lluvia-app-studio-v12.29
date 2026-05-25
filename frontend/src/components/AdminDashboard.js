@@ -12,11 +12,12 @@ import PromosTab from "./PromosTab";
 import CallCenter from "./CallCenter";
 import SuperAdminPanel from "./SuperAdminPanel";
 import SettingsTab from "./SettingsTab";
+import DevOpsConsole from "./DevOpsConsole";
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
   const { branding } = useBranding();
-  const ALLOWED_TABS = ["super","overview","console","callcenter","agency","builder","proposals","promos","affiliates","sales","branding","settings"];
+  const ALLOWED_TABS = ["super","overview","console","callcenter","agency","builder","proposals","promos","affiliates","sales","branding","settings","devops"];
   const MVP_TABS = ["builder","branding","overview","settings"];
   const hashToTab = (h) => {
     const key = (h || "").replace(/^#\/?/, "").trim();
@@ -135,6 +136,7 @@ export default function AdminDashboard() {
       )}
       {tab === "branding" && <BrandingTab />}
       {tab === "settings" && <SettingsTab />}
+      {tab === "devops" && <DevOpsConsole />}
     </div>
   );
 }
