@@ -22,6 +22,7 @@ export default function BossConsole() {
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraErr, setCameraErr] = useState("");
   const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [appPickerForPush, setAppPickerForPush] = useState(null); // null | [{name,size_bytes,modified}]
   const scrollRef = useRef(null);
   const mediaRef = useRef(null);
   const chunksRef = useRef([]);
@@ -411,20 +412,29 @@ export default function BossConsole() {
   const getAgent = (id) => agents.find((a) => a.id === id);
   const currentAgent = activeSession ? getAgent(activeSession.agent_id) : null;
 
-  const pushNow = async () => {
-    const msg = prompt("Mensaje del commit (opcional):", `Push desde Lluvia ${new Date().toLocaleString()}`);
-    if (msg === null) return; // canceló
+  // Pushea UNA app a su repo dedicado — reutiliza /me/github/push-app existente
+  const _pushAppDedicated = async (appSlug) => {
+    const msg = prompt(
+      "Mensaje del commit (opcional):",
+      `deploy: ${appSlug} ${new Date().toLocaleString()}`
+    );
+    if (msg === null) return;
     try {
-      const { data } = await api.post("/me/github/push", { commit_message: msg });
+      const { data } = await api.post("/me/github/push-app", {
+        app_slug: appSlug,
+        create_new: true,
+        commit_message: msg,
+      });
       if (data.ok) {
-        alert(`✅ Push exitoso!\n\nRepo: ${data.repo}\nRama: ${data.branch}\n\nVer en GitHub: ${data.repo_url || `https://github.com/${data.repo}`}`);
+        const repoUrl = data.repo_url || `https://github.com/${data.repo}`;
+        const repoLine = data.created_new_repo
+          ? `\n✨ Repo nuevo creado: ${data.repo}`
+          : `\nRepo: ${data.repo}`;
+        alert(`✅ Push exitoso!${repoLine}\n\nVer en GitHub: ${repoUrl}`);
       } else if (data.export_locked) {
-        const go = window.confirm(
-          `🔒 ${data.message}\n\n¿Querés ir a recargar oros ahora?`
-        );
-        if (go) window.location.hash = "#/recharge";
+        if (window.confirm(`🔒 ${data.message}\n\n¿Querés recargar oros ahora?`))
+          window.location.hash = "#/recharge";
       } else {
-        // Mostrar el detalle real (puede venir en error, message o en el ultimo step)
         const lastStep = (data.steps || []).slice(-1)[0];
         const detail =
           data.error ||
@@ -435,13 +445,31 @@ export default function BossConsole() {
       }
     } catch (e) {
       const detail = e?.response?.data?.detail || formatError(e);
-      if (detail && (detail.toLowerCase().includes("configura") || detail.toLowerCase().includes("token"))) {
-        if (window.confirm("Todavía no configuraste tu GitHub (token + repo). ¿Ir a 'Mi Cuenta' ahora para configurarlo?")) {
+      if (detail?.toLowerCase().includes("token") || detail?.toLowerCase().includes("configura")) {
+        if (window.confirm("Falta tu token de GitHub. ¿Ir a 'Mi Cuenta' ahora para configurarlo?"))
           window.dispatchEvent(new CustomEvent("lluvia:goto-settings"));
-        }
       } else {
         alert(`✕ ${detail}`);
       }
+    }
+  };
+
+  // Botón "Push a GitHub" del header: lista apps primero, luego pushea per-app
+  const pushNow = async () => {
+    try {
+      const { data } = await api.get("/me/apps");
+      const apps = data.apps || [];
+      if (apps.length === 0) {
+        alert("No tenés apps generadas. Creá una primero con App Builder Pro.");
+        return;
+      }
+      if (apps.length === 1) {
+        await _pushAppDedicated(apps[0].name);
+      } else {
+        setAppPickerForPush(apps);
+      }
+    } catch (e) {
+      setErr(formatError(e));
     }
   };
 
@@ -778,6 +806,65 @@ export default function BossConsole() {
                 </svg>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* App picker: aparece cuando hay >1 apps y el usuario hace "Push a GitHub" */}
+      {appPickerForPush && (
+        <div
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
+            zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+          onClick={() => setAppPickerForPush(null)}
+        >
+          <div
+            style={{
+              background: "var(--surface-card, #1a1a2e)", borderRadius: 14,
+              padding: "1.4rem", minWidth: 320, maxWidth: 460,
+              boxShadow: "0 12px 48px rgba(0,0,0,0.5)",
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ fontWeight: 700, fontSize: "1rem", marginBottom: "0.35rem" }}>
+              ¿Qué app pushear a GitHub?
+            </div>
+            <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: "1rem", lineHeight: 1.45 }}>
+              Cada app va a su propio repo — nunca se mezclan entre sí.
+            </div>
+            {appPickerForPush.map(app => (
+              <button
+                key={app.name}
+                data-testid={`push-picker-${app.name}`}
+                onClick={() => { setAppPickerForPush(null); _pushAppDedicated(app.name); }}
+                style={{
+                  display: "block", width: "100%", textAlign: "left",
+                  padding: "0.65rem 0.9rem", marginBottom: "0.45rem",
+                  background: "rgba(255,255,255,0.05)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: 9, cursor: "pointer",
+                  color: "var(--text-primary)", fontWeight: 600, fontSize: "0.9rem",
+                }}
+              >
+                📦 {app.name}
+                {app.size_bytes > 0 && (
+                  <span style={{ fontSize: "0.72rem", fontWeight: 400, color: "var(--text-muted)", marginLeft: "0.5rem" }}>
+                    {Math.round(app.size_bytes / 1024)} KB
+                  </span>
+                )}
+              </button>
+            ))}
+            <button
+              onClick={() => setAppPickerForPush(null)}
+              style={{
+                marginTop: "0.3rem", width: "100%", padding: "0.5rem",
+                background: "transparent", border: "none",
+                color: "var(--text-muted)", cursor: "pointer", fontSize: "0.82rem",
+              }}
+            >
+              Cancelar
+            </button>
           </div>
         </div>
       )}
