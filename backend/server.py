@@ -158,6 +158,9 @@ async def on_startup():
     # E8 SLA Monitor — chequea breaches cada 5 min
     e8_module.start_sla_monitor()
 
+    # Master Console — indexes del audit trail
+    await master_console_module.create_indexes()
+
 
 @app.on_event("shutdown")
 async def on_shutdown():
@@ -507,6 +510,11 @@ api_router.include_router(job_scheduler_module.router)
 import e9_emitters as e9_emitters_module
 e9_emitters_module.set_db(db)
 api_router.include_router(e9_emitters_module.router)
+
+# ── Master Console — operaciones internas con MASTER_KEY ─────────────────────
+import master_console as master_console_module
+master_console_module.set_db(db)
+api_router.include_router(master_console_module.router)
 
 # ── Observabilidad centralizada ───────────────────────────────────────────────
 import observability as observability_module
