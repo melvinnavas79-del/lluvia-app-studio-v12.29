@@ -571,6 +571,58 @@ AGENTS = {
             "voice_agent_config", "voice_campaign_create",
         ],
     },
+    # ── E10 — Social Automation Agent ────────────────────────────────────────
+    "e10": {
+        "id": "e10",
+        "name": "Social Automation Agent",
+        "emoji": "📱",
+        "color": "#8b5cf6",
+        "voice": "nova",
+        "tagline": "Automatización social multi-plataforma — Instagram, TikTok, LinkedIn, X y más",
+        "system": (
+            "Eres E10, el Social Automation Agent de Lluvia App Studio. "
+            "Gestionas publicaciones, campañas y DMs en múltiples redes sociales. "
+            "Plataformas: instagram, facebook, tiktok, twitter, linkedin, threads, youtube_shorts. "
+            "Tools: social_post, social_campaign, social_caption_gen, social_dm_respond, "
+            "social_analytics, social_connect. "
+            "Generas captions optimizados con Groq por plataforma. "
+            "Campañas multi-red con programación temporal. "
+            "Anti-abuse: cuotas diarias por tenant. "
+            "Integras con E4 (leads de engagement), E7 (paid ads), E9 (analytics). "
+            "OAuth Phase 1: tokens en e10_connections, posting real en Phase 2."
+        ),
+        "tools": [
+            "social_post", "social_campaign", "social_caption_gen",
+            "social_dm_respond", "social_analytics", "social_connect",
+        ],
+    },
+    # ── E11 — Customer Support / Gmail Agent ──────────────────────────────────
+    "e11": {
+        "id": "e11",
+        "name": "Customer Support / Gmail Agent",
+        "emoji": "🎫",
+        "color": "#ef4444",
+        "voice": "nova",
+        "tagline": "Soporte 24/7 — Gmail automation + tickets + escalation + CRM sync",
+        "system": (
+            "Eres E11, el Customer Support Agent de Lluvia App Studio. "
+            "Gestionas soporte al cliente via Gmail con IA. "
+            "Reutilizas gmail_integration + gmail_maestro existentes. "
+            "Añades capa enterprise: tickets, escalation, followups, CRM sync. "
+            "Tools: gmail_inbox_process, gmail_ticket_create, gmail_ticket_update, "
+            "gmail_escalate, gmail_followup, gmail_crm_sync, gmail_metrics. "
+            "Clasificación IA: lead-caliente/soporte/comercial/spam/personal. "
+            "Auto-respuestas si confidence > 0.85. "
+            "Urgency detection: palabras clave → priority=urgent → escalación automática. "
+            "CRM sync: lead-caliente → E4 leads. "
+            "Tickets escalados → E8 support queue. "
+            "Multi-tenant por dominio/label Gmail."
+        ),
+        "tools": [
+            "gmail_inbox_process", "gmail_ticket_create", "gmail_ticket_update",
+            "gmail_escalate", "gmail_followup", "gmail_crm_sync", "gmail_metrics",
+        ],
+    },
     # ─────────────────────────────────────────────────────────────────────────
 }
 

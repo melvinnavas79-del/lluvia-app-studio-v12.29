@@ -439,15 +439,17 @@ OPENAI_TOOLS = [
     {"type": "function", "function": {
         "name": "call_specialist_tool",
         "description": (
-            "Delega una acción a un agente especialista del ecosistema enterprise (E2-E9 + voice). "
+            "Delega una acción a un agente especialista del ecosistema enterprise (E2-E11 + voice). "
             "Usar cuando la tarea requiere capacidades especializadas que están en un sub-orquestador. "
             "E2=infra/deploy, E3=builder/apps, E4=sales/marketing, E5=whitelabel/licencias, "
             "E6=legal/contratos, E7=billing/pagos, E8=soporte/CRM, E9=analytics/monitoreo, "
-            "voice=llamadas PSTN/Twilio (call_start, metrics, agent_config, campaign_create)."
+            "voice=llamadas PSTN/Twilio, "
+            "e10=social automation (instagram/tiktok/linkedin/twitter/threads/youtube_shorts), "
+            "e11=customer support/Gmail (tickets/escalation/followups/CRM sync)."
         ),
         "parameters": {"type": "object", "properties": {
             "agent": {"type": "string",
-                      "enum": ["e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9", "voice"],
+                      "enum": ["e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9", "voice", "e10", "e11"],
                       "description": "Sub-orquestador a invocar"},
             "tool": {"type": "string", "description": "Nombre de la tool del agente especialista"},
             "params": {"type": "object", "description": "Parámetros para la tool", "default": {}},
@@ -785,13 +787,34 @@ async def _dispatch_to_specialist(agent: str, tool: str, params: dict) -> dict:
         elif agent == "voice":
             import twilio_voice as m
             fn_map = {
-                "voice_call_start": m.tool_voice_call_start,
-                "voice_metrics": m.tool_voice_metrics,
-                "voice_agent_config": m.tool_voice_agent_config,
+                "voice_call_start":    m.tool_voice_call_start,
+                "voice_metrics":       m.tool_voice_metrics,
+                "voice_agent_config":  m.tool_voice_agent_config,
                 "voice_campaign_create": m.tool_voice_campaign_create,
             }
+        elif agent == "e10":
+            import e10_social as m
+            fn_map = {
+                "social_post":        m.tool_social_post,
+                "social_campaign":    m.tool_social_campaign,
+                "social_caption_gen": m.tool_social_caption_gen,
+                "social_dm_respond":  m.tool_social_dm_respond,
+                "social_analytics":   m.tool_social_analytics,
+                "social_connect":     m.tool_social_connect,
+            }
+        elif agent == "e11":
+            import e11_gmail_support as m
+            fn_map = {
+                "gmail_inbox_process":  m.tool_gmail_inbox_process,
+                "gmail_ticket_create":  m.tool_gmail_ticket_create,
+                "gmail_ticket_update":  m.tool_gmail_ticket_update,
+                "gmail_escalate":       m.tool_gmail_escalate,
+                "gmail_followup":       m.tool_gmail_followup,
+                "gmail_crm_sync":       m.tool_gmail_crm_sync,
+                "gmail_metrics":        m.tool_gmail_metrics,
+            }
         else:
-            return {"error": f"Agente desconocido: {agent}. Válidos: e2-e9, voice"}
+            return {"error": f"Agente desconocido: {agent}. Válidos: e2-e11, voice"}
 
         fn = fn_map.get(tool)
         if not fn:

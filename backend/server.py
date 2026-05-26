@@ -476,6 +476,16 @@ import twilio_voice as twilio_voice_module
 twilio_voice_module.set_db(db)
 api_router.include_router(twilio_voice_module.router)
 
+# ── E10 — Social Automation Agent ────────────────────────────────────────────
+import e10_social as e10_module
+e10_module.set_db(db)
+api_router.include_router(e10_module.router)
+
+# ── E11 — Customer Support / Gmail Agent ──────────────────────────────────────
+import e11_gmail_support as e11_module
+e11_module.set_db(db)
+api_router.include_router(e11_module.router)
+
 # ── Observabilidad centralizada ───────────────────────────────────────────────
 import observability as observability_module
 api_router.include_router(observability_module.router)
