@@ -165,7 +165,7 @@ async def on_startup():
 @app.on_event("shutdown")
 async def on_shutdown():
     gmail_scheduler_module.stop_scheduler()
-    job_scheduler_module.stop_worker()
+    await job_scheduler_module.stop_worker()  # await: tasks finish their CancelledError cleanup
     e8_module.stop_sla_monitor()
 
 

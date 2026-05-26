@@ -27,15 +27,19 @@ Integración E9: todos los jobs emiten eventos automáticamente.
 import asyncio
 import logging
 import os
+import random
+import re
 import time
 import uuid
 from collections import defaultdict, deque
 from datetime import datetime, timezone, timedelta
 from typing import Optional
+from urllib.parse import urlparse
 
 import aiohttp
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from pymongo.errors import DuplicateKeyError
 
 import auth
 
@@ -80,6 +84,18 @@ JOB_EXECUTION_TIMEOUT_SECS = int(os.environ.get("JOB_EXECUTION_TIMEOUT", "300"))
 # For multi-process deployments, replace with a Redis/Mongo-backed counter.
 FLOOD_MAX_JOBS    = int(os.environ.get("JOB_FLOOD_MAX", "10"))
 FLOOD_WINDOW_SECS = 60
+
+# Max total active-queue depth. Backpressure: reject new jobs when exceeded.
+# Protects against runaway bridge loops or buggy callers flooding the queue.
+MAX_QUEUE_DEPTH = int(os.environ.get("JOB_MAX_QUEUE_DEPTH", "10000"))
+
+# Webhook SSRF: private/loopback address prefixes to block
+_SSRF_BLOCKED = re.compile(
+    r"^(localhost|127\.|0\.|169\.254\.|10\.|"
+    r"172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|"
+    r"\[::1\]|\[fc|fd|fe80)",
+    re.IGNORECASE,
+)
 
 VALID_JOB_TYPES = frozenset({
     "social_post_publish",
@@ -155,6 +171,14 @@ async def enqueue_job(
         if existing:
             return {"ok": True, "duplicate": True, "job": existing}
 
+    # Backpressure: reject if active queue is at capacity
+    active_depth = await db.jobs.count_documents(
+        {"status": {"$in": ["queued", "retrying"]}}
+    )
+    if active_depth >= MAX_QUEUE_DEPTH:
+        logger.warning("[JOB] Queue at capacity (%d/%d), rejecting %s", active_depth, MAX_QUEUE_DEPTH, job_type)
+        return {"ok": False, "error": f"Queue at capacity: {active_depth}/{MAX_QUEUE_DEPTH}", "queue_full": True}
+
     now    = datetime.now(timezone.utc)
     run_at = run_at or now
     job_id = f"J-{uuid.uuid4().hex[:12].upper()}"
@@ -179,7 +203,15 @@ async def enqueue_job(
         "completed_at":    None,
         "result":          None,
     }
-    await db.jobs.insert_one(doc)
+    try:
+        await db.jobs.insert_one(doc)
+    except DuplicateKeyError:
+        # Race: another caller inserted the same idempotency_key between our check and insert.
+        # Return the existing job rather than propagating the exception.
+        existing = await db.jobs.find_one({"idempotency_key": idempotency_key}, {"_id": 0})
+        if existing:
+            return {"ok": True, "duplicate": True, "job": existing}
+        raise  # different unique key collision — should not happen
     logger.info(f"[JOB] enqueued {job_id} type={job_type} tenant={tenant_id} run_at={run_at.isoformat()}")
 
     await _emit_job("job.created", job_id, job_type, tenant_id)
@@ -402,6 +434,14 @@ async def _handle_webhook_retry(payload: dict, tenant_id: str) -> dict:
     if not url:
         return {"ok": False, "error": "payload.url vacío"}
 
+    # SSRF protection: only https allowed; block private/loopback addresses
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        return {"ok": False, "error": f"SSRF: solo HTTPS permitido (scheme={parsed.scheme!r})"}
+    host = parsed.hostname or ""
+    if _SSRF_BLOCKED.match(host):
+        return {"ok": False, "error": f"SSRF: dirección privada/loopback bloqueada ({host})"}
+
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -470,12 +510,19 @@ class JobWorker:
         ]
         logger.info(f"[JOB] Worker {self.worker_id} started")
 
-    def stop(self) -> None:
+    async def stop(self) -> None:
+        """Graceful stop: cancel all tasks and await their cleanup before returning.
+        Must be awaited so shutdown handlers wait for task CancelledError cleanup."""
         self._running = False
-        for t in self._tasks:
-            t.cancel()
+        tasks = list(self._tasks)
         self._tasks.clear()
-        logger.info(f"[JOB] Worker {self.worker_id} stopped")
+        for t in tasks:
+            t.cancel()
+        if tasks:
+            # Wait for all tasks to finish handling their CancelledError.
+            # return_exceptions=True prevents a secondary exception from hiding the shutdown.
+            await asyncio.gather(*tasks, return_exceptions=True)
+        logger.info(f"[JOB] Worker {self.worker_id} stopped cleanly")
 
     def status(self) -> dict:
         return {
@@ -619,7 +666,9 @@ class JobWorker:
             await self._fail_job(doc, error, attempt)
             return
 
+        # ±25% jitter prevents thundering herd when many jobs fail simultaneously
         delay_secs = min(BACKOFF_BASE_SECS * (2 ** attempt), BACKOFF_MAX_SECS)
+        delay_secs = delay_secs * random.uniform(0.75, 1.25)
         run_at     = (now + timedelta(seconds=delay_secs)).isoformat()
 
         await db.jobs.update_one(
@@ -825,8 +874,8 @@ def start_worker() -> None:
     _worker.start()
 
 
-def stop_worker() -> None:
-    _worker.stop()
+async def stop_worker() -> None:
+    await _worker.stop()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -853,6 +902,16 @@ async def create_indexes() -> None:
     )
     await db.jobs_audit.create_index([("job_id", 1)])
     await db.jobs_audit.create_index([("tenant_id", 1), ("at", -1)])
+    # Bridge source collection indexes — queried every BRIDGE_INTERVAL_SECS seconds
+    await db.e10_posts.create_index(
+        [("status", 1), ("schedule_at", 1)], name="e10_posts_bridge_idx"
+    )
+    await db.e11_followups.create_index(
+        [("status", 1), ("send_at", 1)], name="e11_followups_bridge_idx"
+    )
+    await db.e4_scheduled_content.create_index(
+        [("status", 1), ("schedule_at", 1)], name="e4_sched_bridge_idx"
+    )
     logger.info("[JOB] MongoDB indexes created")
 
 

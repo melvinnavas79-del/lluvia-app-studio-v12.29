@@ -183,8 +183,24 @@ _SAFE_BUILTINS = {
 }
 
 
+# Patterns commonly used to escape Python sandboxes via object introspection.
+# MASTER_KEY is the primary security control; this is defense-in-depth.
+_SANDBOX_ESCAPE = re.compile(
+    r"__class__\s*\.|__mro__\b|__subclasses__\s*\(\)|__reduce__|"
+    r"__globals__\b|__code__\b|__import__\s*\(|__builtins__\b|"
+    r"getattr\s*\(.*?__",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
 def _run_python_sandbox(code: str, timeout_sec: int = _PYTHON_TIMEOUT_SEC) -> dict:
     """Ejecuta Python en sandbox restringido. Captura stdout/stderr. No async."""
+    if _SANDBOX_ESCAPE.search(code):
+        return {
+            "ok": False,
+            "error": "Sandbox: patrón de escape detectado (__class__, __mro__, __subclasses__, etc.)",
+            "stdout": "", "stderr": "", "elapsed_ms": 0,
+        }
     stdout_buf = io.StringIO()
     stderr_buf = io.StringIO()
     _globals = {"__builtins__": _SAFE_BUILTINS}
@@ -280,15 +296,21 @@ async def _live_monitor_snapshot() -> dict:
         "updated_at": {"$gte": datetime.now(timezone.utc).replace(hour=0, minute=0, second=0).isoformat()},
     })
 
-    # E9 counters today (aggregated)
+    # E9 counters today (aggregated per module)
+    # e9_counters schema: {module, day, tenant_id, call_count, event_count, error_count, ...}
     e9_today: dict = {}
-    async for doc in db.e9_counters.find({"date": today}):
-        key = doc.get("module", "?") + "." + doc.get("event", "?")
-        e9_today[key] = doc.get("count", 0)
+    async for doc in db.e9_counters.find({"day": today}):
+        key = doc.get("module", "?")
+        if key not in e9_today:
+            e9_today[key] = {"calls": 0, "events": 0, "errors": 0}
+        e9_today[key]["calls"]  += doc.get("call_count", 0)
+        e9_today[key]["events"] += doc.get("event_count", 0)
+        e9_today[key]["errors"] += doc.get("error_count", 0)
 
     # AI costs today
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     cost_pipeline = [
-        {"$match": {"ts": {"$gte": now.replace(hour=0, minute=0, second=0).isoformat()}}},
+        {"$match": {"ts": {"$gte": day_start}}},
         {"$group": {
             "_id": "$model",
             "total_usd": {"$sum": "$cost_usd"},
@@ -308,20 +330,22 @@ async def _live_monitor_snapshot() -> dict:
     # SLA breaches open
     sla_breaches = await db.e8_tickets.count_documents({"sla_breached": True, "status": {"$ne": "closed"}})
 
-    # Recent errors
+    # Recent errors — field is "event_type" not "event"
     recent_errors: list = []
-    async for doc in db.e9_events.find({"event": {"$regex": r"\.failed$"}}).sort("ts", -1).limit(10):
+    async for doc in db.e9_events.find(
+        {"event_type": {"$regex": r"(\.failed|error)$"}}
+    ).sort("ts", -1).limit(10):
         recent_errors.append({
             "module": doc.get("module"),
-            "event": doc.get("event"),
+            "event":  doc.get("event_type"),   # surface as "event" for UI compat
             "tenant": doc.get("tenant_id"),
-            "ts": doc.get("ts"),
-            "error": str(doc.get("data", {}).get("error", ""))[:120],
+            "ts":     doc.get("ts"),
+            "error":  str(doc.get("data", {}).get("error", ""))[:120],
         })
 
-    # Worker heartbeat
+    # Worker heartbeat — field is "event_type" not "event"
     recent_heartbeat = await db.e9_events.find_one(
-        {"event": "worker.heartbeat"},
+        {"event_type": "worker.heartbeat"},
         sort=[("ts", -1)],
     )
     last_heartbeat = recent_heartbeat.get("ts") if recent_heartbeat else None
@@ -581,13 +605,19 @@ async def file_read(
     path: absoluto o relativo a /opt/lluvia-studio/backend/
     lines: máximo 500.
     """
-    # Resolve path safely
-    path = req.path
-    if not path.startswith("/"):
-        path = f"/opt/lluvia-studio/backend/{path}"
-    # Basic path traversal protection
-    if ".." in path:
-        raise HTTPException(400, detail="Path traversal no permitido")
+    # Resolve and contain path — symlink-safe via Path.resolve()
+    from pathlib import Path as _Path
+    raw = req.path
+    if not raw.startswith("/"):
+        raw = f"/opt/lluvia-studio/backend/{raw}"
+    try:
+        resolved = _Path(raw).resolve()
+    except (ValueError, OSError) as e:
+        raise HTTPException(400, detail=f"Ruta inválida: {e}")
+    _ALLOWED_BASE = _Path("/opt/lluvia-studio").resolve()
+    if not str(resolved).startswith(str(_ALLOWED_BASE)):
+        raise HTTPException(403, detail="Acceso denegado: ruta fuera del directorio permitido")
+    path = str(resolved)
     lines = min(max(req.lines, 1), 500)
 
     try:
@@ -774,17 +804,18 @@ async def tenant_diagnostics(
     async for doc in db.e9_ai_costs.aggregate(cost_pipeline):
         ai_costs.append({"model": doc["_id"], "calls": doc["calls"], "usd": round(doc["total_usd"], 4)})
 
-    # Recent errors
+    # Recent errors — field is "event_type" not "event"
     errors: list = []
     async for doc in db.e9_events.find({
         "tenant_id": tenant_id,
-        "event": {"$regex": r"\.failed$"},
+        "event_type": {"$regex": r"(\.failed|error)$"},
         "ts": {"$gte": day_ago},
     }).sort("ts", -1).limit(20):
         errors.append({
-            "module": doc.get("module"), "event": doc.get("event"),
-            "ts": doc.get("ts"),
-            "error": str(doc.get("data", {}).get("error", ""))[:100],
+            "module": doc.get("module"),
+            "event":  doc.get("event_type"),  # surface as "event" for UI compat
+            "ts":     doc.get("ts"),
+            "error":  str(doc.get("data", {}).get("error", ""))[:100],
         })
 
     return {

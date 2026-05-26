@@ -131,22 +131,19 @@ def _compute_sla_deadlines(priority: str, created_at: str) -> dict:
 
 
 async def _auto_assign(db, ticket_id: str, tenant_id: str, priority: str) -> Optional[str]:
-    """Round-robin auto-assignment from e8_agents pool for the tenant."""
-    agents = [
-        a async for a in db.e8_agents.find(
-            {"tenant_id": tenant_id, "active": True},
-            {"agent_id": 1, "email": 1, "_id": 0},
-        ).sort("last_assigned", 1).limit(1)
-    ]
-    if not agents:
-        return None
-    agent = agents[0]
-    agent_id = agent.get("agent_id") or agent.get("email", "")
+    """Atomic round-robin auto-assignment from e8_agents pool for the tenant.
+    Uses find_one_and_update to prevent two concurrent tickets from claiming the same agent."""
     now = datetime.now(timezone.utc).isoformat()
-    await db.e8_agents.update_one(
-        {"agent_id": agent_id, "tenant_id": tenant_id},
+    agent = await db.e8_agents.find_one_and_update(
+        {"tenant_id": tenant_id, "active": True},
         {"$set": {"last_assigned": now}},
+        sort=[("last_assigned", 1)],
+        return_document=True,
+        projection={"agent_id": 1, "email": 1, "_id": 0},
     )
+    if not agent:
+        return None
+    agent_id = agent.get("agent_id") or agent.get("email", "")
     await db.e8_tickets.update_one(
         {"id": ticket_id},
         {"$set": {"assigned_to": agent_id, "assigned_at": now}},
