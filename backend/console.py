@@ -435,6 +435,23 @@ OPENAI_TOOLS = [
             "service": {"type": "string"},
         }, "required": ["vps_id", "service"]},
     }},
+    # ── Meta-tool E1→E2-E9 (additive) ────────────────────────────────────────
+    {"type": "function", "function": {
+        "name": "call_specialist_tool",
+        "description": (
+            "Delega una acción a un agente especialista del ecosistema enterprise (E2-E9). "
+            "Usar cuando la tarea requiere capacidades especializadas que están en un sub-orquestador. "
+            "E2=infra/deploy, E3=builder/apps, E4=sales/marketing, E5=whitelabel/licencias, "
+            "E6=legal/contratos, E7=billing/stripe, E8=soporte/CRM, E9=analytics/monitoreo."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "agent": {"type": "string", "enum": ["e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9"],
+                      "description": "Sub-orquestador a invocar"},
+            "tool": {"type": "string", "description": "Nombre de la tool del agente especialista"},
+            "params": {"type": "object", "description": "Parámetros para la tool", "default": {}},
+        }, "required": ["agent", "tool"]},
+    }},
+    # ─────────────────────────────────────────────────────────────────────────
 ]
 
 
@@ -680,6 +697,100 @@ def _build_next_step_text(target: str, slug: str) -> str:
     }
     return common + extras.get(target, extras["render"])
 
+
+
+async def _dispatch_to_specialist(agent: str, tool: str, params: dict) -> dict:
+    """E1 delega a un sub-orquestador E2-E9. Additive — no modifica tools existentes."""
+    try:
+        if agent == "e2":
+            import e2_infra as m
+            fn_map = {
+                "deploy_manager": m.tool_deploy_manager,
+                "ci_cd_pipeline": m.tool_ci_cd_pipeline,
+                "infra_health": m.tool_infra_health,
+                "service_monitor": m.tool_service_monitor,
+                "rollback_trigger": m.tool_rollback_trigger,
+                "ssl_manager": m.tool_ssl_manager,
+                "docker_manager": m.tool_docker_manager,
+            }
+        elif agent == "e3":
+            import e3_builder as m
+            fn_map = {
+                "app_generator": m.tool_app_generator,
+                "template_manager": m.tool_template_manager,
+                "agent_designer": m.tool_agent_designer,
+                "preview_builder": m.tool_preview_builder,
+                "build_validator": m.tool_build_validator,
+                "hot_reload_trigger": m.tool_hot_reload_trigger,
+            }
+        elif agent == "e4":
+            import e4_sales as m
+            fn_map = {
+                "lead_manager": m.tool_lead_manager,
+                "campaign_builder": m.tool_campaign_builder,
+                "funnel_designer": m.tool_funnel_designer,
+                "viral_hook_gen": m.tool_viral_hook_gen,
+                "seo_optimizer": m.tool_seo_optimizer,
+                "social_scheduler": m.tool_social_scheduler,
+            }
+        elif agent == "e5":
+            import e5_whitelabel as m
+            fn_map = {
+                "license_generator": m.tool_license_generator,
+                "tenant_manager": m.tool_tenant_manager,
+                "branding_mapper": m.tool_branding_mapper,
+                "domain_connector": m.tool_domain_connector,
+                "saas_plan_limits": m.tool_saas_plan_limits,
+                "white_label_manager": m.tool_white_label_manager,
+                "client_activation": m.tool_client_activation,
+            }
+        elif agent == "e6":
+            import e6_legal as m
+            fn_map = {
+                "tos_generator": m.tool_tos_generator,
+                "privacy_builder": m.tool_privacy_builder,
+                "contract_builder": m.tool_contract_builder,
+                "compliance_checker": m.tool_compliance_checker,
+                "gdpr_audit": m.tool_gdpr_audit,
+            }
+        elif agent == "e7":
+            import e7_billing as m
+            fn_map = {
+                "stripe_manager": m.tool_stripe_manager,
+                "subscription_engine": m.tool_subscription_engine,
+                "invoice_generator": m.tool_invoice_generator,
+                "usage_meter": m.tool_usage_meter,
+                "billing_control": m.tool_billing_control,
+            }
+        elif agent == "e8":
+            import e8_support as m
+            fn_map = {
+                "ticket_manager": m.tool_ticket_manager,
+                "crm_contact": m.tool_crm_contact,
+                "kb_search": m.tool_kb_search,
+                "escalation_handler": m.tool_escalation_handler,
+                "support_analytics": m.tool_support_analytics,
+            }
+        elif agent == "e9":
+            import e9_analytics as m
+            fn_map = {
+                "analytics_dashboard": m.tool_analytics_dashboard,
+                "uptime_monitor": m.tool_uptime_monitor,
+                "ai_cost_tracker": m.tool_ai_cost_tracker,
+                "alert_system": m.tool_alert_system,
+                "report_generator": m.tool_report_generator,
+            }
+        else:
+            return {"error": f"Agente desconocido: {agent}. Válidos: e2-e9"}
+
+        fn = fn_map.get(tool)
+        if not fn:
+            return {"error": f"Tool '{tool}' no encontrada en {agent}. Disponibles: {list(fn_map.keys())}"}
+
+        result = await fn(**params) if params else await fn()
+        return result if isinstance(result, dict) else {"result": result}
+    except Exception as exc:
+        return {"error": f"Error en {agent}.{tool}: {str(exc)}"}
 
 
 async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tuple[str, int]:
@@ -1108,6 +1219,10 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
                     data = {"error": "Solo se pueden reiniciar services con prefijo 'lluvia-'"}
                 else:
                     data = await vm._ssh_run(vps, f"sudo systemctl restart {service} && sudo systemctl is-active {service}", timeout=30)
+        elif name == "call_specialist_tool":
+            data = await _dispatch_to_specialist(
+                args.get("agent", ""), args.get("tool", ""), args.get("params", {})
+            )
         else:
             return json.dumps({"error": f"Tool desconocida: {name}"}), 0
         return json.dumps(data, ensure_ascii=False)[:30000], cost

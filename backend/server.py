@@ -433,6 +433,36 @@ pricing_module.set_db(db)
 import admin_pricing as admin_pricing_module
 api_router.include_router(admin_pricing_module.router)
 api_router.include_router(telegram_unified_module.router_link)
+
+# ── E2-E9 Enterprise Architecture (additive) ──────────────────────────────────
+import e2_infra as e2_module
+import e3_builder as e3_module
+import e4_sales as e4_module
+import e5_whitelabel as e5_module
+import e6_legal as e6_legal_module
+import e7_billing as e7_module
+import e8_support as e8_module
+import e9_analytics as e9_module
+
+e2_module.set_db(db)
+e3_module.set_db(db)
+e4_module.set_db(db)
+e5_module.set_db(db)
+e6_legal_module.set_db(db)
+e7_module.set_db(db)
+e8_module.set_db(db)
+e9_module.set_db(db)
+
+api_router.include_router(e2_module.router)
+api_router.include_router(e3_module.router)
+api_router.include_router(e4_module.router)
+api_router.include_router(e5_module.router)
+api_router.include_router(e6_legal_module.router)
+api_router.include_router(e7_module.router)
+api_router.include_router(e8_module.router)
+api_router.include_router(e9_module.router)
+# ─────────────────────────────────────────────────────────────────────────────
+
 app.include_router(api_router)
 
 # Servir archivos subidos (imagenes de chat). Accesibles via /api/uploads/...
