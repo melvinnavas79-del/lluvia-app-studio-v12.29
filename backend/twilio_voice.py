@@ -44,6 +44,7 @@ from pydantic import BaseModel
 from auth import get_current_user
 from llm_router import get_client
 from rate_limit import limiter
+import anti_abuse
 
 logger = logging.getLogger("twilio_voice")
 router = APIRouter(prefix="/twilio-voice", tags=["twilio-voice"])
@@ -370,6 +371,7 @@ async def _close_call(db, call_sid: str, status: str, transferred_to: str = ""):
     if transferred_to:
         update["transferred_to"] = transferred_to
     await db.voice_calls.update_one({"call_sid": call_sid}, {"$set": update})
+    anti_abuse.clear_gather_tracker(call_sid)  # libera memoria del flood tracker
 
 
 # ──────────────────────────────────────────────────────────
@@ -532,6 +534,9 @@ async def gather_result(request: Request):
     agent_id = request.query_params.get("agent_id", "lluvia-default")
     silence_flag = request.query_params.get("silence", "0") == "1"
 
+    # ── Anti-flood: detecta POST /gather anómalos en la misma llamada ──
+    anti_abuse.check_gather_flood(call_sid)
+
     speech = (form.get("SpeechResult", "") or "").strip()
 
     db = _db()
@@ -676,13 +681,17 @@ async def call_status_callback(request: Request):
     call = await _get_call(db, call_sid)
     if call:
         tenant_id = call.get("tenant_id", "default")
+        ai_cost = round(call.get("ai_cost_usd", 0.0), 6)
         await _emit_event(db, call_sid, tenant_id, "voice_call_completed", {
             "status": status,
             "duration_seconds": duration,
             "turns": len(call.get("turns", [])),
             "total_tokens": call.get("total_tokens", 0),
-            "ai_cost_usd": round(call.get("ai_cost_usd", 0.0), 6),
+            "ai_cost_usd": ai_cost,
         })
+        # Registra costo real en contadores de tenant (alimenta budget guardrails + E9)
+        if status in ("completed", "in-progress"):
+            await anti_abuse.record_call_cost(db, tenant_id, ai_cost)
 
     logger.info(f"Call {call_sid} status={status} duration={duration}s")
     return PlainTextResponse('<?xml version="1.0"?><Response/>', media_type="application/xml")
@@ -712,6 +721,13 @@ async def outbound_call(request: Request, data: OutboundIn,
     if not TWILIO_VOICE_WEBHOOK_URL:
         raise HTTPException(status_code=503, detail="TWILIO_VOICE_WEBHOOK_URL no configurado")
 
+    db = _db()
+    # ── Anti-abuse: cuota diaria + budget + cooldown por número ──
+    await anti_abuse.check_daily_budget(db, data.tenant_id)
+    await anti_abuse.check_monthly_budget(db, data.tenant_id)
+    await anti_abuse.check_and_increment_daily_calls(db, data.tenant_id)
+    await anti_abuse.check_outbound_cooldown(db, data.to, data.tenant_id)
+
     base = TWILIO_VOICE_WEBHOOK_URL.rstrip("/")
     qs = urlencode({
         "tenant_id": data.tenant_id,
@@ -725,7 +741,6 @@ async def outbound_call(request: Request, data: OutboundIn,
     result = await _twilio_create_call(data.to, TWILIO_VOICE_FROM, inbound_url, status_url)
     real_sid = result.get("sid", f"mock-{uuid.uuid4().hex[:8]}")
 
-    db = _db()
     ts = datetime.now(timezone.utc).isoformat()
     await db.voice_calls.insert_one({
         "call_sid": real_sid,
@@ -882,6 +897,7 @@ class CampaignIn(BaseModel):
 @limiter.limit("10/minute")
 async def create_campaign(request: Request, data: CampaignIn,
                           user: dict = Depends(get_current_user)):
+    anti_abuse.check_campaign_size(data.numbers)  # 400 si supera CAMPAIGN_MAX_NUMBERS
     db = _db()
     ts = datetime.now(timezone.utc).isoformat()
     cid = data.campaign_id or f"camp-{uuid.uuid4().hex[:8]}"
@@ -958,6 +974,16 @@ async def voice_metrics(tenant_id: str = "default", days: int = 7,
         "avg_ai_cost_per_call_usd": round(total_cost / max(1, total), 4),
         "successful_conversations": completed,
     }
+
+
+# ── Quotas y budget por tenant ───────────────────────────
+
+@router.get("/quotas/{tenant_id}")
+async def tenant_quota_summary(tenant_id: str,
+                               user: dict = Depends(get_current_user)):
+    """Retorna cuota diaria, costo acumulado y límites configurados para el tenant."""
+    db = _db()
+    return await anti_abuse.get_tenant_quota_summary(db, tenant_id)
 
 
 # ── Estado del sistema ────────────────────────────────────
