@@ -164,22 +164,40 @@ async def enqueue_job(
     }
     await db.jobs.insert_one(doc)
     logger.info(f"[JOB] enqueued {job_id} type={job_type} tenant={tenant_id} run_at={run_at.isoformat()}")
+
+    await _emit_job("job.created", job_id, job_type, tenant_id)
+
     return {"ok": True, "duplicate": False, "job": {k: v for k, v in doc.items() if k != "_id"}}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# E9 INTEGRATION — non-blocking; errors never propagate
+# E9 INTEGRATION — via e9_emitters (non-blocking)
 # ══════════════════════════════════════════════════════════════════════════════
 
-async def _emit_e9(event_type: str, data: dict, tenant_id: str = "default") -> None:
+async def _emit_job(
+    event_type: str,
+    job_id: str,
+    job_type: str,
+    tenant_id: str = "default",
+    worker_id: str = "",
+    attempt: int = 0,
+    elapsed_ms: int = 0,
+    error: str = "",
+    queue_depth: int = -1,
+) -> None:
     try:
-        import e9_analytics
-        await e9_analytics._track_event({
-            "event_type": event_type,
-            "source":     "job_scheduler",
-            "tenant_id":  tenant_id,
-            "data":       data,
-        })
+        import e9_emitters
+        await e9_emitters.track_job_event(
+            event_type=event_type,
+            job_id=job_id,
+            job_type=job_type,
+            tenant_id=tenant_id,
+            worker_id=worker_id,
+            attempt=attempt,
+            elapsed_ms=elapsed_ms,
+            error=error,
+            queue_depth=queue_depth,
+        )
     except Exception as exc:
         logger.debug(f"[JOB] E9 emit skipped: {exc}")
 
@@ -502,6 +520,8 @@ class JobWorker:
         now       = datetime.now(timezone.utc)
 
         logger.info(f"[JOB] Executing {job_id} type={job_type} tenant={tenant_id} attempt={attempt}")
+        await _emit_job("job.started", job_id, job_type, tenant_id,
+                        worker_id=self.worker_id, attempt=attempt)
 
         # Anti-flood
         if not _check_flood(tenant_id):
@@ -554,12 +574,8 @@ class JobWorker:
                     "elapsed_ms": elapsed_ms,
                     "at":        now.isoformat(),
                 })
-                await _emit_e9("job.completed", {
-                    "job_id":     job_id,
-                    "job_type":   job_type,
-                    "elapsed_ms": elapsed_ms,
-                    "attempt":    attempt,
-                }, tenant_id)
+                await _emit_job("job.completed", job_id, job_type, tenant_id,
+                               worker_id=self.worker_id, attempt=attempt, elapsed_ms=elapsed_ms)
 
         except asyncio.CancelledError:
             raise
@@ -606,13 +622,8 @@ class JobWorker:
             "error":      error,
             "at":         now.isoformat(),
         })
-        await _emit_e9("job.retry", {
-            "job_id":     job_id,
-            "job_type":   doc["job_type"],
-            "attempt":    attempt,
-            "delay_secs": delay_secs,
-            "error":      error,
-        }, tenant_id)
+        await _emit_job("job.retry", job_id, doc["job_type"], tenant_id,
+                       attempt=attempt, error=error)
 
     async def _fail_job(self, doc: dict, error: str, attempt: int) -> None:
         db        = _db()
@@ -640,12 +651,8 @@ class JobWorker:
             "error":     error,
             "at":        now.isoformat(),
         })
-        await _emit_e9("job.failed", {
-            "job_id":   job_id,
-            "job_type": doc["job_type"],
-            "attempts": attempt,
-            "error":    error,
-        }, tenant_id)
+        await _emit_job("job.failed", job_id, doc["job_type"], tenant_id,
+                       attempt=attempt, error=error)
 
     # ── heartbeat ──────────────────────────────────────────────────────────────
 
@@ -663,6 +670,9 @@ class JobWorker:
                 )
                 if result.modified_count > 0:
                     logger.debug(f"[JOB] Heartbeat {result.modified_count} jobs")
+                    await _emit_job("worker.heartbeat", "bulk", "all",
+                                   worker_id=self.worker_id,
+                                   queue_depth=result.modified_count)
             except asyncio.CancelledError:
                 break
             except Exception as exc:
@@ -944,10 +954,15 @@ async def api_retry_job(job_id: str, user: dict = Depends(auth.get_current_user)
 async def api_move_dlq(job_id: str, user: dict = Depends(auth.get_current_user)):
     db  = _db()
     now = datetime.now(timezone.utc).isoformat()
-    r   = await db.jobs.update_one(
-        {"job_id": job_id, "status": "failed"},
+    doc = await db.jobs.find_one({"job_id": job_id, "status": "failed"},
+                                  {"job_type": 1, "tenant_id": 1, "_id": 0})
+    if not doc:
+        raise HTTPException(400, f"Job {job_id!r} no está en failed")
+    await db.jobs.update_one(
+        {"job_id": job_id},
         {"$set": {"status": "dead_letter", "updated_at": now}},
     )
-    if r.modified_count == 0:
-        raise HTTPException(400, f"Job {job_id!r} no está en failed")
+    await _emit_job("job.dead_letter", job_id,
+                   doc.get("job_type", "unknown"),
+                   doc.get("tenant_id", "default"))
     return {"ok": True, "job_id": job_id, "status": "dead_letter"}

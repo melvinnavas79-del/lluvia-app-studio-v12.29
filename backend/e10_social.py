@@ -32,6 +32,7 @@ from pydantic import BaseModel
 import auth
 from rate_limit import limiter
 from llm_router import get_client
+from e9_emitters import track_call, track_llm_call
 
 logger = logging.getLogger("e10_social")
 router = APIRouter(prefix="/e10", tags=["e10-social"])
@@ -130,12 +131,22 @@ async def _generate_caption(topic: str, platform: str, tone: str = "engaging",
         f"Responde SOLO con el caption, sin explicaciones."
     )
     try:
+        import time as _time
+        _t0 = _time.monotonic()
         resp = await client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=200,
             temperature=0.7,
         )
+        _elapsed = int((_time.monotonic() - _t0) * 1000)
+        if hasattr(resp, "usage") and resp.usage:
+            await track_llm_call(
+                module="e10_social", provider="groq", model=model,
+                prompt_tokens=resp.usage.prompt_tokens,
+                completion_tokens=resp.usage.completion_tokens,
+                elapsed_ms=_elapsed,
+            )
         return (resp.choices[0].message.content or "").strip()
     except Exception as e:
         logger.error(f"Caption gen error: {e}")
@@ -190,6 +201,7 @@ async def _check_tenant_post_quota(db, tenant_id: str) -> None:
 # Tool functions — expuestas a E1 via console.py dispatch
 # ══════════════════════════════════════════════════════════════════════════════
 
+@track_call(module="e10_social", event_prefix="e10.social_post")
 async def tool_social_post(content: str, platforms: list = None,
                             tenant_id: str = "default", media_url: str = "",
                             hashtags: list = None, schedule_at: str = "") -> dict:
@@ -247,6 +259,7 @@ async def tool_social_caption_gen(topic: str, platform: str = "instagram",
     }
 
 
+@track_call(module="e10_social", event_prefix="e10.social_campaign")
 async def tool_social_campaign(name: str, posts: list = None, platforms: list = None,
                                 schedule: list = None, tenant_id: str = "default",
                                 workflow_type: str = "awareness") -> dict:

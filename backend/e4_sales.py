@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 import auth
 import llm_router
+from e9_emitters import track_call, track_llm_call
 
 logger = logging.getLogger("e4_sales")
 router = APIRouter(prefix="/e4", tags=["E4-Sales"])
@@ -166,12 +167,22 @@ async def _generate_viral_hook(product: str, platform: str, tone: str = "profess
         f"Enfócate en beneficios concretos y urgencia."
     )
     try:
+        import time as _time
+        _t0 = _time.monotonic()
         resp = await client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=300,
             temperature=0.8,
         )
+        _elapsed = int((_time.monotonic() - _t0) * 1000)
+        if hasattr(resp, "usage") and resp.usage:
+            await track_llm_call(
+                module="e4_sales", provider="groq", model=model,
+                prompt_tokens=resp.usage.prompt_tokens,
+                completion_tokens=resp.usage.completion_tokens,
+                elapsed_ms=_elapsed,
+            )
         hooks_text = resp.choices[0].message.content or ""
         hooks = [h.strip() for h in hooks_text.split("\n") if h.strip() and h.strip()[0].isdigit()]
         return {"product": product, "platform": platform, "tone": tone, "hooks": hooks, "model": model}
@@ -223,6 +234,7 @@ async def tool_lead_manager(action: str, email: str = "", stage: str = "",
     raise ValueError(f"action desconocida o parámetros faltantes: {action}")
 
 
+@track_call(module="e4_sales", event_prefix="e4.campaign_builder")
 async def tool_campaign_builder(name: str, campaign_type: str = "email",
                                  tenant_id: str = "", content: str = "",
                                  target_audience: str = "") -> dict:
@@ -258,6 +270,7 @@ async def tool_seo_optimizer(content: str, keywords: list = None) -> dict:
     return await _seo_optimize(content, keywords or [])
 
 
+@track_call(module="e4_sales", event_prefix="e4.social_scheduler")
 async def tool_social_scheduler(content: str, platforms: list = None,
                                  schedule_at: str = "", tenant_id: str = "") -> dict:
     sched_id = "sched_" + secrets.token_urlsafe(8)

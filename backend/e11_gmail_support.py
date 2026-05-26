@@ -27,6 +27,7 @@ from pydantic import BaseModel
 
 import auth
 from rate_limit import limiter
+from e9_emitters import track_call, track_error as e9_track_error
 
 logger = logging.getLogger("e11_gmail_support")
 router = APIRouter(prefix="/e11", tags=["e11-gmail-support"])
@@ -119,6 +120,7 @@ async def _append_history(db, ticket_id: str, action: str, notes: str, actor: st
 # Tool functions — expuestas a E1 via console.py dispatch
 # ══════════════════════════════════════════════════════════════════════════════
 
+@track_call(module="e11_gmail_support", event_prefix="e11.inbox_process", emit_start=True)
 async def tool_gmail_inbox_process(user_id: str = "", tenant_id: str = "default",
                                     max_msgs: int = 10) -> dict:
     """
@@ -265,6 +267,7 @@ async def tool_gmail_escalate(ticket_id: str, reason: str = "",
     return {"ok": True, "ticket_id": ticket_id, "status": "escalated", "notify": notify_email}
 
 
+@track_call(module="e11_gmail_support", event_prefix="e11.followup_schedule")
 async def tool_gmail_followup(ticket_id: str, message: str = "",
                                delay_hours: int = 24, tenant_id: str = "default") -> dict:
     """Programa un followup automático para el ticket en N horas."""

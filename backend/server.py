@@ -152,6 +152,9 @@ async def on_startup():
     await job_scheduler_module.create_indexes()
     job_scheduler_module.start_worker()
 
+    # E9 Emitters — indexes para nuevas colecciones de instrumentación
+    await e9_emitters_module.create_indexes()
+
 
 @app.on_event("shutdown")
 async def on_shutdown():
@@ -495,6 +498,11 @@ api_router.include_router(e11_module.router)
 import job_scheduler as job_scheduler_module
 job_scheduler_module.set_db(db)
 api_router.include_router(job_scheduler_module.router)
+
+# ── E9 Emitters — instrumentación real additive ───────────────────────────────
+import e9_emitters as e9_emitters_module
+e9_emitters_module.set_db(db)
+api_router.include_router(e9_emitters_module.router)
 
 # ── Observabilidad centralizada ───────────────────────────────────────────────
 import observability as observability_module
