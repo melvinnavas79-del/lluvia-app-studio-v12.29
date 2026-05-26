@@ -13,6 +13,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 import auth
+import e2_executor
+from e9_emitters import track_call, track_error as e9_track_error
 
 logger = logging.getLogger("e2_infra")
 router = APIRouter(prefix="/e2", tags=["E2-Infra"])
@@ -175,6 +177,7 @@ async def _infra_health_check(service: str) -> dict:
 
 # ─── Tool functions (llamadas por E1 / E2 AI) ─────────────────────────────────
 
+@track_call(module="e2_infra", event_prefix="e2.deploy_manager")
 async def tool_deploy_manager(action: str, service: str, env: str = "production",
                                stack: str = "fastapi", tenant_id: str = "",
                                repo_url: str = "", note: str = "") -> dict:
@@ -209,37 +212,36 @@ async def tool_infra_health(service: str) -> dict:
     return await _infra_health_check(service)
 
 
-async def tool_service_monitor(service: str, action: str = "status") -> dict:
-    return {
-        "service": service,
-        "action": action,
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "note": "Monitoreo activo via vps_manager — configurar VPS para datos reales",
-    }
+@track_call(module="e2_infra", event_prefix="e2.service_monitor")
+async def tool_service_monitor(service: str, action: str = "status",
+                                tenant_id: str = "") -> dict:
+    """STATUS: REAL si E2_VPS_HOST configurado."""
+    if action == "status":
+        return await e2_executor.service_status(service)
+    if action == "metrics":
+        return await e2_executor.system_metrics()
+    return await e2_executor.service_status(service)
 
 
-async def tool_rollback_trigger(dep_id: str) -> dict:
+@track_call(module="e2_infra", event_prefix="e2.rollback")
+async def tool_rollback_trigger(dep_id: str, tenant_id: str = "") -> dict:
     doc = await _get_deployment(dep_id)
     updated = await _update_deployment_status(dep_id, "rolled_back", "Rollback manual vía E1", "e1_tool")
     return {"ok": True, "deployment": updated}
 
 
-async def tool_ssl_manager(domain: str, action: str = "status") -> dict:
-    return {
-        "domain": domain,
-        "action": action,
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "note": "SSL management prep — integrar certbot via vps shell_run",
-    }
+@track_call(module="e2_infra", event_prefix="e2.ssl_manager")
+async def tool_ssl_manager(domain: str, action: str = "status",
+                            tenant_id: str = "") -> dict:
+    """STATUS: REAL si E2_VPS_HOST configurado y certbot instalado."""
+    return await e2_executor.run_ssl(domain, action)
 
 
-async def tool_docker_manager(container: str, action: str = "status") -> dict:
-    return {
-        "container": container,
-        "action": action,
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "note": "Docker management — conectar via vps_manager shell_run",
-    }
+@track_call(module="e2_infra", event_prefix="e2.docker_manager")
+async def tool_docker_manager(container: str, action: str = "status",
+                               tenant_id: str = "") -> dict:
+    """STATUS: REAL si E2_VPS_HOST configurado y Docker instalado."""
+    return await e2_executor.run_docker(action, container)
 
 
 # ─── FastAPI endpoints ────────────────────────────────────────────────────────

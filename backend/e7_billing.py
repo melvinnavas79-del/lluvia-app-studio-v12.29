@@ -32,6 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 import auth
+from e9_emitters import track_call
 
 logger = logging.getLogger("e7_billing")
 router = APIRouter(prefix="/e7", tags=["E7-Billing"])
@@ -918,6 +919,7 @@ async def tool_stripe_manager(action: str, tenant_id: str = "", params: dict = N
     return await tool_billing_control(action, tenant_id)
 
 
+@track_call(module="e7_billing", event_prefix="e7.subscription_engine")
 async def tool_subscription_engine(tenant_id: str, plan_key: str,
                                     action: str = "create",
                                     billing_email: str = "",
@@ -948,6 +950,7 @@ async def tool_subscription_engine(tenant_id: str, plan_key: str,
     raise ValueError(f"action desconocida: {action}")
 
 
+@track_call(module="e7_billing", event_prefix="e7.invoice_generator")
 async def tool_invoice_generator(tenant_id: str, items: list,
                                   billing_email: str = "",
                                   due_days: int = 15,
@@ -956,6 +959,7 @@ async def tool_invoice_generator(tenant_id: str, items: list,
                                           due_days, currency, actor="e1_tool")
 
 
+@track_call(module="e7_billing", event_prefix="e7.usage_meter")
 async def tool_usage_meter(tenant_id: str, metric: str, value: float,
                             period: str = "") -> dict:
     return await engine_track_usage(tenant_id, metric, value, period)

@@ -155,11 +155,15 @@ async def on_startup():
     # E9 Emitters — indexes para nuevas colecciones de instrumentación
     await e9_emitters_module.create_indexes()
 
+    # E8 SLA Monitor — chequea breaches cada 5 min
+    e8_module.start_sla_monitor()
+
 
 @app.on_event("shutdown")
 async def on_shutdown():
     gmail_scheduler_module.stop_scheduler()
     job_scheduler_module.stop_worker()
+    e8_module.stop_sla_monitor()
 
 
 # ============================================================

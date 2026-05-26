@@ -70,40 +70,44 @@ TENANT_POSTS_DAILY = int(os.environ.get("E10_TENANT_POSTS_DAILY", "50"))
 # OAuth placeholder — activar con credenciales reales por plataforma
 # ══════════════════════════════════════════════════════════════════════════════
 
-async def _get_platform_token(db, platform: str, tenant_id: str) -> Optional[str]:
+async def _get_platform_credentials(db, platform: str, tenant_id: str) -> dict:
     """
-    Retorna el access token OAuth para (platform, tenant_id).
-    Retorna None si no está conectado (Phase 1: stubs en queued state).
+    Retorna el connection doc completo (token + platform_user_id + extras).
+    Retorna {} si no está conectado.
     """
     conn = await db.e10_connections.find_one(
         {"platform": platform, "tenant_id": tenant_id, "active": True},
-        {"_id": 0, "access_token": 1}
+        {"_id": 0},
     )
-    return conn["access_token"] if conn else None
+    return conn or {}
+
+
+async def _get_platform_token(db, platform: str, tenant_id: str) -> Optional[str]:
+    """Backward-compat: retorna solo el access_token."""
+    creds = await _get_platform_credentials(db, platform, tenant_id)
+    return creds.get("access_token")
 
 
 async def _post_to_platform_api(platform: str, token: str, content: str,
-                                  media_url: str = "", hashtags: list = None) -> dict:
+                                  media_url: str = "", hashtags: list = None,
+                                  platform_user_id: str = "") -> dict:
     """
-    Stub del POST real a cada plataforma.
-    Phase 1: simula success. Phase 2: integrar SDK oficial por plataforma.
-    Con token real → llamada HTTP a la API oficial.
+    STATUS: REAL (instagram/facebook/twitter/linkedin) via e10_platform_apis.
+    STATUS: PARCIAL (tiktok — video only)
+    STATUS: STUB (youtube_shorts)
+    STATUS: QUEUED (no token — OAuth not configured)
     """
-    # TODO Phase 2: implementar llamadas reales por plataforma:
-    # - Instagram: Graph API POST /me/media + /me/media/publish
-    # - Facebook:  Graph API POST /{page-id}/feed
-    # - TikTok:    TikTok Content Posting API
-    # - Twitter:   Twitter API v2 POST /2/tweets
-    # - LinkedIn:  LinkedIn UGC API POST /ugcPosts
-    # - Threads:   Meta Threads API (igual que Instagram Graph)
-    # - YouTube:   YouTube Data API v3 videos.insert
-    logger.info(f"[E10] Simulated post to {platform} (token present: {bool(token)})")
-    return {
-        "platform":   platform,
-        "status":     "published" if token else "queued",
-        "post_id":    f"mock_{platform}_{uuid.uuid4().hex[:8]}",
-        "note":       "real posting requiere OAuth token en e10_connections",
-    }
+    import e10_platform_apis
+    result = await e10_platform_apis.post_to_platform(
+        platform=platform,
+        token=token,
+        content=content,
+        media_url=media_url,
+        hashtags=hashtags or [],
+        platform_user_id=platform_user_id,
+    )
+    logger.info(f"[E10] post to {platform}: status={result.get('status')} token={bool(token)}")
+    return result
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Caption & copy generation (Groq)
@@ -222,8 +226,12 @@ async def tool_social_post(content: str, platforms: list = None,
     results = {}
 
     for platform in platforms:
-        token = await _get_platform_token(db, platform, tenant_id)
-        api_result = await _post_to_platform_api(platform, token or "", content, media_url, hashtags or [])
+        creds  = await _get_platform_credentials(db, platform, tenant_id)
+        token  = creds.get("access_token", "")
+        puid   = creds.get("platform_user_id", "")
+        api_result = await _post_to_platform_api(
+            platform, token, content, media_url, hashtags or [], puid
+        )
         results[platform] = api_result
 
     doc = {

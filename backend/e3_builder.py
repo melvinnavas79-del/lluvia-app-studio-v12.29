@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 import auth
+from e9_emitters import track_call
 
 logger = logging.getLogger("e3_builder")
 router = APIRouter(prefix="/e3", tags=["E3-Builder"])
@@ -170,6 +171,7 @@ async def _save_agent_config(data: dict, actor: str) -> dict:
 
 # ─── Tool functions ────────────────────────────────────────────────────────────
 
+@track_call(module="e3_builder", event_prefix="e3.app_generator")
 async def tool_app_generator(template_id: str, app_name: str, brand_color: str = "#2563eb",
                               deploy_target: str = "local", tenant_id: str = "",
                               custom_vars: dict = None) -> dict:
@@ -180,6 +182,7 @@ async def tool_app_generator(template_id: str, app_name: str, brand_color: str =
     )
 
 
+@track_call(module="e3_builder", event_prefix="e3.template_manager")
 async def tool_template_manager(action: str, template_id: str = "", data: dict = None) -> dict:
     if action == "list":
         cur = _db().e3_app_templates.find({}, {"_id": 0, "files": 0}).limit(100)
@@ -194,6 +197,7 @@ async def tool_template_manager(action: str, template_id: str = "", data: dict =
     raise ValueError(f"action desconocida o parámetros faltantes: {action}")
 
 
+@track_call(module="e3_builder", event_prefix="e3.agent_designer")
 async def tool_agent_designer(name: str, system_prompt: str, tagline: str = "",
                                tools: list = None, tenant_id: str = "",
                                model_complexity: str = "low") -> dict:

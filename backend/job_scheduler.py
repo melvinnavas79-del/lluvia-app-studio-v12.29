@@ -233,13 +233,15 @@ async def _handle_social_post_publish(payload: dict, tenant_id: str) -> dict:
 
     results: dict = {}
     for platform in platforms:
-        token  = await e10_social._get_platform_token(db, platform, tenant_id)
+        creds  = await e10_social._get_platform_credentials(db, platform, tenant_id)
+        token  = creds.get("access_token", "")
+        puid   = creds.get("platform_user_id", "")
         result = await e10_social._post_to_platform_api(
-            platform, token or "", content, media_url, hashtags
+            platform, token, content, media_url, hashtags, puid
         )
         results[platform] = result
 
-    all_ok = all(r.get("status") == "published" for r in results.values())
+    all_ok = all(r.get("status") in ("published", "processing") for r in results.values())
 
     if post_id:
         await db.e10_posts.update_one(
@@ -279,13 +281,15 @@ async def _handle_campaign_dispatch(payload: dict, tenant_id: str) -> dict:
 
     results: dict = {}
     for platform in platforms:
-        token  = await e10_social._get_platform_token(db, platform, tenant_id)
+        creds  = await e10_social._get_platform_credentials(db, platform, tenant_id)
+        token  = creds.get("access_token", "")
+        puid   = creds.get("platform_user_id", "")
         result = await e10_social._post_to_platform_api(
-            platform, token or "", content, "", []
+            platform, token, content, "", [], puid
         )
         results[platform] = result
 
-    all_ok = all(r.get("status") == "published" for r in results.values())
+    all_ok = all(r.get("status") in ("published", "processing") for r in results.values())
 
     if sched_id:
         await db.e4_scheduled_content.update_one(

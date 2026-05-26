@@ -12,10 +12,29 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+import asyncio
 import auth
 import llm_router
+from e9_emitters import track_call, track_llm_call
 
 logger = logging.getLogger("e8_support")
+
+# ── SLA targets in hours per priority ─────────────────────────────────────────
+SLA_RESOLUTION_HOURS = {
+    "critical": 1,
+    "high":     4,
+    "medium":   24,
+    "low":      72,
+}
+SLA_FIRST_RESPONSE_HOURS = {
+    "critical": 0.25,   # 15 min
+    "high":     1,
+    "medium":   4,
+    "low":      8,
+}
+
+# ── Background SLA monitor task ────────────────────────────────────────────────
+_sla_task = None
 router = APIRouter(prefix="/e8", tags=["E8-Support"])
 _db_ref: dict = {"db": None}
 
@@ -92,6 +111,49 @@ async def _audit(action: str, actor: str, detail: dict, tenant_id: str = "") -> 
 
 # ─── Business logic: Tickets ──────────────────────────────────────────────────
 
+def _compute_sla_deadlines(priority: str, created_at: str) -> dict:
+    """Computes SLA resolution and first-response deadlines from priority."""
+    from datetime import timedelta
+    try:
+        created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+    except Exception:
+        created = datetime.now(timezone.utc)
+    res_h  = SLA_RESOLUTION_HOURS.get(priority, 24)
+    resp_h = SLA_FIRST_RESPONSE_HOURS.get(priority, 4)
+    return {
+        "sla_resolution_deadline":       (created + timedelta(hours=res_h)).isoformat(),
+        "sla_first_response_deadline":   (created + timedelta(hours=resp_h)).isoformat(),
+        "sla_resolution_hours":          res_h,
+        "sla_first_response_hours":      resp_h,
+        "sla_breached":                  False,
+        "sla_first_response_breached":   False,
+    }
+
+
+async def _auto_assign(db, ticket_id: str, tenant_id: str, priority: str) -> Optional[str]:
+    """Round-robin auto-assignment from e8_agents pool for the tenant."""
+    agents = [
+        a async for a in db.e8_agents.find(
+            {"tenant_id": tenant_id, "active": True},
+            {"agent_id": 1, "email": 1, "_id": 0},
+        ).sort("last_assigned", 1).limit(1)
+    ]
+    if not agents:
+        return None
+    agent = agents[0]
+    agent_id = agent.get("agent_id") or agent.get("email", "")
+    now = datetime.now(timezone.utc).isoformat()
+    await db.e8_agents.update_one(
+        {"agent_id": agent_id, "tenant_id": tenant_id},
+        {"$set": {"last_assigned": now}},
+    )
+    await db.e8_tickets.update_one(
+        {"id": ticket_id},
+        {"$set": {"assigned_to": agent_id, "assigned_at": now}},
+    )
+    return agent_id
+
+
 async def _create_ticket(data: dict, actor: str) -> dict:
     if data.get("priority") not in TICKET_PRIORITIES:
         data["priority"] = "medium"
@@ -100,36 +162,49 @@ async def _create_ticket(data: dict, actor: str) -> dict:
     if data.get("category") not in TICKET_CATEGORIES:
         data["category"] = "other"
 
+    now       = datetime.now(timezone.utc).isoformat()
     ticket_id = "tkt_" + secrets.token_urlsafe(8)
+    sla       = _compute_sla_deadlines(data.get("priority", "medium"), now)
+
     doc = {
-        "id": ticket_id,
-        "subject": data["subject"],
-        "description": data["description"],
-        "tenant_id": data.get("tenant_id", ""),
+        "id":            ticket_id,
+        "subject":       data["subject"],
+        "description":   data["description"],
+        "tenant_id":     data.get("tenant_id", ""),
         "contact_email": data["contact_email"],
-        "priority": data.get("priority", "medium"),
-        "channel": data.get("channel", "chat"),
-        "category": data.get("category", "technical"),
-        "tags": data.get("tags", []),
-        "status": "open",
+        "priority":      data.get("priority", "medium"),
+        "channel":       data.get("channel", "chat"),
+        "category":      data.get("category", "technical"),
+        "tags":          data.get("tags", []),
+        "status":        "open",
         "messages": [{
-            "id": "msg_" + secrets.token_urlsafe(6),
-            "content": data["description"],
+            "id":          "msg_" + secrets.token_urlsafe(6),
+            "content":     data["description"],
             "author_type": "customer",
-            "author": data["contact_email"],
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "author":      data["contact_email"],
+            "ts":          now,
         }],
-        "assigned_to": None,
-        "resolved_at": None,
-        "csat": None,
-        "first_response_at": None,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "created_by": actor,
+        "assigned_to":                 None,
+        "resolved_at":                 None,
+        "csat":                        None,
+        "first_response_at":           None,
+        "created_at":                  now,
+        "created_by":                  actor,
+        **sla,
     }
-    await _db().e8_tickets.insert_one(doc)
+    db = _db()
+    await db.e8_tickets.insert_one(doc)
     await _audit("ticket_created", actor,
-                  {"ticket_id": ticket_id, "priority": doc["priority"], "channel": doc["channel"]},
+                  {"ticket_id": ticket_id, "priority": doc["priority"],
+                   "channel": doc["channel"],
+                   "sla_deadline": sla["sla_resolution_deadline"]},
                   data.get("tenant_id", ""))
+
+    # Auto-assign to available agent
+    assigned = await _auto_assign(db, ticket_id, data.get("tenant_id", ""), data.get("priority", "medium"))
+    if assigned:
+        doc["assigned_to"] = assigned
+
     return {k: v for k, v in doc.items() if k != "_id"}
 
 
@@ -265,6 +340,13 @@ async def _search_kb(query: str, tenant_id: str = "") -> dict:
                 temperature=0.2,
             )
             ai_answer = resp.choices[0].message.content
+            import time as _t
+            if hasattr(resp, "usage") and resp.usage:
+                await track_llm_call(
+                    module="e8_support", provider="groq", model=model,
+                    prompt_tokens=resp.usage.prompt_tokens,
+                    completion_tokens=resp.usage.completion_tokens,
+                )
         except Exception as exc:
             logger.warning(f"[e8] KB search AI failed: {exc}")
 
@@ -302,6 +384,7 @@ async def _support_analytics(tenant_id: str, period_days: int = 30) -> dict:
 
 # ─── Tool functions ────────────────────────────────────────────────────────────
 
+@track_call(module="e8_support", event_prefix="e8.ticket_manager")
 async def tool_ticket_manager(action: str, ticket_id: str = "", tenant_id: str = "",
                                data: dict = None) -> dict:
     if action == "create" and data:
@@ -438,3 +521,113 @@ async def search_kb(query: str, tenant_id: Optional[str] = None,
 async def support_analytics(tenant_id: Optional[str] = None, period_days: int = 30,
                               user: dict = Depends(auth.get_current_user)):
     return await _support_analytics(tenant_id or "", period_days)
+
+
+# ── SLA Monitor — background asyncio task ─────────────────────────────────────
+
+async def _sla_monitor_loop(interval: int = 300) -> None:
+    """
+    STATUS: REAL
+    Checks every 5 min for SLA breaches and marks tickets accordingly.
+    Emits E9 alerts on breach.
+    """
+    import e9_emitters
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            db  = _db()
+            now = datetime.now(timezone.utc).isoformat()
+
+            # Resolution deadline breaches
+            res = await db.e8_tickets.update_many(
+                {
+                    "status": {"$in": ["open", "in_progress", "waiting_customer"]},
+                    "sla_resolution_deadline": {"$lte": now},
+                    "sla_breached": False,
+                },
+                {"$set": {"sla_breached": True, "sla_breached_at": now}},
+            )
+            if res.modified_count > 0:
+                logger.warning(f"[e8] SLA resolution breach: {res.modified_count} tickets")
+                await e9_emitters.emit(
+                    "e8.sla_breached",
+                    {"count": res.modified_count, "type": "resolution"},
+                )
+
+            # First-response deadline breaches
+            resp_res = await db.e8_tickets.update_many(
+                {
+                    "status": {"$in": ["open", "in_progress"]},
+                    "first_response_at": None,
+                    "sla_first_response_deadline": {"$lte": now},
+                    "sla_first_response_breached": False,
+                },
+                {"$set": {"sla_first_response_breached": True}},
+            )
+            if resp_res.modified_count > 0:
+                logger.warning(f"[e8] SLA first-response breach: {resp_res.modified_count} tickets")
+                await e9_emitters.emit(
+                    "e8.sla_first_response_breached",
+                    {"count": resp_res.modified_count},
+                )
+
+        except asyncio.CancelledError:
+            break
+        except Exception as exc:
+            logger.error(f"[e8] SLA monitor error: {exc}")
+
+
+_sla_task = None
+
+
+def start_sla_monitor() -> None:
+    global _sla_task
+    if _sla_task is None or _sla_task.done():
+        _sla_task = asyncio.create_task(_sla_monitor_loop(), name="e8_sla_monitor")
+        logger.info("[e8] SLA monitor started")
+
+
+def stop_sla_monitor() -> None:
+    global _sla_task
+    if _sla_task and not _sla_task.done():
+        _sla_task.cancel()
+
+
+# ── Agent registration endpoint (for auto-assignment pool) ────────────────────
+
+class AgentIn(BaseModel):
+    agent_id: str
+    email: str
+    tenant_id: str = ""
+    active: bool = True
+
+
+@router.post("/agents")
+async def register_agent(data: AgentIn, user: dict = Depends(auth.get_current_user)):
+    """Register an agent in the auto-assignment pool."""
+    now = datetime.now(timezone.utc).isoformat()
+    await _db().e8_agents.update_one(
+        {"agent_id": data.agent_id, "tenant_id": data.tenant_id},
+        {"$set": {**data.model_dump(), "last_assigned": None, "updated_at": now}},
+        upsert=True,
+    )
+    return {"ok": True, "agent_id": data.agent_id}
+
+
+@router.get("/agents")
+async def list_agents(tenant_id: Optional[str] = None,
+                       user: dict = Depends(auth.get_current_user)):
+    q = {"tenant_id": tenant_id} if tenant_id else {}
+    agents = [a async for a in _db().e8_agents.find(q, {"_id": 0})]
+    return {"agents": agents}
+
+
+@router.get("/sla/breached")
+async def sla_breached_tickets(tenant_id: Optional[str] = None,
+                                user: dict = Depends(auth.get_current_user)):
+    """List all SLA-breached open tickets."""
+    q: dict = {"sla_breached": True, "status": {"$nin": ["resolved", "closed"]}}
+    if tenant_id:
+        q["tenant_id"] = tenant_id
+    tickets = [t async for t in _db().e8_tickets.find(q, {"_id": 0, "messages": 0}).sort("created_at", 1)]
+    return {"breached_count": len(tickets), "tickets": tickets}

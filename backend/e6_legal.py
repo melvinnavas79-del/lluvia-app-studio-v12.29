@@ -11,7 +11,10 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+import hashlib
 import auth
+from e9_emitters import track_call, track_llm_call
+from fastapi.responses import Response
 import llm_router
 
 logger = logging.getLogger("e6_legal")
@@ -142,6 +145,13 @@ async def _generate_legal_doc(doc_type: str, company: str, product: str,
             temperature=0.3,
         )
         content_html = resp.choices[0].message.content or ""
+        if hasattr(resp, "usage") and resp.usage:
+            await track_llm_call(
+                module="e6_legal", provider="groq", model=model,
+                prompt_tokens=resp.usage.prompt_tokens,
+                completion_tokens=resp.usage.completion_tokens,
+                tenant_id=tenant_id,
+            )
     except Exception as exc:
         logger.warning(f"[e6] LLM failed: {exc}")
         content_html = f"[Documento {doc_type} para {product} — requiere revisión manual]"
@@ -225,6 +235,7 @@ async def _compliance_check(features: list, jurisdiction: str, tenant_id: str, a
 
 # ─── Tool functions ────────────────────────────────────────────────────────────
 
+@track_call(module="e6_legal", event_prefix="e6.tos_generator")
 async def tool_tos_generator(company: str, product: str, jurisdiction: str = "generic",
                               tenant_id: str = "") -> dict:
     return await _generate_legal_doc("tos", company, product, jurisdiction, {}, "e1_tool", tenant_id)
@@ -237,6 +248,7 @@ async def tool_privacy_builder(company: str, product: str, jurisdiction: str = "
                                       {"data_collected": data_collected}, "e1_tool", tenant_id)
 
 
+@track_call(module="e6_legal", event_prefix="e6.contract_builder")
 async def tool_contract_builder(title: str, party_a: str, party_b: str,
                                  terms: str, jurisdiction: str = "generic",
                                  tenant_id: str = "") -> dict:
@@ -252,6 +264,7 @@ async def tool_compliance_checker(features: list, jurisdiction: str = "eu",
     return await _compliance_check(features, jurisdiction, tenant_id, "e1_tool")
 
 
+@track_call(module="e6_legal", event_prefix="e6.gdpr_audit")
 async def tool_gdpr_audit(tenant_id: str, data_flows: list = None) -> dict:
     features = ["data_storage", "ai_processing"] + (data_flows or [])
     return await _compliance_check(features, "eu", tenant_id, "e1_tool")
@@ -308,3 +321,152 @@ async def list_compliance(tenant_id: Optional[str] = None,
     q = {"tenant_id": tenant_id} if tenant_id else {}
     cur = _db().e6_compliance.find(q, {"_id": 0}).sort("checked_at", -1).limit(50)
     return {"checks": [c async for c in cur]}
+
+
+# ── PDF Export — STATUS: REAL ─────────────────────────────────────────────────
+
+def _doc_to_pdf(doc: dict) -> bytes:
+    """
+    STATUS: REAL (fpdf2)
+    Genera un PDF real desde el contenido del documento legal.
+    """
+    from fpdf import FPDF
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 16)
+
+    # Header
+    pdf.cell(0, 12, doc.get("doc_type", "Documento Legal").upper(), ln=True, align="C")
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 6, f"Empresa: {doc.get('company', '')} | Producto: {doc.get('product', '')}",
+             ln=True, align="C")
+    pdf.cell(0, 6, f"Jurisdicción: {doc.get('jurisdiction', '')} | "
+                   f"Versión: {doc.get('version', '1.0')} | "
+                   f"Fecha: {doc.get('created_at', '')[:10]}",
+             ln=True, align="C")
+    pdf.ln(8)
+
+    # Content
+    pdf.set_font("Helvetica", "", 10)
+    content = doc.get("content", "").replace("\r\n", "\n").replace("\r", "\n")
+    for paragraph in content.split("\n"):
+        paragraph = paragraph.strip()
+        if not paragraph:
+            pdf.ln(3)
+            continue
+        if paragraph.startswith("#") or paragraph.isupper():
+            pdf.set_font("Helvetica", "B", 11)
+            pdf.multi_cell(0, 6, paragraph.lstrip("#").strip())
+            pdf.set_font("Helvetica", "", 10)
+        else:
+            pdf.multi_cell(0, 5, paragraph)
+
+    # Footer
+    pdf.ln(10)
+    pdf.set_font("Helvetica", "I", 8)
+    status = doc.get("status", "draft")
+    if status == "signed":
+        pdf.cell(0, 5, f"FIRMADO por {doc.get('signed_by_email', '')} el {doc.get('signed_at', '')[:10]}", ln=True, align="C")
+    else:
+        pdf.cell(0, 5, "BORRADOR — requiere firma", ln=True, align="C")
+
+    return bytes(pdf.output())
+
+
+@router.get("/docs/{doc_id}/pdf")
+async def export_pdf(doc_id: str, user: dict = Depends(auth.get_current_user)):
+    """
+    STATUS: REAL
+    Descarga el documento legal en PDF.
+    """
+    doc = await _db().e6_legal_docs.find_one({"id": doc_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Documento no encontrado")
+    pdf_bytes = _doc_to_pdf(doc)
+    filename  = f"{doc.get('doc_type', 'legal')}_{doc_id}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ── E-Signature (click-to-sign) — STATUS: REAL (audit hash) ──────────────────
+
+class SignIn(BaseModel):
+    signer_email: str
+    signer_name: str
+    ip_address: Optional[str] = None
+    consent_text: str = "Acepto los términos de este documento"
+
+
+@router.post("/docs/{doc_id}/sign")
+async def sign_document(doc_id: str, data: SignIn,
+                         user: dict = Depends(auth.get_current_user)):
+    """
+    STATUS: REAL (click-to-sign with SHA-256 audit hash)
+    Registra la firma electrónica con hash del contenido + timestamp.
+    No es firma PKI — es click-to-sign con audit trail.
+    """
+    doc = await _db().e6_legal_docs.find_one({"id": doc_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Documento no encontrado")
+    if doc.get("status") == "signed":
+        return {"ok": False, "error": "Documento ya firmado", "signed_at": doc.get("signed_at")}
+
+    now       = datetime.now(timezone.utc).isoformat()
+    content   = doc.get("content", "")
+    sig_hash  = hashlib.sha256(
+        f"{doc_id}:{data.signer_email}:{now}:{content[:1000]}".encode()
+    ).hexdigest()
+
+    await _db().e6_legal_docs.update_one(
+        {"id": doc_id},
+        {"$set": {
+            "status":          "signed",
+            "signed_at":       now,
+            "signed_by_email": data.signer_email,
+            "signed_by_name":  data.signer_name,
+            "signed_by_ip":    data.ip_address or "",
+            "consent_text":    data.consent_text,
+            "signature_hash":  sig_hash,
+        }},
+    )
+    await _audit("doc_signed", data.signer_email,
+                  {"doc_id": doc_id, "hash": sig_hash[:16] + "..."},
+                  doc.get("tenant_id", ""))
+
+    return {
+        "ok":            True,
+        "doc_id":        doc_id,
+        "signed_at":     now,
+        "signer_email":  data.signer_email,
+        "signature_hash": sig_hash,
+        "note": "Click-to-sign con SHA-256 audit trail. No es firma PKI.",
+    }
+
+
+@router.get("/contracts/{contract_id}/pdf")
+async def export_contract_pdf(contract_id: str, user: dict = Depends(auth.get_current_user)):
+    """STATUS: REAL — exporta contrato como PDF."""
+    doc = await _db().e6_contracts.find_one({"id": contract_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Contrato no encontrado")
+    fake_doc = {
+        "doc_type":    "contract",
+        "company":     doc.get("party_a", ""),
+        "product":     doc.get("title", ""),
+        "jurisdiction": doc.get("jurisdiction", ""),
+        "content":     f"# {doc['title']}\n\n**Parte A:** {doc.get('party_a','')}\n**Parte B:** {doc.get('party_b','')}\n\n## Términos\n{doc.get('terms','')}",
+        "version":     "1.0",
+        "created_at":  doc.get("created_at", ""),
+        "status":      doc.get("status", "draft"),
+    }
+    pdf_bytes = _doc_to_pdf(fake_doc)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="contract_{contract_id}.pdf"'},
+    )

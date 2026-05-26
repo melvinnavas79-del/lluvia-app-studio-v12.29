@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
 import auth
+from e9_emitters import track_call
 
 logger = logging.getLogger("e5_whitelabel")
 router = APIRouter(prefix="/e5", tags=["E5-WhiteLabel"])
@@ -406,6 +407,7 @@ async def _revoke_license(key: str, actor: str, ip: str = "") -> dict:
 
 # ─── Tool functions (llamadas por E1 / E5 AI) ─────────────────────────────────
 
+@track_call(module="e5_whitelabel", event_prefix="e5.license_generator")
 async def tool_license_generator(plan: str = "pro", seats: int = 1,
                                    expires_days: int = 365, note: str = "",
                                    tenant_id: str = "") -> dict:
@@ -416,6 +418,7 @@ async def tool_license_generator(plan: str = "pro", seats: int = 1,
     )
 
 
+@track_call(module="e5_whitelabel", event_prefix="e5.tenant_manager")
 async def tool_tenant_manager(action: str, tenant_id: str = "", data: dict = None) -> dict:
     if action == "create" and data:
         return await _create_tenant(data, actor="e1_tool")
@@ -465,6 +468,7 @@ async def tool_white_label_manager(tenant_id: str, enable: bool = True,
     return {"tenant_id": tenant_id, "whitelabel_enabled": enable, "branding": doc["branding"]}
 
 
+@track_call(module="e5_whitelabel", event_prefix="e5.client_activation")
 async def tool_client_activation(tenant_id: str, action: str = "activate",
                                    reason: str = "") -> dict:
     if action == "activate":
