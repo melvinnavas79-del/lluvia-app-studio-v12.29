@@ -114,6 +114,11 @@ app = FastAPI(title="Bot Multiplataforma", version="1.1.0")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
+
+# Observabilidad: JSON logs + X-Request-ID middleware (nivel módulo, antes del startup)
+import observability as _obs_boot
+_obs_boot.add_middleware(app)
+
 api_router = APIRouter(prefix="/api")
 
 
@@ -130,6 +135,10 @@ async def on_startup():
     await db.sales.create_index("created_at")
     await auth_module.seed_admin(db)
     logger.info("Startup OK: indices creados, admin seeded")
+
+    # Observabilidad: inyecta db ref (middleware ya está activo desde nivel módulo)
+    import observability as obs_module
+    obs_module.set_db(db)
 
     # Telegram long polling (alternativa a webhook). Activar con TELEGRAM_POLLING=1
     if os.environ.get("TELEGRAM_POLLING", "0") == "1" and config.TELEGRAM_TOKEN:
@@ -466,6 +475,10 @@ api_router.include_router(e9_module.router)
 import twilio_voice as twilio_voice_module
 twilio_voice_module.set_db(db)
 api_router.include_router(twilio_voice_module.router)
+
+# ── Observabilidad centralizada ───────────────────────────────────────────────
+import observability as observability_module
+api_router.include_router(observability_module.router)
 # ─────────────────────────────────────────────────────────────────────────────
 
 app.include_router(api_router)

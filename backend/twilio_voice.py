@@ -42,9 +42,10 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
 from auth import get_current_user
-from llm_router import get_client
+from llm_router import get_client, GROQ_API_KEY as _GROQ_KEY
 from rate_limit import limiter
 import anti_abuse
+import observability as obs
 
 logger = logging.getLogger("twilio_voice")
 router = APIRouter(prefix="/twilio-voice", tags=["twilio-voice"])
@@ -408,6 +409,8 @@ async def _llm_voice_reply(agent: dict, workflow: Optional[dict],
             messages.append({"role": "assistant", "content": turn["assistant"]})
     messages.append({"role": "user", "content": user_text})
 
+    primary_provider = "groq" if _GROQ_KEY else "openai"
+    t0 = time.monotonic()
     try:
         resp = await client.chat.completions.create(
             model=model,
@@ -415,11 +418,16 @@ async def _llm_voice_reply(agent: dict, workflow: Optional[dict],
             max_tokens=max_tokens,
             temperature=0.4,
         )
+        lat = int((time.monotonic() - t0) * 1000)
+        obs.record_provider_call(primary_provider, lat, True)
         text = (resp.choices[0].message.content or "").strip()
         tokens = resp.usage.total_tokens if resp.usage else 0
         return text, tokens
     except Exception as e:
-        logger.warning(f"LLM voice Groq error ({e}), intentando fallback OpenAI")
+        lat = int((time.monotonic() - t0) * 1000)
+        obs.record_provider_call(primary_provider, lat, False)
+        logger.warning(f"LLM voice {primary_provider} error ({e}), intentando fallback OpenAI")
+        t1 = time.monotonic()
         try:
             fallback_client, fallback_model = get_client("high")
             resp2 = await fallback_client.chat.completions.create(
@@ -428,10 +436,14 @@ async def _llm_voice_reply(agent: dict, workflow: Optional[dict],
                 max_tokens=max_tokens,
                 temperature=0.4,
             )
+            lat2 = int((time.monotonic() - t1) * 1000)
+            obs.record_provider_call("openai", lat2, True)
             text2 = (resp2.choices[0].message.content or "").strip()
             tokens2 = resp2.usage.total_tokens if resp2.usage else 0
             return text2, tokens2
         except Exception as e2:
+            lat2 = int((time.monotonic() - t1) * 1000)
+            obs.record_provider_call("openai", lat2, False)
             logger.error(f"LLM voice fallback también falló: {e2}")
             return "Disculpa, hubo un problema técnico. ¿Podrías repetir eso?", 0
 
@@ -449,6 +461,7 @@ async def _twilio_create_call(to: str, from_: str, url: str, status_callback: st
         "StatusCallback": status_callback, "StatusCallbackMethod": "POST",
         "TimeLimit": str(_MAX_CALL_DURATION_SECONDS),  # previene llamadas infinitas y costo runaway
     }
+    t0 = time.monotonic()
     try:
         resp = await asyncio.to_thread(
             http_req.post,
@@ -457,8 +470,12 @@ async def _twilio_create_call(to: str, from_: str, url: str, status_callback: st
             auth=(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN),
             timeout=10,
         )
+        lat = int((time.monotonic() - t0) * 1000)
+        obs.record_provider_call("twilio", lat, resp.status_code < 400)
         return resp.json()
     except Exception as e:
+        lat = int((time.monotonic() - t0) * 1000)
+        obs.record_provider_call("twilio", lat, False)
         raise HTTPException(status_code=502, detail=f"Twilio API error: {str(e)[:200]}")
 
 

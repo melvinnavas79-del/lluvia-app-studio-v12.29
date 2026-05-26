@@ -65,7 +65,10 @@ async def check_and_increment_daily_calls(db, tenant_id: str) -> None:
     )
     calls = (doc or {}).get("calls", 1)
     if calls > TENANT_VOICE_DAILY_CALLS:
-        logger.warning(f"Tenant {tenant_id!r} cuota diaria excedida: {calls} llamadas")
+        import observability as obs  # import late para evitar circular
+        await obs.emit_obs_alert(db, "quota_daily_exceeded", {
+            "tenant_id": tenant_id, "calls": calls, "limit": TENANT_VOICE_DAILY_CALLS,
+        }, severity="warning")
         raise HTTPException(
             status_code=429,
             detail=(
@@ -83,6 +86,10 @@ async def check_daily_budget(db, tenant_id: str) -> None:
     doc = await db.tenant_quotas.find_one({"tenant_id": tenant_id, "date": _today()})
     cost = (doc or {}).get("cost_usd", 0.0)
     if cost >= TENANT_VOICE_DAILY_BUDGET:
+        import observability as obs
+        await obs.emit_obs_alert(db, "budget_daily_exceeded", {
+            "tenant_id": tenant_id, "cost_usd": cost, "limit_usd": TENANT_VOICE_DAILY_BUDGET,
+        }, severity="error")
         raise HTTPException(
             status_code=429,
             detail=(
