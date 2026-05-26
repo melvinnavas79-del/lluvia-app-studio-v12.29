@@ -1,13 +1,31 @@
 """
-E7 — Billing / Stripe / Subscriptions
-Sub-orquestador especializado en suscripciones, facturación, pagos y métricas financieras.
-Preparado para Stripe — requiere STRIPE_SECRET_KEY env var para operaciones reales.
-Funciona en modo "prep" (sin key): registra intentos y retorna instrucciones.
-No toca console.py ni E1.
+E7 — Billing / Subscriptions / Payments
+Arquitectura multi-provider: BillingEngine agnóstico del provider de pagos.
+
+Phase 1 (activo): PayPal Business — suscripciones recurrentes, webhooks reales,
+                  activación automática de tenants, caché de billing plans.
+Phase 2 (prep):   Stripe — mismo contrato de interfaz, activar con STRIPE_SECRET_KEY.
+Manual:           Activación enterprise sin pago externo.
+
+Reutiliza paypal_integration._paypal_env() y _verify_paypal_signature() sin duplicar.
+No toca console.py, paypal_integration.py, ni E1.
+
+ENV vars:
+  PAYPAL_CLIENT_ID, PAYPAL_SECRET, PAYPAL_MODE (sandbox|live)  ← ya configuradas
+  PAYPAL_WEBHOOK_ID                                             ← ya configurada
+  PAYPAL_PRODUCT_ID   (opcional — si no está, se auto-crea en PayPal)
+  PAYPAL_RETURN_URL   ← URL de éxito tras aprobación del plan
+  PAYPAL_CANCEL_URL   ← URL de cancelación
+  STRIPE_SECRET_KEY   (Phase 2)
+  STRIPE_WEBHOOK_SECRET (Phase 2)
 """
-import logging
 import os
+import json
+import logging
 import secrets
+import asyncio
+import requests as _requests
+from abc import ABC, abstractmethod
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -19,9 +37,6 @@ logger = logging.getLogger("e7_billing")
 router = APIRouter(prefix="/e7", tags=["E7-Billing"])
 _db_ref: dict = {"db": None}
 
-STRIPE_KEY = os.getenv("STRIPE_SECRET_KEY", "")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-
 
 def set_db(db) -> None:
     _db_ref["db"] = db
@@ -31,49 +46,59 @@ def _db():
     return _db_ref["db"]
 
 
-def _stripe_ready() -> bool:
-    return bool(STRIPE_KEY)
-
-
-# ─── Constantes ───────────────────────────────────────────────────────────────
+# ─── Planes de negocio (independientes del provider) ──────────────────────────
 
 BILLING_PLANS = {
-    "starter_monthly":   {"amount": 2900, "currency": "usd", "interval": "month", "name": "Starter"},
-    "pro_monthly":       {"amount": 9900, "currency": "usd", "interval": "month", "name": "Pro"},
-    "agency_monthly":    {"amount": 29900, "currency": "usd", "interval": "month", "name": "Agency"},
-    "enterprise_annual": {"amount": 299900, "currency": "usd", "interval": "year", "name": "Enterprise"},
-    "starter_annual":    {"amount": 24900, "currency": "usd", "interval": "year", "name": "Starter Anual"},
-    "pro_annual":        {"amount": 89900, "currency": "usd", "interval": "year", "name": "Pro Anual"},
+    "starter_monthly": {
+        "name": "Starter Mensual", "amount_usd": 29.00, "currency": "USD",
+        "interval": "MONTH", "interval_count": 1,
+        "description": "Lluvia App Studio — Plan Starter (mensual)",
+    },
+    "pro_monthly": {
+        "name": "Pro Mensual", "amount_usd": 99.00, "currency": "USD",
+        "interval": "MONTH", "interval_count": 1,
+        "description": "Lluvia App Studio — Plan Pro (mensual)",
+    },
+    "agency_monthly": {
+        "name": "Agency Mensual", "amount_usd": 299.00, "currency": "USD",
+        "interval": "MONTH", "interval_count": 1,
+        "description": "Lluvia App Studio — Plan Agency (mensual)",
+    },
+    "starter_annual": {
+        "name": "Starter Anual", "amount_usd": 249.00, "currency": "USD",
+        "interval": "YEAR", "interval_count": 1,
+        "description": "Lluvia App Studio — Plan Starter (anual)",
+    },
+    "pro_annual": {
+        "name": "Pro Anual", "amount_usd": 899.00, "currency": "USD",
+        "interval": "YEAR", "interval_count": 1,
+        "description": "Lluvia App Studio — Plan Pro (anual)",
+    },
+    "agency_annual": {
+        "name": "Agency Anual", "amount_usd": 2490.00, "currency": "USD",
+        "interval": "YEAR", "interval_count": 1,
+        "description": "Lluvia App Studio — Plan Agency (anual)",
+    },
+    "enterprise_custom": {
+        "name": "Enterprise Custom", "amount_usd": 0.00, "currency": "USD",
+        "interval": "MONTH", "interval_count": 1,
+        "description": "Lluvia App Studio — Enterprise (precio custom)",
+    },
 }
 
-SUB_STATUSES = ["trialing", "active", "past_due", "canceled", "unpaid", "paused"]
+# Plan key → E5 plan name (para activar tenant con el plan correcto)
+PLAN_TO_E5 = {
+    "starter_monthly": "starter",
+    "starter_annual":  "starter",
+    "pro_monthly":     "pro",
+    "pro_annual":      "pro",
+    "agency_monthly":  "agency",
+    "agency_annual":   "agency",
+    "enterprise_custom": "enterprise",
+}
 
-
-# ─── Modelos ──────────────────────────────────────────────────────────────────
-
-class SubscriptionIn(BaseModel):
-    tenant_id: str
-    plan_key: str = Field(..., description="starter_monthly|pro_monthly|agency_monthly|enterprise_annual")
-    billing_email: str
-    trial_days: int = 14
-    stripe_payment_method_id: Optional[str] = None
-    metadata: dict = Field(default_factory=dict)
-
-
-class InvoiceIn(BaseModel):
-    tenant_id: str
-    items: List[dict] = Field(..., description="[{description, amount_cents, quantity}]")
-    billing_email: str
-    due_days: int = 15
-    currency: str = "usd"
-    notes: Optional[str] = None
-
-
-class UsageIn(BaseModel):
-    tenant_id: str
-    metric: str = Field(..., description="chats|agents|api_calls|storage_mb|deployments")
-    value: float
-    period: Optional[str] = None
+SUB_STATUSES = ["pending_approval", "active", "cancelled", "suspended", "expired", "failed"]
+PROVIDERS = ["paypal", "stripe", "manual"]
 
 
 # ─── Audit log ────────────────────────────────────────────────────────────────
@@ -92,102 +117,666 @@ async def _audit(action: str, actor: str, detail: dict, tenant_id: str = "") -> 
         logger.warning(f"[e7] audit failed: {exc}")
 
 
-# ─── Business logic ───────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# ABSTRACT PAYMENT PROVIDER
+# ═══════════════════════════════════════════════════════════════════════════════
 
-async def _create_subscription(data: dict, actor: str) -> dict:
-    plan = BILLING_PLANS.get(data.get("plan_key", ""))
-    if not plan:
-        raise HTTPException(status_code=400, detail=f"Plan inválido: {data.get('plan_key')}")
+class PaymentProvider(ABC):
+    """Interfaz común para todos los providers de pago."""
+
+    @abstractmethod
+    async def get_or_create_billing_plan(self, plan_key: str) -> str:
+        """Retorna provider_plan_id (cacheado en e7_billing_plans)."""
+
+    @abstractmethod
+    async def create_subscription(self, provider_plan_id: str,
+                                   billing_email: str,
+                                   return_url: str,
+                                   cancel_url: str,
+                                   custom_id: str) -> dict:
+        """
+        Retorna {
+          provider_subscription_id, approval_url, status
+        }
+        """
+
+    @abstractmethod
+    async def cancel_subscription(self, provider_subscription_id: str,
+                                   reason: str) -> bool:
+        """Cancela en el provider. Retorna True si OK."""
+
+    @abstractmethod
+    async def get_subscription_status(self, provider_subscription_id: str) -> dict:
+        """Retorna {status, next_billing_date, ...} desde el provider."""
+
+    @abstractmethod
+    async def verify_webhook(self, headers: dict, body: bytes) -> bool:
+        """Valida la firma del webhook del provider."""
+
+    @abstractmethod
+    async def parse_webhook_event(self, body: bytes) -> dict:
+        """
+        Retorna {
+          event_type: "subscription_activated" | "subscription_cancelled" |
+                      "payment_completed" | "subscription_suspended" | "unknown",
+          provider_subscription_id,
+          amount_usd,
+          currency,
+          raw_event_type,
+        }
+        """
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAYPAL PROVIDER — PHASE 1 (REAL)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class PayPalProvider(PaymentProvider):
+    """
+    Implementación real de PayPal Business.
+    Reutiliza _paypal_env() y _verify_paypal_signature() de paypal_integration.py.
+    Usa PayPal Billing Plans v1 API para suscripciones recurrentes.
+    """
+
+    def _env(self) -> tuple[str, str, str]:
+        from paypal_integration import _paypal_env
+        return _paypal_env()
+
+    def _token(self) -> str:
+        from paypal_integration import _access_token
+        return _access_token()
+
+    async def _async_token(self) -> str:
+        return await asyncio.to_thread(self._token)
+
+    def _headers(self, token: str) -> dict:
+        return {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Prefer": "return=representation",
+        }
+
+    async def _post(self, path: str, payload: dict) -> dict:
+        base, _, _ = self._env()
+        token = await self._async_token()
+
+        def _sync():
+            r = _requests.post(
+                f"{base}{path}",
+                json=payload,
+                headers=self._headers(token),
+                timeout=20,
+            )
+            return r
+
+        resp = await asyncio.to_thread(_sync)
+        if resp.status_code not in (200, 201):
+            raise HTTPException(
+                status_code=502,
+                detail=f"PayPal API error {resp.status_code}: {resp.text[:300]}"
+            )
+        return resp.json() if resp.content else {}
+
+    async def _get(self, path: str) -> dict:
+        base, _, _ = self._env()
+        token = await self._async_token()
+
+        def _sync():
+            return _requests.get(
+                f"{base}{path}",
+                headers=self._headers(token),
+                timeout=20,
+            )
+
+        resp = await asyncio.to_thread(_sync)
+        if resp.status_code != 200:
+            raise HTTPException(
+                status_code=502,
+                detail=f"PayPal GET error {resp.status_code}: {resp.text[:300]}"
+            )
+        return resp.json()
+
+    async def _patch(self, path: str, payload: list) -> bool:
+        base, _, _ = self._env()
+        token = await self._async_token()
+
+        def _sync():
+            return _requests.patch(
+                f"{base}{path}",
+                json=payload,
+                headers=self._headers(token),
+                timeout=20,
+            )
+
+        resp = await asyncio.to_thread(_sync)
+        return resp.status_code in (200, 204)
+
+    async def _get_or_create_product(self) -> str:
+        """Obtiene PAYPAL_PRODUCT_ID del env o crea un producto en PayPal."""
+        product_id = os.getenv("PAYPAL_PRODUCT_ID", "").strip()
+        if product_id:
+            return product_id
+
+        # Crear producto si no está configurado
+        cached = await _db().e7_billing_plans.find_one({"_type": "paypal_product"})
+        if cached:
+            return cached["product_id"]
+
+        data = await self._post("/v1/catalogs/products", {
+            "name": "Lluvia App Studio",
+            "description": "Plataforma SaaS de agentes IA white-label",
+            "type": "SERVICE",
+            "category": "SOFTWARE",
+        })
+        product_id = data["id"]
+        await _db().e7_billing_plans.insert_one({
+            "_type": "paypal_product",
+            "product_id": product_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        logger.info(f"[e7/paypal] Producto creado: {product_id} — guardalo como PAYPAL_PRODUCT_ID")
+        return product_id
+
+    async def get_or_create_billing_plan(self, plan_key: str) -> str:
+        """Retorna PayPal plan_id para el plan_key dado. Cachea en MongoDB."""
+        # Buscar en caché
+        cached = await _db().e7_billing_plans.find_one(
+            {"plan_key": plan_key, "provider": "paypal", "status": "ACTIVE"}
+        )
+        if cached:
+            return cached["provider_plan_id"]
+
+        plan = BILLING_PLANS.get(plan_key)
+        if not plan:
+            raise HTTPException(status_code=400, detail=f"Plan inválido: {plan_key}")
+        if plan["amount_usd"] == 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Plan '{plan_key}' es custom/manual — no crea billing plan en PayPal"
+            )
+
+        product_id = await self._get_or_create_product()
+
+        paypal_plan = await self._post("/v1/billing/plans", {
+            "product_id": product_id,
+            "name": plan["name"],
+            "description": plan["description"],
+            "status": "ACTIVE",
+            "billing_cycles": [
+                {
+                    "frequency": {
+                        "interval_unit": plan["interval"],
+                        "interval_count": plan["interval_count"],
+                    },
+                    "tenure_type": "REGULAR",
+                    "sequence": 1,
+                    "total_cycles": 0,  # 0 = infinito
+                    "pricing_scheme": {
+                        "fixed_price": {
+                            "value": f"{plan['amount_usd']:.2f}",
+                            "currency_code": plan["currency"],
+                        }
+                    },
+                }
+            ],
+            "payment_preferences": {
+                "auto_bill_outstanding": True,
+                "setup_fee_failure_action": "CONTINUE",
+                "payment_failure_threshold": 3,
+            },
+        })
+
+        provider_plan_id = paypal_plan["id"]
+        await _db().e7_billing_plans.insert_one({
+            "plan_key": plan_key,
+            "provider": "paypal",
+            "provider_plan_id": provider_plan_id,
+            "amount_usd": plan["amount_usd"],
+            "currency": plan["currency"],
+            "interval": plan["interval"],
+            "status": "ACTIVE",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        logger.info(f"[e7/paypal] Billing plan creado: {provider_plan_id} para {plan_key}")
+        return provider_plan_id
+
+    async def create_subscription(self, provider_plan_id: str,
+                                   billing_email: str,
+                                   return_url: str,
+                                   cancel_url: str,
+                                   custom_id: str) -> dict:
+        """Crea suscripción en PayPal. custom_id = sub_id interno para rastreo en webhook."""
+        payload: dict = {
+            "plan_id": provider_plan_id,
+            "custom_id": custom_id,
+            "application_context": {
+                "brand_name": "Lluvia App Studio",
+                "locale": "es-419",
+                "shipping_preference": "NO_SHIPPING",
+                "user_action": "SUBSCRIBE_NOW",
+                "return_url": return_url,
+                "cancel_url": cancel_url,
+            },
+        }
+        if billing_email:
+            payload["subscriber"] = {"email_address": billing_email}
+
+        data = await self._post("/v1/billing/subscriptions", payload)
+        approval_url = next(
+            (l["href"] for l in data.get("links", []) if l.get("rel") == "approve"),
+            None
+        )
+        return {
+            "provider_subscription_id": data["id"],
+            "approval_url": approval_url,
+            "status": data.get("status", "APPROVAL_PENDING"),
+        }
+
+    async def cancel_subscription(self, provider_subscription_id: str, reason: str) -> bool:
+        base, _, _ = self._env()
+        token = await self._async_token()
+
+        def _sync():
+            return _requests.post(
+                f"{base}/v1/billing/subscriptions/{provider_subscription_id}/cancel",
+                json={"reason": reason or "Cancelado por el usuario"},
+                headers=self._headers(token),
+                timeout=20,
+            )
+
+        resp = await asyncio.to_thread(_sync)
+        return resp.status_code == 204
+
+    async def get_subscription_status(self, provider_subscription_id: str) -> dict:
+        data = await self._get(f"/v1/billing/subscriptions/{provider_subscription_id}")
+        return {
+            "provider_status": data.get("status"),
+            "next_billing_time": data.get("billing_info", {}).get("next_billing_time"),
+            "last_payment": data.get("billing_info", {}).get("last_payment"),
+            "cycles_completed": data.get("billing_info", {}).get("cycles_completed", 0),
+            "raw": data,
+        }
+
+    async def verify_webhook(self, headers: dict, body: bytes) -> bool:
+        from paypal_integration import _verify_paypal_signature
+        return await asyncio.to_thread(_verify_paypal_signature, headers, body)
+
+    async def parse_webhook_event(self, body: bytes) -> dict:
+        try:
+            event = json.loads(body.decode("utf-8"))
+        except Exception:
+            return {"event_type": "unknown", "provider_subscription_id": "", "amount_usd": 0}
+
+        raw_type = event.get("event_type", "")
+        resource = event.get("resource", {})
+
+        # Mapeo de eventos PayPal → evento interno
+        EVENT_MAP = {
+            "BILLING.SUBSCRIPTION.ACTIVATED":  "subscription_activated",
+            "BILLING.SUBSCRIPTION.CANCELLED":  "subscription_cancelled",
+            "BILLING.SUBSCRIPTION.SUSPENDED":  "subscription_suspended",
+            "BILLING.SUBSCRIPTION.EXPIRED":    "subscription_expired",
+            "PAYMENT.SALE.COMPLETED":          "payment_completed",
+            "PAYMENT.SALE.REFUNDED":           "payment_refunded",
+        }
+
+        event_type = EVENT_MAP.get(raw_type, "unknown")
+
+        # provider_subscription_id puede estar en distintos campos según el evento
+        sub_id = (
+            resource.get("id") if raw_type.startswith("BILLING.SUBSCRIPTION")
+            else resource.get("billing_agreement_id", "")
+        )
+
+        # custom_id = nuestro sub_id interno (lo seteamos al crear la suscripción)
+        custom_id = resource.get("custom_id", "") or resource.get("custom", "")
+
+        # Monto pagado
+        amount = 0.0
+        currency = "USD"
+        if raw_type == "PAYMENT.SALE.COMPLETED":
+            amt_obj = resource.get("amount", {})
+            try:
+                amount = float(amt_obj.get("total", 0))
+                currency = amt_obj.get("currency", "USD")
+            except (ValueError, TypeError):
+                pass
+
+        return {
+            "event_type": event_type,
+            "raw_event_type": raw_type,
+            "provider_subscription_id": sub_id,
+            "custom_id": custom_id,
+            "amount_usd": amount,
+            "currency": currency,
+        }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STRIPE PROVIDER — PHASE 2 (PREP)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class StripeProvider(PaymentProvider):
+    """
+    Stripe como provider secundario — Phase 2.
+    Misma interfaz que PayPalProvider.
+    Activar configurando STRIPE_SECRET_KEY y STRIPE_WEBHOOK_SECRET.
+    """
+    STRIPE_KEY = os.getenv("STRIPE_SECRET_KEY", "")
+    WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+
+    def _require_stripe(self):
+        if not self.STRIPE_KEY:
+            raise HTTPException(
+                status_code=503,
+                detail="Stripe Phase 2 — configurar STRIPE_SECRET_KEY para activar"
+            )
+
+    async def get_or_create_billing_plan(self, plan_key: str) -> str:
+        self._require_stripe()
+        cached = await _db().e7_billing_plans.find_one(
+            {"plan_key": plan_key, "provider": "stripe", "status": "active"}
+        )
+        if cached:
+            return cached["provider_plan_id"]
+        plan = BILLING_PLANS.get(plan_key)
+        if not plan:
+            raise HTTPException(status_code=400, detail=f"Plan inválido: {plan_key}")
+        import stripe
+        stripe.api_key = self.STRIPE_KEY
+        interval = "month" if plan["interval"] == "MONTH" else "year"
+        price = stripe.Price.create(
+            unit_amount=int(plan["amount_usd"] * 100),
+            currency=plan["currency"].lower(),
+            recurring={"interval": interval},
+            product_data={"name": plan["name"]},
+        )
+        await _db().e7_billing_plans.insert_one({
+            "plan_key": plan_key, "provider": "stripe",
+            "provider_plan_id": price["id"], "status": "active",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        return price["id"]
+
+    async def create_subscription(self, provider_plan_id, billing_email,
+                                   return_url, cancel_url, custom_id) -> dict:
+        self._require_stripe()
+        import stripe
+        stripe.api_key = self.STRIPE_KEY
+        customer = stripe.Customer.create(email=billing_email, metadata={"custom_id": custom_id})
+        session = stripe.checkout.Session.create(
+            customer=customer["id"],
+            mode="subscription",
+            line_items=[{"price": provider_plan_id, "quantity": 1}],
+            success_url=return_url,
+            cancel_url=cancel_url,
+            metadata={"custom_id": custom_id},
+        )
+        return {
+            "provider_subscription_id": session["subscription"] or session["id"],
+            "approval_url": session["url"],
+            "status": "pending_approval",
+        }
+
+    async def cancel_subscription(self, provider_subscription_id, reason) -> bool:
+        self._require_stripe()
+        import stripe
+        stripe.api_key = self.STRIPE_KEY
+        stripe.Subscription.cancel(provider_subscription_id)
+        return True
+
+    async def get_subscription_status(self, provider_subscription_id) -> dict:
+        self._require_stripe()
+        import stripe
+        stripe.api_key = self.STRIPE_KEY
+        sub = stripe.Subscription.retrieve(provider_subscription_id)
+        return {"provider_status": sub["status"], "raw": dict(sub)}
+
+    async def verify_webhook(self, headers, body) -> bool:
+        if not self.WEBHOOK_SECRET:
+            return False
+        try:
+            import stripe
+            stripe.api_key = self.STRIPE_KEY
+            stripe.Webhook.construct_event(body, headers.get("stripe-signature", ""), self.WEBHOOK_SECRET)
+            return True
+        except Exception:
+            return False
+
+    async def parse_webhook_event(self, body) -> dict:
+        self._require_stripe()
+        import stripe
+        stripe.api_key = self.STRIPE_KEY
+        event = stripe.Event.construct_from(json.loads(body), self.STRIPE_KEY)
+        obj = event["data"]["object"]
+        EVENT_MAP = {
+            "customer.subscription.created":  "subscription_activated",
+            "customer.subscription.deleted":  "subscription_cancelled",
+            "invoice.paid":                   "payment_completed",
+            "invoice.payment_failed":         "payment_failed",
+        }
+        return {
+            "event_type": EVENT_MAP.get(event["type"], "unknown"),
+            "raw_event_type": event["type"],
+            "provider_subscription_id": obj.get("subscription") or obj.get("id", ""),
+            "custom_id": (obj.get("metadata") or {}).get("custom_id", ""),
+            "amount_usd": obj.get("amount_paid", 0) / 100 if "amount_paid" in obj else 0,
+            "currency": obj.get("currency", "usd").upper(),
+        }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MANUAL PROVIDER — Enterprise / ventas directas
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ManualProvider(PaymentProvider):
+    """Activación sin payment gateway — para enterprise, demos o ventas directas."""
+
+    async def get_or_create_billing_plan(self, plan_key: str) -> str:
+        return f"manual::{plan_key}"
+
+    async def create_subscription(self, provider_plan_id, billing_email,
+                                   return_url, cancel_url, custom_id) -> dict:
+        return {
+            "provider_subscription_id": f"manual_{secrets.token_urlsafe(8)}",
+            "approval_url": None,
+            "status": "ACTIVE",  # activación inmediata
+        }
+
+    async def cancel_subscription(self, provider_subscription_id, reason) -> bool:
+        return True
+
+    async def get_subscription_status(self, provider_subscription_id) -> dict:
+        return {"provider_status": "ACTIVE", "note": "Manual provider — sin payment gateway"}
+
+    async def verify_webhook(self, headers, body) -> bool:
+        return False  # no hay webhooks en manual
+
+    async def parse_webhook_event(self, body) -> dict:
+        return {"event_type": "unknown", "provider_subscription_id": "", "amount_usd": 0}
+
+
+# ─── Factory ──────────────────────────────────────────────────────────────────
+
+def get_provider(key: str) -> PaymentProvider:
+    if key == "paypal":
+        return PayPalProvider()
+    if key == "stripe":
+        return StripeProvider()
+    if key == "manual":
+        return ManualProvider()
+    raise HTTPException(status_code=400, detail=f"Provider inválido: '{key}'. Válidos: {PROVIDERS}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BILLING ENGINE — provider-agnostic
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def engine_subscribe(tenant_id: str, plan_key: str, payment_provider: str,
+                            billing_email: str, actor: str) -> dict:
+    """
+    Crea una suscripción en el provider seleccionado.
+    Retorna el sub_id interno + approval_url (si aplica) para redirigir al usuario.
+    """
+    if plan_key not in BILLING_PLANS:
+        raise HTTPException(status_code=400, detail=f"Plan inválido: {plan_key}")
+    if payment_provider not in PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"Provider inválido: {payment_provider}")
+
+    return_url = os.getenv("PAYPAL_RETURN_URL", "https://lluvia.app/billing/success")
+    cancel_url = os.getenv("PAYPAL_CANCEL_URL", "https://lluvia.app/billing/cancel")
 
     sub_id = "sub_" + secrets.token_urlsafe(10)
+    provider = get_provider(payment_provider)
+
+    # Obtener / crear billing plan en el provider
+    provider_plan_id = await provider.get_or_create_billing_plan(plan_key)
+
+    # Crear suscripción en el provider
+    result = await provider.create_subscription(
+        provider_plan_id, billing_email, return_url, cancel_url, custom_id=sub_id
+    )
+
+    plan_info = BILLING_PLANS[plan_key]
     now = datetime.now(timezone.utc)
-    trial_end = (now + timedelta(days=data.get("trial_days", 14))).isoformat()
 
     doc = {
         "id": sub_id,
-        "tenant_id": data["tenant_id"],
-        "plan_key": data["plan_key"],
-        "plan_name": plan["name"],
-        "amount_cents": plan["amount"],
-        "currency": plan["currency"],
-        "billing_interval": plan["interval"],
-        "billing_email": data["billing_email"],
-        "status": "trialing",
-        "stripe_subscription_id": None,
-        "stripe_customer_id": None,
-        "stripe_payment_method_id": data.get("stripe_payment_method_id"),
-        "trial_start": now.isoformat(),
-        "trial_end": trial_end,
-        "current_period_start": now.isoformat(),
-        "current_period_end": trial_end,
-        "next_billing_date": trial_end,
-        "canceled_at": None,
-        "metadata": data.get("metadata", {}),
+        "tenant_id": tenant_id,
+        "plan_key": plan_key,
+        "e5_plan": PLAN_TO_E5.get(plan_key, "starter"),
+        "payment_provider": payment_provider,
+        "provider_plan_id": provider_plan_id,
+        "provider_subscription_id": result["provider_subscription_id"],
+        "billing_email": billing_email,
+        "amount_usd": plan_info["amount_usd"],
+        "currency": plan_info["currency"],
+        "billing_interval": plan_info["interval"],
+        "approval_url": result.get("approval_url"),
+        "status": "active" if result["status"] == "ACTIVE" else "pending_approval",
         "created_at": now.isoformat(),
         "created_by": actor,
-        "stripe_ready": _stripe_ready(),
+        "activated_at": now.isoformat() if result["status"] == "ACTIVE" else None,
+        "cancelled_at": None,
+        "next_billing_date": None,
     }
-
-    if _stripe_ready():
-        try:
-            import stripe
-            stripe.api_key = STRIPE_KEY
-            # Crear customer + subscription en Stripe
-            customer = stripe.Customer.create(email=data["billing_email"],
-                                               metadata={"tenant_id": data["tenant_id"]})
-            doc["stripe_customer_id"] = customer["id"]
-            # Actualizar tenant en E5 con stripe_customer_id
-            try:
-                await _db().e5_tenants.update_one(
-                    {"id": data["tenant_id"]},
-                    {"$set": {"stripe_customer_id": customer["id"]}}
-                )
-            except Exception:
-                pass
-            logger.info(f"[e7] Stripe customer creado: {customer['id']}")
-        except Exception as exc:
-            logger.warning(f"[e7] Stripe error: {exc} — guardando en modo prep")
-            doc["stripe_error"] = str(exc)
-
     await _db().e7_subscriptions.insert_one(doc)
+
+    # Si es manual → activar tenant inmediatamente
+    if payment_provider == "manual" and result["status"] == "ACTIVE":
+        await _auto_activate_tenant(sub_id, tenant_id, plan_key, 0.0, "USD", actor)
+
     await _audit("subscription_created", actor,
-                  {"sub_id": sub_id, "tenant_id": data["tenant_id"], "plan": data["plan_key"]},
-                  data["tenant_id"])
+                  {"sub_id": sub_id, "tenant_id": tenant_id,
+                   "plan_key": plan_key, "provider": payment_provider},
+                  tenant_id)
+
     return {k: v for k, v in doc.items() if k != "_id"}
 
 
-async def _generate_invoice(data: dict, actor: str) -> dict:
-    inv_id = "inv_" + secrets.token_urlsafe(10)
-    now = datetime.now(timezone.utc)
-    total = sum(item.get("amount_cents", 0) * item.get("quantity", 1)
-                for item in data.get("items", []))
-    due_date = (now + timedelta(days=data.get("due_days", 15))).isoformat()
+async def engine_cancel(sub_id: str, reason: str, actor: str) -> dict:
+    """Cancela suscripción en el provider y marca en BD."""
+    doc = await _db().e7_subscriptions.find_one({"id": sub_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Suscripción no encontrada")
+
+    provider = get_provider(doc["payment_provider"])
+    if doc.get("provider_subscription_id"):
+        await provider.cancel_subscription(doc["provider_subscription_id"], reason)
+
+    now = datetime.now(timezone.utc).isoformat()
+    await _db().e7_subscriptions.update_one(
+        {"id": sub_id},
+        {"$set": {"status": "cancelled", "cancelled_at": now}}
+    )
+    await _audit("subscription_cancelled", actor,
+                  {"sub_id": sub_id, "reason": reason}, doc.get("tenant_id", ""))
+    return {"sub_id": sub_id, "status": "cancelled", "cancelled_at": now}
+
+
+async def engine_record_payment(sub_id: str, amount_usd: float, currency: str,
+                                 provider_txn_id: str, provider: str, actor: str = "webhook") -> dict:
+    """Registra un pago recibido. Inmutable."""
+    pay_id = "pay_" + secrets.token_urlsafe(10)
+    doc_sub = await _db().e7_subscriptions.find_one({"id": sub_id}, {"_id": 0})
+    tenant_id = doc_sub.get("tenant_id", "") if doc_sub else ""
 
     doc = {
-        "id": inv_id,
-        "tenant_id": data["tenant_id"],
-        "billing_email": data["billing_email"],
-        "items": data.get("items", []),
-        "subtotal_cents": total,
-        "tax_cents": 0,
-        "total_cents": total,
-        "currency": data.get("currency", "usd"),
-        "status": "draft",
-        "stripe_invoice_id": None,
-        "due_date": due_date,
-        "paid_at": None,
-        "notes": data.get("notes"),
-        "created_at": now.isoformat(),
-        "created_by": actor,
+        "id": pay_id,
+        "sub_id": sub_id,
+        "tenant_id": tenant_id,
+        "payment_provider": provider,
+        "provider_txn_id": provider_txn_id,
+        "amount_usd": amount_usd,
+        "currency": currency,
+        "status": "completed",
+        "received_at": datetime.now(timezone.utc).isoformat(),
     }
-    await _db().e7_invoices.insert_one(doc)
-    await _audit("invoice_created", actor,
-                  {"inv_id": inv_id, "total_cents": total, "tenant_id": data["tenant_id"]},
-                  data["tenant_id"])
+    await _db().e7_payments.insert_one(doc)
+    await _audit("payment_recorded", actor,
+                  {"pay_id": pay_id, "sub_id": sub_id,
+                   "amount_usd": amount_usd, "txn_id": provider_txn_id},
+                  tenant_id)
     return {k: v for k, v in doc.items() if k != "_id"}
 
 
-async def _track_usage(tenant_id: str, metric: str, value: float, period: str = "") -> dict:
+async def _auto_activate_tenant(sub_id: str, tenant_id: str, plan_key: str,
+                                 amount_usd: float, currency: str, actor: str) -> None:
+    """Activa el tenant en E5 al recibir pago confirmado. No lanza excepción si falla."""
+    try:
+        import e5_whitelabel as e5
+        e5_plan = PLAN_TO_E5.get(plan_key, "starter")
+        # Actualizar plan del tenant en E5
+        await _db().e5_tenants.update_one(
+            {"id": tenant_id},
+            {"$set": {
+                "plan": e5_plan,
+                "status": "active",
+                "activated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }}
+        )
+        await _audit("tenant_auto_activated", actor,
+                      {"tenant_id": tenant_id, "plan": e5_plan,
+                       "sub_id": sub_id, "amount_usd": amount_usd},
+                      tenant_id)
+        logger.info(f"[e7] Tenant {tenant_id} activado automáticamente → plan {e5_plan}")
+    except Exception as exc:
+        logger.error(f"[e7] auto_activate_tenant falló para {tenant_id}: {exc}")
+        await _audit("tenant_auto_activation_failed", actor,
+                      {"tenant_id": tenant_id, "error": str(exc)}, tenant_id)
+
+
+async def engine_billing_summary(tenant_id: str) -> dict:
+    """Resumen de billing para un tenant."""
+    sub = await _db().e7_subscriptions.find_one(
+        {"tenant_id": tenant_id, "status": {"$in": ["active", "pending_approval"]}},
+        {"_id": 0}
+    )
+    payments = [p async for p in _db().e7_payments.find(
+        {"tenant_id": tenant_id}, {"_id": 0}
+    ).sort("received_at", -1).limit(10)]
+    invoices = [i async for i in _db().e7_invoices.find(
+        {"tenant_id": tenant_id}, {"_id": 0}
+    ).sort("created_at", -1).limit(10)]
+
+    total_paid = sum(p.get("amount_usd", 0) for p in payments)
+    return {
+        "tenant_id": tenant_id,
+        "active_subscription": sub,
+        "payments_count": len(payments),
+        "total_paid_usd": round(total_paid, 2),
+        "recent_payments": payments,
+        "recent_invoices": invoices,
+        "available_providers": PROVIDERS,
+    }
+
+
+# ─── Usage metering ───────────────────────────────────────────────────────────
+
+async def engine_track_usage(tenant_id: str, metric: str, value: float,
+                              period: str = "") -> dict:
     now = datetime.now(timezone.utc)
     period = period or now.strftime("%Y-%m")
     await _db().e7_usage.update_one(
@@ -195,121 +784,279 @@ async def _track_usage(tenant_id: str, metric: str, value: float, period: str = 
         {"$inc": {"value": value}, "$set": {"last_updated": now.isoformat()}},
         upsert=True,
     )
-    doc = await _db().e7_usage.find_one(
-        {"tenant_id": tenant_id, "metric": metric, "period": period}, {"_id": 0}
-    )
-    return doc or {"tenant_id": tenant_id, "metric": metric, "period": period, "value": value}
+    return {"tenant_id": tenant_id, "metric": metric, "period": period, "added": value}
 
 
-async def _get_billing_summary(tenant_id: str) -> dict:
-    sub = await _db().e7_subscriptions.find_one(
-        {"tenant_id": tenant_id, "status": {"$in": ["trialing", "active"]}},
-        {"_id": 0}
-    )
-    invoices = [i async for i in _db().e7_invoices.find(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    ).sort("created_at", -1).limit(10)]
-    usage_cur = _db().e7_usage.find({"tenant_id": tenant_id}, {"_id": 0})
-    usage = [u async for u in usage_cur]
-    return {
+# ─── Invoice generator ────────────────────────────────────────────────────────
+
+async def engine_generate_invoice(tenant_id: str, items: list,
+                                   billing_email: str, due_days: int,
+                                   currency: str, actor: str) -> dict:
+    inv_id = "inv_" + secrets.token_urlsafe(10)
+    total = sum(i.get("amount_usd", 0) * i.get("quantity", 1) for i in items)
+    due = (datetime.now(timezone.utc) + timedelta(days=due_days)).isoformat()
+    doc = {
+        "id": inv_id,
         "tenant_id": tenant_id,
-        "subscription": sub,
-        "recent_invoices": invoices,
-        "usage_current_month": usage,
-        "stripe_ready": _stripe_ready(),
+        "billing_email": billing_email,
+        "items": items,
+        "subtotal_usd": round(total, 2),
+        "tax_usd": 0.0,
+        "total_usd": round(total, 2),
+        "currency": currency,
+        "status": "draft",
+        "due_date": due,
+        "paid_at": None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": actor,
     }
+    await _db().e7_invoices.insert_one(doc)
+    await _audit("invoice_created", actor,
+                  {"inv_id": inv_id, "total_usd": total}, tenant_id)
+    return {k: v for k, v in doc.items() if k != "_id"}
 
 
-# ─── Tool functions ────────────────────────────────────────────────────────────
+# ─── Webhook handler central ──────────────────────────────────────────────────
 
-async def tool_stripe_manager(action: str, tenant_id: str = "",
-                               params: dict = None) -> dict:
-    params = params or {}
-    if action == "status":
-        return {"stripe_ready": _stripe_ready(),
-                "note": "Configurar STRIPE_SECRET_KEY para activar" if not _stripe_ready() else "Stripe activo"}
-    if action == "create_customer" and tenant_id:
-        if not _stripe_ready():
-            return {"ok": False, "note": "Stripe no configurado — agregar STRIPE_SECRET_KEY"}
-        try:
-            import stripe
-            stripe.api_key = STRIPE_KEY
-            c = stripe.Customer.create(email=params.get("email", ""), metadata={"tenant_id": tenant_id})
-            return {"stripe_customer_id": c["id"], "tenant_id": tenant_id}
-        except Exception as exc:
-            return {"error": str(exc)}
-    return {"action": action, "note": f"Action '{action}' procesada"}
+async def handle_provider_webhook(provider_key: str, headers: dict, body: bytes) -> dict:
+    """
+    Punto de entrada único para webhooks de cualquier provider.
+    1. Valida firma → 403 si inválida.
+    2. Parsea evento → identifica tipo.
+    3. Ejecuta acción en BD (activar, cancelar, registrar pago).
+    4. Activa tenant en E5 si pago confirmado.
+    """
+    provider = get_provider(provider_key)
+
+    valid = await provider.verify_webhook(headers, body)
+    if not valid:
+        raise HTTPException(status_code=403, detail=f"Firma webhook {provider_key} inválida")
+
+    event = await provider.parse_webhook_event(body)
+    event_type = event.get("event_type", "unknown")
+    provider_sub_id = event.get("provider_subscription_id", "")
+    custom_id = event.get("custom_id", "")  # = nuestro sub_id interno
+
+    logger.info(f"[e7/webhook/{provider_key}] {event.get('raw_event_type')} → {event_type}")
+
+    # Buscar suscripción interna por custom_id (nuestro sub_id) o provider_sub_id
+    sub_doc = None
+    if custom_id:
+        sub_doc = await _db().e7_subscriptions.find_one({"id": custom_id})
+    if not sub_doc and provider_sub_id:
+        sub_doc = await _db().e7_subscriptions.find_one(
+            {"provider_subscription_id": provider_sub_id}
+        )
+
+    if not sub_doc:
+        logger.warning(f"[e7/webhook] Suscripción no encontrada: custom_id={custom_id} provider_sub_id={provider_sub_id}")
+        await _audit(f"webhook_{event_type}_unmatched", "webhook",
+                      {"provider": provider_key, "event": event})
+        return {"received": True, "matched": False, "event_type": event_type}
+
+    sub_id = sub_doc["id"]
+    tenant_id = sub_doc.get("tenant_id", "")
+    now = datetime.now(timezone.utc).isoformat()
+
+    if event_type == "subscription_activated":
+        await _db().e7_subscriptions.update_one(
+            {"id": sub_id},
+            {"$set": {"status": "active", "activated_at": now}}
+        )
+        await _auto_activate_tenant(
+            sub_id, tenant_id, sub_doc.get("plan_key", ""),
+            event.get("amount_usd", 0), event.get("currency", "USD"), "webhook"
+        )
+
+    elif event_type == "payment_completed":
+        await engine_record_payment(
+            sub_id, event.get("amount_usd", 0), event.get("currency", "USD"),
+            provider_sub_id, provider_key, actor="webhook"
+        )
+        # Si el tenant estaba suspendido por impago → reactivar
+        tenant = await _db().e5_tenants.find_one({"id": tenant_id})
+        if tenant and tenant.get("status") == "suspended":
+            await _auto_activate_tenant(
+                sub_id, tenant_id, sub_doc.get("plan_key", ""),
+                event.get("amount_usd", 0), event.get("currency", "USD"), "webhook"
+            )
+
+    elif event_type in ("subscription_cancelled", "subscription_expired"):
+        await _db().e7_subscriptions.update_one(
+            {"id": sub_id},
+            {"$set": {"status": event_type.replace("subscription_", ""), "cancelled_at": now}}
+        )
+        # Suspender tenant en E5
+        await _db().e5_tenants.update_one(
+            {"id": tenant_id},
+            {"$set": {"status": "suspended", "suspended_at": now, "updated_at": now}}
+        )
+        await _audit(f"tenant_suspended_by_{event_type}", "webhook",
+                      {"tenant_id": tenant_id, "sub_id": sub_id}, tenant_id)
+
+    elif event_type == "subscription_suspended":
+        await _db().e7_subscriptions.update_one({"id": sub_id}, {"$set": {"status": "suspended"}})
+        await _db().e5_tenants.update_one(
+            {"id": tenant_id},
+            {"$set": {"status": "suspended", "suspended_at": now, "updated_at": now}}
+        )
+
+    await _audit(f"webhook_{event_type}", "webhook",
+                  {"provider": provider_key, "sub_id": sub_id,
+                   "tenant_id": tenant_id, "event": event}, tenant_id)
+
+    return {"received": True, "matched": True, "event_type": event_type,
+            "sub_id": sub_id, "tenant_id": tenant_id}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TOOL FUNCTIONS — callable por E1 vía call_specialist_tool
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def tool_stripe_manager(action: str, tenant_id: str = "", params: dict = None) -> dict:
+    """Compatibilidad con nombre anterior. Ahora delega a provider_manager."""
+    return await tool_billing_control(action, tenant_id)
 
 
 async def tool_subscription_engine(tenant_id: str, plan_key: str,
-                                    action: str = "create", billing_email: str = "") -> dict:
+                                    action: str = "create",
+                                    billing_email: str = "",
+                                    payment_provider: str = "paypal") -> dict:
     if action == "create":
-        return await _create_subscription(
-            {"tenant_id": tenant_id, "plan_key": plan_key, "billing_email": billing_email},
-            actor="e1_tool"
-        )
+        return await engine_subscribe(tenant_id, plan_key, payment_provider,
+                                       billing_email, actor="e1_tool")
     if action == "cancel":
-        await _db().e7_subscriptions.update_one(
-            {"tenant_id": tenant_id, "status": {"$in": ["trialing", "active"]}},
-            {"$set": {"status": "canceled", "canceled_at": datetime.now(timezone.utc).isoformat()}}
+        sub = await _db().e7_subscriptions.find_one(
+            {"tenant_id": tenant_id, "status": "active"}, {"id": 1}
         )
-        await _audit("subscription_canceled", "e1_tool", {"tenant_id": tenant_id}, tenant_id)
-        return {"tenant_id": tenant_id, "status": "canceled"}
+        if not sub:
+            return {"error": "No hay suscripción activa para este tenant"}
+        return await engine_cancel(sub["id"], "Cancelado vía E1", "e1_tool")
     if action == "summary":
-        return await _get_billing_summary(tenant_id)
+        return await engine_billing_summary(tenant_id)
+    if action == "status" and tenant_id:
+        sub = await _db().e7_subscriptions.find_one(
+            {"tenant_id": tenant_id}, {"_id": 0}
+        )
+        if not sub:
+            return {"tenant_id": tenant_id, "subscription": None}
+        provider = get_provider(sub["payment_provider"])
+        if sub.get("provider_subscription_id"):
+            live = await provider.get_subscription_status(sub["provider_subscription_id"])
+            sub["live_status"] = live
+        return sub
     raise ValueError(f"action desconocida: {action}")
 
 
 async def tool_invoice_generator(tenant_id: str, items: list,
-                                  billing_email: str = "", due_days: int = 15) -> dict:
-    return await _generate_invoice(
-        {"tenant_id": tenant_id, "items": items,
-         "billing_email": billing_email, "due_days": due_days},
-        actor="e1_tool"
-    )
+                                  billing_email: str = "",
+                                  due_days: int = 15,
+                                  currency: str = "USD") -> dict:
+    return await engine_generate_invoice(tenant_id, items, billing_email,
+                                          due_days, currency, actor="e1_tool")
 
 
 async def tool_usage_meter(tenant_id: str, metric: str, value: float,
                             period: str = "") -> dict:
-    return await _track_usage(tenant_id, metric, value, period)
+    return await engine_track_usage(tenant_id, metric, value, period)
 
 
-async def tool_billing_control(tenant_id: str, action: str) -> dict:
-    if action == "summary":
-        return await _get_billing_summary(tenant_id)
+async def tool_billing_control(action: str, tenant_id: str = "") -> dict:
+    if action == "summary" and tenant_id:
+        return await engine_billing_summary(tenant_id)
     if action == "plans":
-        return {"plans": BILLING_PLANS}
-    raise ValueError(f"action desconocida: {action}")
+        return {"plans": BILLING_PLANS, "providers": PROVIDERS}
+    if action == "usage" and tenant_id:
+        cur = _db().e7_usage.find({"tenant_id": tenant_id}, {"_id": 0})
+        return {"usage": [u async for u in cur]}
+    raise ValueError(f"action desconocida o tenant_id faltante: {action}")
 
 
-# ─── FastAPI endpoints ─────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# FASTAPI ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class SubscribeIn(BaseModel):
+    tenant_id: str
+    plan_key: str
+    payment_provider: str = Field("paypal", description="paypal|stripe|manual")
+    billing_email: str = ""
+
+
+class InvoiceIn(BaseModel):
+    tenant_id: str
+    items: List[dict]
+    billing_email: str = ""
+    due_days: int = 15
+    currency: str = "USD"
+
+
+class UsageIn(BaseModel):
+    tenant_id: str
+    metric: str
+    value: float
+    period: Optional[str] = None
+
+
+@router.get("/plans")
+async def list_plans():
+    """Lista planes disponibles con precios."""
+    return {"plans": BILLING_PLANS, "providers": PROVIDERS}
+
 
 @router.post("/subscriptions")
-async def create_subscription(data: SubscriptionIn, user: dict = Depends(auth.get_current_user)):
-    return await _create_subscription(data.model_dump(), actor=user["email"])
+async def create_subscription(data: SubscribeIn, user: dict = Depends(auth.get_current_user)):
+    """
+    Crea suscripción recurrente.
+    PayPal: retorna approval_url para redirigir al usuario.
+    Manual: activa inmediatamente (sin pago).
+    """
+    return await engine_subscribe(
+        data.tenant_id, data.plan_key, data.payment_provider,
+        data.billing_email, actor=user["email"]
+    )
 
 
 @router.get("/subscriptions/{tenant_id}")
 async def get_subscription(tenant_id: str, user: dict = Depends(auth.get_current_user)):
-    sub = await _db().e7_subscriptions.find_one(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    )
+    sub = await _db().e7_subscriptions.find_one({"tenant_id": tenant_id}, {"_id": 0})
     if not sub:
         raise HTTPException(status_code=404, detail="Suscripción no encontrada")
     return sub
+
+
+@router.get("/subscriptions/{tenant_id}/status-live")
+async def get_subscription_live_status(tenant_id: str,
+                                        user: dict = Depends(auth.get_current_user)):
+    """Consulta estado en tiempo real directamente al provider."""
+    sub = await _db().e7_subscriptions.find_one({"tenant_id": tenant_id}, {"_id": 0})
+    if not sub or not sub.get("provider_subscription_id"):
+        raise HTTPException(status_code=404, detail="Sin suscripción activa con provider")
+    provider = get_provider(sub["payment_provider"])
+    live = await provider.get_subscription_status(sub["provider_subscription_id"])
+    return {"local": sub, "live": live}
+
+
+@router.post("/subscriptions/{sub_id}/cancel")
+async def cancel_subscription(sub_id: str, reason: str = "",
+                               user: dict = Depends(auth.get_current_user)):
+    return await engine_cancel(sub_id, reason, actor=user["email"])
 
 
 @router.get("/subscriptions")
 async def list_subscriptions(user: dict = Depends(auth.get_current_user)):
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Solo admin")
-    cur = _db().e7_subscriptions.find({}, {"_id": 0}).sort("created_at", -1).limit(100)
+    cur = _db().e7_subscriptions.find({}, {"_id": 0}).sort("created_at", -1).limit(200)
     return {"subscriptions": [s async for s in cur]}
 
 
 @router.post("/invoices")
 async def create_invoice(data: InvoiceIn, user: dict = Depends(auth.get_current_user)):
-    return await _generate_invoice(data.model_dump(), actor=user["email"])
+    return await engine_generate_invoice(
+        data.tenant_id, data.items, data.billing_email,
+        data.due_days, data.currency, actor=user["email"]
+    )
 
 
 @router.get("/invoices")
@@ -322,7 +1069,7 @@ async def list_invoices(tenant_id: Optional[str] = None,
 
 @router.post("/usage")
 async def record_usage(data: UsageIn, user: dict = Depends(auth.get_current_user)):
-    return await _track_usage(data.tenant_id, data.metric, data.value, data.period or "")
+    return await engine_track_usage(data.tenant_id, data.metric, data.value, data.period or "")
 
 
 @router.get("/usage/{tenant_id}")
@@ -337,52 +1084,49 @@ async def get_usage(tenant_id: str, period: Optional[str] = None,
 
 @router.get("/summary/{tenant_id}")
 async def billing_summary(tenant_id: str, user: dict = Depends(auth.get_current_user)):
-    return await _get_billing_summary(tenant_id)
+    return await engine_billing_summary(tenant_id)
 
 
-@router.get("/plans")
-async def list_plans():
-    return {"plans": BILLING_PLANS}
+# ─── Webhooks ─────────────────────────────────────────────────────────────────
+
+@router.post("/webhook/paypal")
+async def paypal_webhook(request: Request):
+    """
+    Webhook PayPal — valida firma via PAYPAL_WEBHOOK_ID (ya configurado).
+    Eventos: BILLING.SUBSCRIPTION.ACTIVATED, PAYMENT.SALE.COMPLETED,
+             BILLING.SUBSCRIPTION.CANCELLED, BILLING.SUBSCRIPTION.SUSPENDED.
+    """
+    body = await request.body()
+    return await handle_provider_webhook("paypal", dict(request.headers), body)
 
 
 @router.post("/webhook/stripe")
 async def stripe_webhook(request: Request):
-    """Webhook de Stripe — valida signature y procesa eventos."""
-    if not _stripe_ready():
-        raise HTTPException(status_code=503, detail="Stripe no configurado")
-    try:
-        import stripe
-        stripe.api_key = STRIPE_KEY
-        payload = await request.body()
-        sig = request.headers.get("stripe-signature", "")
-        event = stripe.Webhook.construct_event(payload, sig, STRIPE_WEBHOOK_SECRET)
-        event_type = event["type"]
-        obj = event["data"]["object"]
+    """Webhook Stripe — Phase 2. Activo cuando STRIPE_SECRET_KEY esté configurado."""
+    body = await request.body()
+    return await handle_provider_webhook("stripe", dict(request.headers), body)
 
-        if event_type == "invoice.paid":
-            sub_id = obj.get("subscription")
-            if sub_id:
-                await _db().e7_subscriptions.update_one(
-                    {"stripe_subscription_id": sub_id},
-                    {"$set": {"status": "active",
-                               "current_period_end": datetime.fromtimestamp(
-                                   obj.get("period_end", 0), tz=timezone.utc).isoformat()}}
-                )
-        elif event_type == "invoice.payment_failed":
-            sub_id = obj.get("subscription")
-            if sub_id:
-                await _db().e7_subscriptions.update_one(
-                    {"stripe_subscription_id": sub_id},
-                    {"$set": {"status": "past_due"}}
-                )
-        elif event_type == "customer.subscription.deleted":
-            await _db().e7_subscriptions.update_one(
-                {"stripe_subscription_id": obj["id"]},
-                {"$set": {"status": "canceled", "canceled_at": datetime.now(timezone.utc).isoformat()}}
-            )
 
-        await _audit("stripe_webhook", "stripe", {"event_type": event_type})
-        return {"received": True}
-    except Exception as exc:
-        logger.error(f"[e7] webhook error: {exc}")
-        raise HTTPException(status_code=400, detail=str(exc))
+@router.get("/providers")
+async def list_providers():
+    """Lista providers disponibles y su estado de configuración."""
+    return {
+        "providers": {
+            "paypal": {
+                "configured": bool(os.getenv("PAYPAL_CLIENT_ID")),
+                "mode": os.getenv("PAYPAL_MODE", "live"),
+                "phase": 1,
+                "status": "active",
+            },
+            "stripe": {
+                "configured": bool(os.getenv("STRIPE_SECRET_KEY")),
+                "phase": 2,
+                "status": "prep — configurar STRIPE_SECRET_KEY para activar",
+            },
+            "manual": {
+                "configured": True,
+                "phase": 1,
+                "status": "active — activación enterprise sin pago",
+            },
+        }
+    }
