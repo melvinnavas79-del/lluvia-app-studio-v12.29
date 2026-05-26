@@ -439,13 +439,15 @@ OPENAI_TOOLS = [
     {"type": "function", "function": {
         "name": "call_specialist_tool",
         "description": (
-            "Delega una acción a un agente especialista del ecosistema enterprise (E2-E9). "
+            "Delega una acción a un agente especialista del ecosistema enterprise (E2-E9 + voice). "
             "Usar cuando la tarea requiere capacidades especializadas que están en un sub-orquestador. "
             "E2=infra/deploy, E3=builder/apps, E4=sales/marketing, E5=whitelabel/licencias, "
-            "E6=legal/contratos, E7=billing/stripe, E8=soporte/CRM, E9=analytics/monitoreo."
+            "E6=legal/contratos, E7=billing/pagos, E8=soporte/CRM, E9=analytics/monitoreo, "
+            "voice=llamadas PSTN/Twilio (call_start, metrics, agent_config, campaign_create)."
         ),
         "parameters": {"type": "object", "properties": {
-            "agent": {"type": "string", "enum": ["e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9"],
+            "agent": {"type": "string",
+                      "enum": ["e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9", "voice"],
                       "description": "Sub-orquestador a invocar"},
             "tool": {"type": "string", "description": "Nombre de la tool del agente especialista"},
             "params": {"type": "object", "description": "Parámetros para la tool", "default": {}},
@@ -780,8 +782,16 @@ async def _dispatch_to_specialist(agent: str, tool: str, params: dict) -> dict:
                 "alert_system": m.tool_alert_system,
                 "report_generator": m.tool_report_generator,
             }
+        elif agent == "voice":
+            import twilio_voice as m
+            fn_map = {
+                "voice_call_start": m.tool_voice_call_start,
+                "voice_metrics": m.tool_voice_metrics,
+                "voice_agent_config": m.tool_voice_agent_config,
+                "voice_campaign_create": m.tool_voice_campaign_create,
+            }
         else:
-            return {"error": f"Agente desconocido: {agent}. Válidos: e2-e9"}
+            return {"error": f"Agente desconocido: {agent}. Válidos: e2-e9, voice"}
 
         fn = fn_map.get(tool)
         if not fn:

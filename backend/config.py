@@ -86,6 +86,16 @@ DB_NAME = os.environ.get("DB_NAME", "bot_multiplataforma")
 # ==========================================
 # UTILIDAD: estado de credenciales
 # ==========================================
+# ==========================================
+# TWILIO VOICE (llamadas PSTN con IA)
+# ==========================================
+TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
+TWILIO_VOICE_FROM = os.environ.get("TWILIO_VOICE_FROM", "")
+TWILIO_VOICE_WEBHOOK_URL = os.environ.get("TWILIO_VOICE_WEBHOOK_URL", "")
+TWILIO_VALIDATE_REQUESTS = os.environ.get("TWILIO_VALIDATE_REQUESTS", "true").lower() == "true"
+
+
 def credentials_status() -> dict:
     """Retorna el estado de las credenciales configuradas (sin exponer valores)."""
     return {
@@ -96,4 +106,5 @@ def credentials_status() -> dict:
         "openai": bool(OPENAI_API_KEY),
         "llm_ready": bool(OPENAI_API_KEY),
         "model": LLM_MODEL,
+        "twilio_voice": bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_VOICE_FROM),
     }

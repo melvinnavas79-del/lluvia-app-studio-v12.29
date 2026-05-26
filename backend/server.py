@@ -461,6 +461,11 @@ api_router.include_router(e6_legal_module.router)
 api_router.include_router(e7_module.router)
 api_router.include_router(e8_module.router)
 api_router.include_router(e9_module.router)
+
+# ── Twilio Voice Agents (llamadas PSTN con IA) ────────────────────────────────
+import twilio_voice as twilio_voice_module
+twilio_voice_module.set_db(db)
+api_router.include_router(twilio_voice_module.router)
 # ─────────────────────────────────────────────────────────────────────────────
 
 app.include_router(api_router)

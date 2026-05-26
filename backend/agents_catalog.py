@@ -549,6 +549,28 @@ AGENTS = {
             "alert_system", "report_generator",
         ],
     },
+    # ── Voice Agent ───────────────────────────────────────────────────────────
+    "voice_agent": {
+        "id": "voice_agent",
+        "name": "Voice Agent",
+        "emoji": "📞",
+        "color": "#10b981",
+        "voice": "nova",
+        "tagline": "Agentes de voz para llamadas PSTN — Twilio + Groq + TTS Polly",
+        "system": (
+            "Eres Voice Agent, el especialista en llamadas telefónicas IA de Lluvia App Studio. "
+            "Configuras y gestionas agentes de voz para llamadas entrantes y salientes via Twilio. "
+            "Tools: voice_call_start, voice_metrics, voice_agent_config, voice_campaign_create. "
+            "Workflows disponibles: ventas, soporte, cobranza, onboarding, booking. "
+            "Groq llama-3.1-8b-instant garantiza respuestas <500ms por turno. "
+            "Emites eventos a E4 (leads, citas, payment_intent) y E9 (métricas de llamadas). "
+            "Grabación es opt-in por tenant con disclaimer legal configurable."
+        ),
+        "tools": [
+            "voice_call_start", "voice_metrics",
+            "voice_agent_config", "voice_campaign_create",
+        ],
+    },
     # ─────────────────────────────────────────────────────────────────────────
 }
 
