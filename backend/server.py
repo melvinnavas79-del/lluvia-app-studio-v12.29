@@ -148,10 +148,15 @@ async def on_startup():
     # Gmail Maestro autopoll (cada 5 min). Activar con GMAIL_MAESTRO_AUTOPOLL=1
     gmail_scheduler_module.start_scheduler()
 
+    # Job Scheduler — motor central de jobs/eventos/tareas
+    await job_scheduler_module.create_indexes()
+    job_scheduler_module.start_worker()
+
 
 @app.on_event("shutdown")
 async def on_shutdown():
     gmail_scheduler_module.stop_scheduler()
+    job_scheduler_module.stop_worker()
 
 
 # ============================================================
@@ -485,6 +490,11 @@ api_router.include_router(e10_module.router)
 import e11_gmail_support as e11_module
 e11_module.set_db(db)
 api_router.include_router(e11_module.router)
+
+# ── Job Scheduler — motor central de jobs/eventos/tareas ──────────────────────
+import job_scheduler as job_scheduler_module
+job_scheduler_module.set_db(db)
+api_router.include_router(job_scheduler_module.router)
 
 # ── Observabilidad centralizada ───────────────────────────────────────────────
 import observability as observability_module
