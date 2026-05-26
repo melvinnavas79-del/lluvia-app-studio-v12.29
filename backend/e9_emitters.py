@@ -370,42 +370,54 @@ def track_call(
                 tenant_id = "default"
 
             if emit_start:
-                await emit(f"{prefix}.started",
-                           {"function": func.__name__},
-                           tenant_id, module)
+                try:
+                    await emit(f"{prefix}.started",
+                               {"function": func.__name__},
+                               tenant_id, module)
+                except BaseException:
+                    pass
 
             start = time.monotonic()
             try:
                 result     = await func(*args, **kwargs)
                 elapsed_ms = int((time.monotonic() - start) * 1000)
 
-                await emit(
-                    f"{prefix}.completed",
-                    {"function": func.__name__, "elapsed_ms": elapsed_ms},
-                    tenant_id, module,
-                )
-
-                db = _db()
-                if db is not None:
-                    now = datetime.now(timezone.utc)
-                    await db.e9_counters.update_one(
-                        {"module": module,
-                         "day":    now.strftime("%Y-%m-%d"),
-                         "tenant_id": tenant_id},
-                        {
-                            "$inc": {"call_count": 1, "total_elapsed_ms": elapsed_ms},
-                            "$set": {"updated_at": now.isoformat()},
-                        },
-                        upsert=True,
+                # Observability calls are fire-and-forget — they must never
+                # interfere with delivering the function's result to the caller,
+                # including during task cancellation (BaseException, not Exception).
+                try:
+                    await emit(
+                        f"{prefix}.completed",
+                        {"function": func.__name__, "elapsed_ms": elapsed_ms},
+                        tenant_id, module,
                     )
+                    db = _db()
+                    if db is not None:
+                        now = datetime.now(timezone.utc)
+                        await db.e9_counters.update_one(
+                            {"module": module,
+                             "day":    now.strftime("%Y-%m-%d"),
+                             "tenant_id": tenant_id},
+                            {
+                                "$inc": {"call_count": 1, "total_elapsed_ms": elapsed_ms},
+                                "$set": {"updated_at": now.isoformat()},
+                            },
+                            upsert=True,
+                        )
+                except BaseException:
+                    pass  # observability never blocks result delivery
+
                 return result
 
             except Exception as exc:
                 elapsed_ms = int((time.monotonic() - start) * 1000)
-                await track_error(
-                    module, str(exc), tenant_id,
-                    {"function": func.__name__, "elapsed_ms": elapsed_ms},
-                )
+                try:
+                    await track_error(
+                        module, str(exc), tenant_id,
+                        {"function": func.__name__, "elapsed_ms": elapsed_ms},
+                    )
+                except BaseException:
+                    pass
                 raise  # re-propaga siempre
 
         return wrapper

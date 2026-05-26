@@ -441,14 +441,14 @@ async def tool_support_analytics(tenant_id: str = "", period_days: int = 30) -> 
 # ─── FastAPI endpoints ─────────────────────────────────────────────────────────
 
 @router.post("/tickets")
-async def create_ticket(data: TicketIn, user: dict = Depends(auth.get_current_user)):
+async def create_ticket(data: TicketIn, user: dict = Depends(auth.require_admin)):
     return await _create_ticket(data.model_dump(), actor=user["email"])
 
 
 @router.get("/tickets")
 async def list_tickets(tenant_id: Optional[str] = None, status: Optional[str] = None,
                         priority: Optional[str] = None,
-                        user: dict = Depends(auth.get_current_user)):
+                        user: dict = Depends(auth.require_admin)):
     q: dict = {}
     if tenant_id:
         q["tenant_id"] = tenant_id
@@ -461,7 +461,7 @@ async def list_tickets(tenant_id: Optional[str] = None, status: Optional[str] = 
 
 
 @router.get("/tickets/{ticket_id}")
-async def get_ticket(ticket_id: str, user: dict = Depends(auth.get_current_user)):
+async def get_ticket(ticket_id: str, user: dict = Depends(auth.require_admin)):
     doc = await _db().e8_tickets.find_one({"id": ticket_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Ticket no encontrado")
@@ -470,38 +470,38 @@ async def get_ticket(ticket_id: str, user: dict = Depends(auth.get_current_user)
 
 @router.post("/tickets/{ticket_id}/messages")
 async def add_message(ticket_id: str, data: TicketMessageIn,
-                       user: dict = Depends(auth.get_current_user)):
+                       user: dict = Depends(auth.require_admin)):
     return await _add_ticket_message(ticket_id, data.content, data.author_type,
                                       user["email"], user["email"])
 
 
 @router.patch("/tickets/{ticket_id}/resolve")
 async def resolve_ticket(ticket_id: str, csat: Optional[int] = None,
-                          user: dict = Depends(auth.get_current_user)):
+                          user: dict = Depends(auth.require_admin)):
     return await _resolve_ticket(ticket_id, csat, user["email"])
 
 
 @router.post("/contacts")
-async def upsert_contact(data: ContactIn, user: dict = Depends(auth.get_current_user)):
+async def upsert_contact(data: ContactIn, user: dict = Depends(auth.require_admin)):
     return await _upsert_contact(data.model_dump(), actor=user["email"])
 
 
 @router.get("/contacts")
 async def list_contacts(tenant_id: Optional[str] = None,
-                         user: dict = Depends(auth.get_current_user)):
+                         user: dict = Depends(auth.require_admin)):
     q = {"tenant_id": tenant_id} if tenant_id else {}
     cur = _db().e8_contacts.find(q, {"_id": 0}).sort("created_at", -1).limit(200)
     return {"contacts": [c async for c in cur]}
 
 
 @router.post("/kb")
-async def create_kb_article(data: KBArticleIn, user: dict = Depends(auth.get_current_user)):
+async def create_kb_article(data: KBArticleIn, user: dict = Depends(auth.require_admin)):
     return await _create_kb_article(data.model_dump(), actor=user["email"])
 
 
 @router.get("/kb")
 async def list_kb(tenant_id: Optional[str] = None, category: Optional[str] = None,
-                   user: dict = Depends(auth.get_current_user)):
+                   user: dict = Depends(auth.require_admin)):
     q: dict = {}
     if tenant_id:
         q["tenant_id"] = tenant_id
@@ -513,7 +513,7 @@ async def list_kb(tenant_id: Optional[str] = None, category: Optional[str] = Non
 
 @router.post("/kb/search")
 async def search_kb(query: str, tenant_id: Optional[str] = None,
-                     user: dict = Depends(auth.get_current_user)):
+                     user: dict = Depends(auth.require_admin)):
     return await _search_kb(query, tenant_id or "")
 
 

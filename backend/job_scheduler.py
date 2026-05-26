@@ -71,8 +71,13 @@ STALE_CHECK_INTERVAL_SECS = 30
 DEFAULT_MAX_ATTEMPTS      = 3
 BACKOFF_BASE_SECS         = 30
 BACKOFF_MAX_SECS          = 3600
+# Per-job execution timeout — prevents a hung handler from blocking the work loop forever.
+# Without this, the heartbeat keeps extending locked_until for a stuck job indefinitely.
+JOB_EXECUTION_TIMEOUT_SECS = int(os.environ.get("JOB_EXECUTION_TIMEOUT", "300"))
 
 # Anti-flood: max jobs executed per tenant per FLOOD_WINDOW_SECS
+# NOTE: In-process only — not safe across multiple worker processes.
+# For multi-process deployments, replace with a Redis/Mongo-backed counter.
 FLOOD_MAX_JOBS    = int(os.environ.get("JOB_FLOOD_MAX", "10"))
 FLOOD_WINDOW_SECS = 60
 
@@ -102,6 +107,18 @@ def _check_flood(tenant_id: str) -> bool:
         return False
     window.append(now)
     return True
+
+
+def _prune_flood_windows() -> None:
+    """Remove idle tenant entries from _flood_windows to prevent unbounded growth.
+    Called periodically from _stale_lock_loop. Safe to call any time."""
+    now = time.monotonic()
+    cutoff = now - FLOOD_WINDOW_SECS
+    idle = [k for k, v in _flood_windows.items() if not v or v[-1] < cutoff]
+    for k in idle:
+        del _flood_windows[k]
+    if idle:
+        logger.debug("[JOB] Pruned %d idle flood-window entries", len(idle))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -549,7 +566,10 @@ class JobWorker:
 
         start = time.monotonic()
         try:
-            result     = await handler(payload, tenant_id)
+            result     = await asyncio.wait_for(
+                handler(payload, tenant_id),
+                timeout=JOB_EXECUTION_TIMEOUT_SECS,
+            )
             elapsed_ms = int((time.monotonic() - start) * 1000)
 
             if result.get("ok") is False:
@@ -708,6 +728,11 @@ class JobWorker:
                 )
                 if result.modified_count > 0:
                     logger.warning(f"[JOB] Released {result.modified_count} stale locks")
+
+                # Prune idle flood-window entries to prevent unbounded dict growth.
+                # Entries whose deque is empty or fully expired are safe to remove.
+                _prune_flood_windows()
+
             except asyncio.CancelledError:
                 break
             except Exception as exc:
@@ -810,12 +835,22 @@ def stop_worker() -> None:
 
 async def create_indexes() -> None:
     db = _db()
+    # Primary claim index: covers the full _claim_next_job filter + sort.
+    # Query: {status, run_at ≤ now, locked_until ≤ now}  sort: {priority -1, run_at 1}
+    await db.jobs.create_index(
+        [("status", 1), ("locked_until", 1), ("run_at", 1), ("priority", -1)],
+        name="jobs_claim_idx",
+    )
     await db.jobs.create_index([("status", 1), ("run_at", 1)])
-    await db.jobs.create_index([("status", 1), ("locked_until", 1)])
     await db.jobs.create_index([("tenant_id", 1), ("status", 1)])
     await db.jobs.create_index("job_id", unique=True)
     await db.jobs.create_index("idempotency_key", sparse=True)
     await db.jobs.create_index([("job_type", 1), ("status", 1)])
+    # Stale-lock query: {status=running, locked_until ≤ now, worker_id ≠ X}
+    await db.jobs.create_index(
+        [("status", 1), ("locked_until", 1), ("worker_id", 1)],
+        name="jobs_stale_lock_idx",
+    )
     await db.jobs_audit.create_index([("job_id", 1)])
     await db.jobs_audit.create_index([("tenant_id", 1), ("at", -1)])
     logger.info("[JOB] MongoDB indexes created")
