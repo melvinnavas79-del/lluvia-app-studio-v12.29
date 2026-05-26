@@ -480,10 +480,11 @@ app.mount("/api/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads
 from demo_audio_room import SERVE_DIR as DEMO_AR_DIR
 app.mount("/api/demo/audio-room-static", StaticFiles(directory=str(DEMO_AR_DIR), html=True), name="demo_audio_room")
 
+from config import ALLOWED_ORIGINS as _CORS_ORIGINS
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=False,
-    allow_origins=["*"],
+    allow_origins=_CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )

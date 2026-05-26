@@ -103,8 +103,14 @@ async def seed_admin(db) -> None:
     Si cambia la password en .env, actualiza el hash.
     """
     import uuid
+    import logging as _log
     email = os.environ.get("ADMIN_EMAIL", "admin@admin.com").strip().lower()
     password = os.environ.get("ADMIN_PASSWORD", "Admin#2026")
+    if password == "Admin#2026":
+        _log.warning(
+            "SEGURIDAD: ADMIN_PASSWORD no configurado — usando contraseña por defecto. "
+            "Configura ADMIN_PASSWORD en .env antes de exponer en producción."
+        )
 
     # 1) Caso ideal: ya existe admin con ese email
     existing_target = await db.users.find_one({"email": email, "role": "admin"})

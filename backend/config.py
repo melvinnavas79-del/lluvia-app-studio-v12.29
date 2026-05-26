@@ -95,6 +95,17 @@ TWILIO_VOICE_FROM = os.environ.get("TWILIO_VOICE_FROM", "")
 TWILIO_VOICE_WEBHOOK_URL = os.environ.get("TWILIO_VOICE_WEBHOOK_URL", "")
 TWILIO_VALIDATE_REQUESTS = os.environ.get("TWILIO_VALIDATE_REQUESTS", "true").lower() == "true"
 
+# ==========================================
+# CORS (origenes permitidos en producción)
+# ==========================================
+# Ej: ALLOWED_ORIGINS="https://app.lluvia.io,https://admin.lluvia.io"
+_raw_origins = os.environ.get("ALLOWED_ORIGINS", "")
+ALLOWED_ORIGINS: list[str] = (
+    [o.strip() for o in _raw_origins.split(",") if o.strip()]
+    if _raw_origins
+    else ["*"]  # fallback permisivo solo si no se configura la var
+)
+
 
 def credentials_status() -> dict:
     """Retorna el estado de las credenciales configuradas (sin exponer valores)."""

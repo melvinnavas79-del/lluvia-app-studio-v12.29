@@ -262,8 +262,14 @@ def _validate_twilio_signature(request: Request, params: dict) -> bool:
         logger.warning("Twilio webhook sin X-Twilio-Signature")
         return False
 
-    # Canonical string: URL completa + params ordenados (key+value concatenados)
+    # URL canónica: detrás de un reverse proxy el scheme puede llegar como http.
+    # Usamos TWILIO_VOICE_WEBHOOK_URL como base si está configurado, porque
+    # Twilio firma contra la URL pública (https), no contra la interna del container.
     url = str(request.url)
+    if TWILIO_VOICE_WEBHOOK_URL:
+        path = request.url.path
+        query = f"?{request.url.query}" if request.url.query else ""
+        url = TWILIO_VOICE_WEBHOOK_URL.rstrip("/") + path + query
     canonical = url + "".join(k + (params.get(k) or "") for k in sorted(params))
     mac = hmac.new(TWILIO_AUTH_TOKEN.encode(), canonical.encode(), hashlib.sha1)
     expected = base64.b64encode(mac.digest()).decode()
@@ -411,17 +417,36 @@ async def _llm_voice_reply(agent: dict, workflow: Optional[dict],
         tokens = resp.usage.total_tokens if resp.usage else 0
         return text, tokens
     except Exception as e:
-        logger.error(f"LLM voice error: {e}")
-        return "Disculpa, hubo un problema técnico. ¿Podrías repetir eso?", 0
+        logger.warning(f"LLM voice Groq error ({e}), intentando fallback OpenAI")
+        try:
+            fallback_client, fallback_model = get_client("high")
+            resp2 = await fallback_client.chat.completions.create(
+                model=fallback_model,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=0.4,
+            )
+            text2 = (resp2.choices[0].message.content or "").strip()
+            tokens2 = resp2.usage.total_tokens if resp2.usage else 0
+            return text2, tokens2
+        except Exception as e2:
+            logger.error(f"LLM voice fallback también falló: {e2}")
+            return "Disculpa, hubo un problema técnico. ¿Podrías repetir eso?", 0
 
 
 # ──────────────────────────────────────────────────────────
 # Twilio REST — llamadas salientes
 # ──────────────────────────────────────────────────────────
 
+_MAX_CALL_DURATION_SECONDS = int(os.environ.get("VOICE_MAX_CALL_DURATION", "600"))  # 10 min default
+
+
 async def _twilio_create_call(to: str, from_: str, url: str, status_callback: str) -> dict:
-    payload = {"To": to, "From": from_, "Url": url, "StatusCallback": status_callback,
-               "StatusCallbackMethod": "POST"}
+    payload = {
+        "To": to, "From": from_, "Url": url,
+        "StatusCallback": status_callback, "StatusCallbackMethod": "POST",
+        "TimeLimit": str(_MAX_CALL_DURATION_SECONDS),  # previene llamadas infinitas y costo runaway
+    }
     try:
         resp = await asyncio.to_thread(
             http_req.post,
