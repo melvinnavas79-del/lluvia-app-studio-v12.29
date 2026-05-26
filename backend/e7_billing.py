@@ -25,6 +25,7 @@ import logging
 import secrets
 import asyncio
 import requests as _requests
+from pymongo.errors import DuplicateKeyError as _DuplicateKeyError
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
@@ -455,7 +456,7 @@ class PayPalProvider(PaymentProvider):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# STRIPE PROVIDER — PHASE 2 (PREP)
+# STRIPE PROVIDER — PHASE 2 (REAL when STRIPE_SECRET_KEY configured)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class StripeProvider(PaymentProvider):
@@ -463,19 +464,25 @@ class StripeProvider(PaymentProvider):
     Stripe como provider secundario — Phase 2.
     Misma interfaz que PayPalProvider.
     Activar configurando STRIPE_SECRET_KEY y STRIPE_WEBHOOK_SECRET.
-    """
-    STRIPE_KEY = os.getenv("STRIPE_SECRET_KEY", "")
-    WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
-    def _require_stripe(self):
-        if not self.STRIPE_KEY:
+    Flujo checkout:
+      1. create_subscription() → Checkout Session (status=pending_approval)
+      2. checkout.session.completed webhook → actualiza provider_subscription_id real
+      3. invoice.paid, customer.subscription.* → lifecycle events
+    """
+
+    def _require_stripe(self) -> str:
+        """Retorna STRIPE_SECRET_KEY o lanza 503. Lee env en tiempo de ejecución."""
+        key = os.getenv("STRIPE_SECRET_KEY", "")
+        if not key:
             raise HTTPException(
                 status_code=503,
                 detail="Stripe Phase 2 — configurar STRIPE_SECRET_KEY para activar"
             )
+        return key
 
     async def get_or_create_billing_plan(self, plan_key: str) -> str:
-        self._require_stripe()
+        stripe_key = self._require_stripe()
         cached = await _db().e7_billing_plans.find_one(
             {"plan_key": plan_key, "provider": "stripe", "status": "active"}
         )
@@ -485,85 +492,136 @@ class StripeProvider(PaymentProvider):
         if not plan:
             raise HTTPException(status_code=400, detail=f"Plan inválido: {plan_key}")
         import stripe
-        stripe.api_key = self.STRIPE_KEY
+        stripe.api_key = stripe_key
         interval = "month" if plan["interval"] == "MONTH" else "year"
-        price = stripe.Price.create(
-            unit_amount=int(plan["amount_usd"] * 100),
-            currency=plan["currency"].lower(),
-            recurring={"interval": interval},
-            product_data={"name": plan["name"]},
+        price = await asyncio.to_thread(
+            lambda: stripe.Price.create(
+                unit_amount=int(plan["amount_usd"] * 100),
+                currency=plan["currency"].lower(),
+                recurring={"interval": interval},
+                product_data={"name": plan["name"]},
+            )
         )
         await _db().e7_billing_plans.insert_one({
             "plan_key": plan_key, "provider": "stripe",
             "provider_plan_id": price["id"], "status": "active",
+            "amount_usd": plan["amount_usd"],
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
         return price["id"]
 
     async def create_subscription(self, provider_plan_id, billing_email,
                                    return_url, cancel_url, custom_id) -> dict:
-        self._require_stripe()
+        stripe_key = self._require_stripe()
         import stripe
-        stripe.api_key = self.STRIPE_KEY
-        customer = stripe.Customer.create(email=billing_email, metadata={"custom_id": custom_id})
-        session = stripe.checkout.Session.create(
-            customer=customer["id"],
-            mode="subscription",
-            line_items=[{"price": provider_plan_id, "quantity": 1}],
-            success_url=return_url,
-            cancel_url=cancel_url,
-            metadata={"custom_id": custom_id},
+        stripe.api_key = stripe_key
+
+        # Create customer first (idempotent via custom_id lookup)
+        customer = await asyncio.to_thread(
+            lambda: stripe.Customer.create(
+                email=billing_email,
+                metadata={"custom_id": custom_id},
+            )
+        )
+        # Create Checkout Session — session.subscription is None at creation time.
+        # It will be populated after the user completes checkout.
+        # We store the session ID now and update to real subscription_id via
+        # checkout.session.completed webhook.
+        session = await asyncio.to_thread(
+            lambda: stripe.checkout.Session.create(
+                customer=customer["id"],
+                mode="subscription",
+                line_items=[{"price": provider_plan_id, "quantity": 1}],
+                success_url=return_url,
+                cancel_url=cancel_url,
+                metadata={"custom_id": custom_id},
+            )
         )
         return {
-            "provider_subscription_id": session["subscription"] or session["id"],
+            "provider_subscription_id": session["id"],  # checkout session ID
             "approval_url": session["url"],
             "status": "pending_approval",
         }
 
     async def cancel_subscription(self, provider_subscription_id, reason) -> bool:
-        self._require_stripe()
+        stripe_key = self._require_stripe()
         import stripe
-        stripe.api_key = self.STRIPE_KEY
-        stripe.Subscription.cancel(provider_subscription_id)
+        stripe.api_key = stripe_key
+        # Works for subscription IDs (sub_xxx); session IDs (cs_xxx) can't be cancelled
+        if provider_subscription_id.startswith("sub_"):
+            await asyncio.to_thread(
+                lambda: stripe.Subscription.cancel(provider_subscription_id)
+            )
         return True
 
     async def get_subscription_status(self, provider_subscription_id) -> dict:
-        self._require_stripe()
+        stripe_key = self._require_stripe()
         import stripe
-        stripe.api_key = self.STRIPE_KEY
-        sub = stripe.Subscription.retrieve(provider_subscription_id)
-        return {"provider_status": sub["status"], "raw": dict(sub)}
+        stripe.api_key = stripe_key
+        if provider_subscription_id.startswith("sub_"):
+            sub = await asyncio.to_thread(
+                lambda: stripe.Subscription.retrieve(provider_subscription_id)
+            )
+            return {"provider_status": sub["status"], "raw": dict(sub)}
+        # Checkout session — pendiente de completarse
+        return {"provider_status": "pending_approval",
+                "note": "Checkout session no completada aún"}
 
     async def verify_webhook(self, headers, body) -> bool:
-        if not self.WEBHOOK_SECRET:
+        webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+        if not webhook_secret:
             return False
         try:
             import stripe
-            stripe.api_key = self.STRIPE_KEY
-            stripe.Webhook.construct_event(body, headers.get("stripe-signature", ""), self.WEBHOOK_SECRET)
+            stripe.Webhook.construct_event(
+                body, headers.get("stripe-signature", ""), webhook_secret
+            )
             return True
         except Exception:
             return False
 
     async def parse_webhook_event(self, body) -> dict:
-        self._require_stripe()
-        import stripe
-        stripe.api_key = self.STRIPE_KEY
-        event = stripe.Event.construct_from(json.loads(body), self.STRIPE_KEY)
-        obj = event["data"]["object"]
+        # Firma ya verificada en verify_webhook — parsear directamente
+        try:
+            event = json.loads(body.decode("utf-8"))
+        except Exception:
+            return {"event_type": "unknown", "provider_subscription_id": "",
+                    "amount_usd": 0, "stripe_event_id": ""}
+
+        raw_type = event.get("type", "")
+        obj      = event.get("data", {}).get("object", {})
+
         EVENT_MAP = {
-            "customer.subscription.created":  "subscription_activated",
-            "customer.subscription.deleted":  "subscription_cancelled",
-            "invoice.paid":                   "payment_completed",
-            "invoice.payment_failed":         "payment_failed",
+            "customer.subscription.created":   "subscription_activated",
+            "customer.subscription.updated":   "subscription_updated",
+            "customer.subscription.deleted":   "subscription_cancelled",
+            "invoice.paid":                    "payment_completed",
+            "invoice.payment_failed":          "payment_failed",
+            "checkout.session.completed":      "checkout_session_completed",
         }
+
+        # Extraer subscription ID según tipo de evento
+        if raw_type == "checkout.session.completed":
+            # obj.subscription = real sub ID after checkout; obj.id = session ID
+            sub_id = obj.get("subscription") or obj.get("id", "")
+        else:
+            sub_id = obj.get("subscription") or obj.get("id", "")
+
+        # custom_id = nuestro sub_id interno (se pasa en metadata al crear)
+        custom_id = (obj.get("metadata") or {}).get("custom_id", "")
+
+        amount_usd = 0.0
+        if raw_type == "invoice.paid":
+            amount_usd = obj.get("amount_paid", 0) / 100
+
         return {
-            "event_type": EVENT_MAP.get(event["type"], "unknown"),
-            "raw_event_type": event["type"],
-            "provider_subscription_id": obj.get("subscription") or obj.get("id", ""),
-            "custom_id": (obj.get("metadata") or {}).get("custom_id", ""),
-            "amount_usd": obj.get("amount_paid", 0) / 100 if "amount_paid" in obj else 0,
-            "currency": obj.get("currency", "usd").upper(),
+            "event_type":              EVENT_MAP.get(raw_type, "unknown"),
+            "raw_event_type":          raw_type,
+            "provider_subscription_id": sub_id,
+            "custom_id":               custom_id,
+            "amount_usd":              amount_usd,
+            "currency":                obj.get("currency", "usd").upper(),
+            "stripe_event_id":         event.get("id", ""),
         }
 
 
@@ -625,8 +683,20 @@ async def engine_subscribe(tenant_id: str, plan_key: str, payment_provider: str,
     if payment_provider not in PROVIDERS:
         raise HTTPException(status_code=400, detail=f"Provider inválido: {payment_provider}")
 
-    return_url = os.getenv("PAYPAL_RETURN_URL", "https://lluvia.app/billing/success")
-    cancel_url = os.getenv("PAYPAL_CANCEL_URL", "https://lluvia.app/billing/cancel")
+    # Idempotencia: evitar crear segunda suscripción activa/pendiente para el mismo tenant
+    existing = await _db().e7_subscriptions.find_one(
+        {"tenant_id": tenant_id, "status": {"$in": ["active", "pending_approval"]}},
+        {"_id": 0}
+    )
+    if existing:
+        return {**{k: v for k, v in existing.items() if k != "_id"},
+                "idempotent": True}
+
+    # Genérico primero, con fallback a las vars PayPal legacy para retrocompat.
+    return_url = os.getenv("BILLING_RETURN_URL",
+                           os.getenv("PAYPAL_RETURN_URL", "https://lluvia.app/billing/success"))
+    cancel_url = os.getenv("BILLING_CANCEL_URL",
+                           os.getenv("PAYPAL_CANCEL_URL", "https://lluvia.app/billing/cancel"))
 
     sub_id = "sub_" + secrets.token_urlsafe(10)
     provider = get_provider(payment_provider)
@@ -834,11 +904,30 @@ async def handle_provider_webhook(provider_key: str, headers: dict, body: bytes)
         raise HTTPException(status_code=403, detail=f"Firma webhook {provider_key} inválida")
 
     event = await provider.parse_webhook_event(body)
-    event_type = event.get("event_type", "unknown")
+    event_type      = event.get("event_type", "unknown")
     provider_sub_id = event.get("provider_subscription_id", "")
-    custom_id = event.get("custom_id", "")  # = nuestro sub_id interno
+    custom_id       = event.get("custom_id", "")  # = nuestro sub_id interno
 
     logger.info(f"[e7/webhook/{provider_key}] {event.get('raw_event_type')} → {event_type}")
+
+    # ── Replay protection para Stripe (eventos tienen ID único) ──────────────
+    stripe_event_id = event.get("stripe_event_id", "")
+    if stripe_event_id:
+        existing = await _db().e7_webhook_events.find_one({"event_id": stripe_event_id})
+        if existing:
+            logger.debug(f"[e7/webhook] evento duplicado ignorado: {stripe_event_id}")
+            return {"received": True, "duplicate": True, "event_type": event_type}
+        try:
+            await _db().e7_webhook_events.insert_one({
+                "event_id":     stripe_event_id,
+                "provider":     provider_key,
+                "event_type":   event_type,
+                "processed_at": datetime.now(timezone.utc),  # datetime (not str) for TTL index
+            })
+        except _DuplicateKeyError:
+            # Two parallel webhook deliveries of the same event; the other won
+            logger.debug(f"[e7/webhook] race duplicate ignored: {stripe_event_id}")
+            return {"received": True, "duplicate": True, "event_type": event_type}
 
     # Buscar suscripción interna por custom_id (nuestro sub_id) o provider_sub_id
     sub_doc = None
@@ -902,12 +991,66 @@ async def handle_provider_webhook(provider_key: str, headers: dict, body: bytes)
             {"$set": {"status": "suspended", "suspended_at": now, "updated_at": now}}
         )
 
+    elif event_type == "checkout_session_completed":
+        # Actualizar provider_subscription_id con el ID real de suscripción Stripe
+        real_sub_id = event.get("provider_subscription_id", "")
+        if real_sub_id and real_sub_id.startswith("sub_"):
+            await _db().e7_subscriptions.update_one(
+                {"id": sub_id},
+                {"$set": {"provider_subscription_id": real_sub_id,
+                           "status": "active", "activated_at": now}}
+            )
+        await _auto_activate_tenant(
+            sub_id, tenant_id, sub_doc.get("plan_key", ""),
+            event.get("amount_usd", 0), event.get("currency", "USD"), "webhook"
+        )
+
+    elif event_type == "payment_failed":
+        await _db().e7_subscriptions.update_one(
+            {"id": sub_id},
+            {"$set": {"status": "suspended", "suspended_at": now}}
+        )
+        await _db().e5_tenants.update_one(
+            {"id": tenant_id},
+            {"$set": {"status": "suspended", "suspended_at": now, "updated_at": now}}
+        )
+        await _audit("payment_failed_tenant_suspended", "webhook",
+                      {"tenant_id": tenant_id, "sub_id": sub_id,
+                       "provider": provider_key}, tenant_id)
+
+    elif event_type == "subscription_updated":
+        # Sincronizar estado si el provider cambió el status (ej: trial → active)
+        if sub_doc:
+            await _db().e7_subscriptions.update_one(
+                {"id": sub_id},
+                {"$set": {"updated_at": now}}
+            )
+
     await _audit(f"webhook_{event_type}", "webhook",
                   {"provider": provider_key, "sub_id": sub_id,
                    "tenant_id": tenant_id, "event": event}, tenant_id)
 
     return {"received": True, "matched": True, "event_type": event_type,
             "sub_id": sub_id, "tenant_id": tenant_id}
+
+
+# ─── Indexes ──────────────────────────────────────────────────────────────────
+
+async def create_indexes() -> None:
+    db = _db()
+    await db.e7_subscriptions.create_index("id", unique=True)
+    await db.e7_subscriptions.create_index([("tenant_id", 1), ("status", 1)])
+    await db.e7_subscriptions.create_index("provider_subscription_id", sparse=True)
+    await db.e7_payments.create_index([("sub_id", 1), ("received_at", -1)])
+    await db.e7_billing_plans.create_index(
+        [("plan_key", 1), ("provider", 1)], unique=True, sparse=True
+    )
+    await db.e7_webhook_events.create_index("event_id", unique=True)
+    # TTL: mantener webhook dedup log 30 días
+    await db.e7_webhook_events.create_index(
+        "processed_at", expireAfterSeconds=86400 * 30
+    )
+    logger.info("[e7] Indexes OK")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

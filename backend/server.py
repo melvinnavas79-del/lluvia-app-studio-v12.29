@@ -158,6 +158,12 @@ async def on_startup():
     # E8 SLA Monitor — chequea breaches cada 5 min
     e8_module.start_sla_monitor()
 
+    # E4 Email — indexes de log, supresiones, rate limits
+    await e4_email_module.create_indexes()
+
+    # E7 Billing — indexes de suscripciones, pagos, webhook dedup
+    await e7_module.create_indexes()
+
     # Master Console — indexes del audit trail
     await master_console_module.create_indexes()
 
@@ -462,6 +468,7 @@ api_router.include_router(telegram_unified_module.router_link)
 import e2_infra as e2_module
 import e3_builder as e3_module
 import e4_sales as e4_module
+import e4_email as e4_email_module
 import e5_whitelabel as e5_module
 import e6_legal as e6_legal_module
 import e7_billing as e7_module
@@ -471,6 +478,7 @@ import e9_analytics as e9_module
 e2_module.set_db(db)
 e3_module.set_db(db)
 e4_module.set_db(db)
+e4_email_module.set_db(db)
 e5_module.set_db(db)
 e6_legal_module.set_db(db)
 e7_module.set_db(db)
@@ -480,6 +488,7 @@ e9_module.set_db(db)
 api_router.include_router(e2_module.router)
 api_router.include_router(e3_module.router)
 api_router.include_router(e4_module.router)
+api_router.include_router(e4_email_module.router)
 api_router.include_router(e5_module.router)
 api_router.include_router(e6_legal_module.router)
 api_router.include_router(e7_module.router)
