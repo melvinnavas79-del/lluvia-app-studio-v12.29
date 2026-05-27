@@ -41,9 +41,11 @@ from typing import Optional, List
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from pymongo.errors import DuplicateKeyError as _DuplicateKeyError
 
 import auth
 from e9_emitters import track_call
+from rate_limit import limiter
 
 logger = logging.getLogger("e4_email")
 router = APIRouter(prefix="/e4/email", tags=["E4-Email"])
@@ -412,19 +414,57 @@ async def send_email(
             os.getenv("EMAIL_FROM_ADDRESS", "noreply@lluvia.app"),
         )
 
-    # Idempotencia — evitar reenvíos
+    # email_id generated early — needed for atomic idempotency claim below
+    email_id = "email_" + secrets.token_urlsafe(10)
+
+    # ── Atomic idempotency claim ────────────────────────────────────────────────
+    # Uses find_one_and_update with $setOnInsert: MongoDB guarantees atomicity of
+    # findAndModify, so exactly one concurrent caller wins the insert.
+    # return_document=False → returns doc *before* the update:
+    #   None          → we won (new insert) — proceed with send
+    #   existing doc  → another request already claimed this key
     if idempotency_key:
-        hit = await _db().e4_email_log.find_one({
-            "idempotency_key": idempotency_key,
-            "tenant_id": tenant_id,
-            "status": {"$in": ["sent", "delivered"]},
-        }, {"email_id": 1})
-        if hit:
-            return {"ok": True, "duplicate": True, "email_id": hit["email_id"]}
+        now_iso = datetime.now(timezone.utc).isoformat()
+        pre_existing = await _db().e4_email_log.find_one_and_update(
+            {"idempotency_key": idempotency_key, "tenant_id": tenant_id},
+            {"$setOnInsert": {
+                "email_id":        email_id,
+                "idempotency_key": idempotency_key,
+                "tenant_id":       tenant_id,
+                "to":              to_email,
+                "subject":         subject,
+                "provider":        provider_name,
+                "status":          "sending",
+                "created_at":      now_iso,
+                "updated_at":      now_iso,
+            }},
+            upsert=True,
+            return_document=False,
+        )
+        if pre_existing is not None:
+            prev_status   = pre_existing.get("status", "")
+            prev_email_id = pre_existing.get("email_id", "")
+            if prev_status in ("sent", "delivered"):
+                return {"ok": True, "duplicate": True, "email_id": prev_email_id}
+            if prev_status == "sending":
+                # Previous send is in-flight or server crashed mid-send.
+                # Conservatively block to prevent double-send.
+                return {"ok": True, "duplicate": True, "email_id": prev_email_id,
+                        "note": "Concurrent send in progress — retry later if email not received"}
+            # "failed" → allow retry; reuse existing email_id for log continuity
+            if prev_email_id:
+                email_id = prev_email_id
 
     # Supresión
     if await _is_suppressed(to_email, tenant_id):
         logger.info(f"[e4] email suprimido → {to_email} (tenant={tenant_id})")
+        # Release idempotency slot so future calls aren't blocked as "in-flight"
+        if idempotency_key:
+            await _db().e4_email_log.update_one(
+                {"email_id": email_id, "status": "sending"},
+                {"$set": {"status": "suppressed",
+                          "updated_at": datetime.now(timezone.utc).isoformat()}},
+            )
         return {"ok": False, "suppressed": True, "email": to_email}
 
     # Rate limit
@@ -453,9 +493,8 @@ async def send_email(
             f'<a href="{unsub}" style="color:#999">Cancelar suscripción</a></p>'
         )
 
-    email_id  = "email_" + secrets.token_urlsafe(10)
-    send_fn   = _PROVIDER_FNS[provider_name]
-    last_err  = ""
+    send_fn  = _PROVIDER_FNS[provider_name]
+    last_err = ""
 
     for attempt in range(MAX_RETRY):
         try:
@@ -676,8 +715,27 @@ async def tool_campaign_email_dispatch(
 
 async def create_indexes() -> None:
     db = _db()
+
+    # ── Migrate idempotency index to unique ────────────────────────────────────
+    # Previous versions created a non-unique index on (idempotency_key, tenant_id).
+    # We need unique=True for atomic idempotency guarantees. Safe to drop and recreate
+    # because sparse=True excludes docs without idempotency_key from the constraint.
+    try:
+        idx_info = await db.e4_email_log.index_information()
+        for idx_name, idx_data in idx_info.items():
+            key_spec = [list(k) for k in idx_data.get("key", [])]
+            if (key_spec == [["idempotency_key", 1], ["tenant_id", 1]]
+                    and not idx_data.get("unique")):
+                await db.e4_email_log.drop_index(idx_name)
+                logger.info("[e4/email] Dropped non-unique idempotency index for migration")
+                break
+    except Exception as exc:
+        logger.warning(f"[e4/email] Idempotency index migration warning (non-fatal): {exc}")
+
     await db.e4_email_log.create_index(
-        [("idempotency_key", 1), ("tenant_id", 1)], sparse=True
+        [("idempotency_key", 1), ("tenant_id", 1)],
+        unique=True, sparse=True,
+        name="idx_e4_idem_unique",
     )
     await db.e4_email_log.create_index([("tenant_id", 1), ("created_at", -1)])
     await db.e4_suppressions.create_index(
@@ -828,21 +886,44 @@ async def api_unsubscribe(token: str):
             "email": email}
 
 
+_WEBHOOK_KEY_ENV = {
+    "sendgrid": "SENDGRID_WEBHOOK_PUBLIC_KEY",
+    "resend":   "RESEND_WEBHOOK_SECRET",
+}
+
+
 @router.post("/webhook/{provider}")
-async def api_webhook(provider: str, request: Request):
+@limiter.limit("300/minute")
+async def api_webhook(request: Request, provider: str):
     """
     Webhook de entrega — procesa bounces, unsubscribes, delivery events.
-    Activo cuando SENDGRID_WEBHOOK_PUBLIC_KEY o RESEND_WEBHOOK_SECRET configurado.
+
+    Security model (default STRICT):
+      - sendgrid: requiere SENDGRID_WEBHOOK_PUBLIC_KEY  → 503 si no configurado
+      - resend:   requiere RESEND_WEBHOOK_SECRET         → 503 si no configurado
+      - firma inválida → 403
+
+    Proveedores desconocidos son rechazados (404).
+    Rate limit: 300 req/min para absorber bursts legítimos de delivery events.
     """
+    if provider not in _WEBHOOK_KEY_ENV:
+        raise HTTPException(status_code=404, detail=f"Provider webhook '{provider}' no soportado")
+
+    key_env    = _WEBHOOK_KEY_ENV[provider]
+    secret_val = os.getenv(key_env, "")
+
+    # Strict security: reject if no secret configured (prevents unauthenticated event injection)
+    if not secret_val:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Webhook {provider} no configurado — definir {key_env} para activar",
+        )
+
     body    = await request.body()
     headers = {k.lower(): v for k, v in request.headers.items()}
 
-    # Solo verificar firma si las keys están configuradas; si no, aceptar (modo permisivo)
-    has_secret = (
-        os.getenv("SENDGRID_WEBHOOK_PUBLIC_KEY") or
-        os.getenv("RESEND_WEBHOOK_SECRET")
-    )
-    if has_secret and not _verify_webhook(provider, headers, body):
+    if not _verify_webhook(provider, headers, body):
+        logger.warning(f"[e4/webhook/{provider}] firma inválida — request rechazado")
         raise HTTPException(status_code=403, detail="Firma webhook inválida")
 
     try:
