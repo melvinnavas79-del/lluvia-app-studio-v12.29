@@ -3,7 +3,9 @@ E3 — AI Builder / Apps / Agents
 Sub-orquestador especializado en generación de apps, templates y diseño de agentes.
 Reutiliza workspace_files.py y app_builder.py. No toca console.py ni E1.
 """
+import asyncio
 import logging
+import os
 import secrets
 from datetime import datetime, timezone
 from typing import Optional, List
@@ -54,6 +56,9 @@ class GenerateAppIn(BaseModel):
     tenant_id: Optional[str] = None
     deploy_target: str = Field("local", description="local|render|railway|fly|vps|docker")
     custom_vars: dict = Field(default_factory=dict)
+    ai_generate: bool = Field(False, description="Si True y template sin files, genera código vía LLM real")
+    ai_provider: str = Field("auto", description="auto|groq|openrouter — provider LLM para generación")
+    ai_description: str = Field("", description="Descripción libre de la app para el LLM")
 
 
 class AgentConfigIn(BaseModel):
@@ -82,6 +87,115 @@ async def _audit(action: str, actor: str, detail: dict, tenant_id: str = "") -> 
         })
     except Exception as exc:
         logger.warning(f"[e3] audit failed: {exc}")
+
+
+# ─── AI Generation constants ──────────────────────────────────────────────────
+
+AI_GEN_TIMEOUT_SECS  = int(os.getenv("E3_AI_GEN_TIMEOUT", "90"))
+AI_GEN_QUOTA_MONTHLY = int(os.getenv("E3_AI_GEN_QUOTA_MONTHLY", "50"))  # per tenant
+
+# Prompt version — increment when prompt logic changes to re-train or A/B test
+_PROMPT_VERSION = "v2"
+
+_STACK_STARTERS = {
+    "fastapi":    ("main.py", "requirements.txt", "README.md"),
+    "react":      ("src/App.jsx", "src/index.js", "package.json", "public/index.html"),
+    "vue":        ("src/App.vue", "src/main.js", "package.json"),
+    "nextjs":     ("pages/index.js", "pages/api/hello.js", "package.json"),
+    "vanilla_js": ("index.html", "app.js", "style.css"),
+    "flask":      ("app.py", "requirements.txt", "templates/index.html"),
+}
+
+
+async def _check_ai_quota(tenant_id: str, actor: str) -> None:
+    """Raises 429 if tenant exceeded monthly AI generation quota."""
+    if not tenant_id:
+        return
+    period = datetime.now(timezone.utc).strftime("%Y-%m")
+    doc = await _db().e3_ai_quotas.find_one_and_update(
+        {"tenant_id": tenant_id, "period": period},
+        {"$inc": {"count": 1}, "$setOnInsert": {"tenant_id": tenant_id, "period": period, "count": 0}},
+        upsert=True,
+        return_document=True,
+    )
+    count = (doc or {}).get("count", 1)
+    if count > AI_GEN_QUOTA_MONTHLY:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Cuota de generación AI excedida: {AI_GEN_QUOTA_MONTHLY}/mes (tenant={tenant_id})"
+        )
+
+
+async def _ai_generate_files(stack: str, app_name: str, description: str,
+                              brand_color: str, provider_hint: str = "auto") -> dict:
+    """
+    Llama al LLM para generar los archivos starter de la app.
+    Retorna dict filename → content.
+    Timeout protegido. Falla de LLM → devuelve plantilla mínima funcional.
+    """
+    from llm_router import get_client
+    from e9_emitters import track_llm_call
+
+    target_files = _STACK_STARTERS.get(stack, ("main.py",))
+    files_list   = ", ".join(target_files)
+    prompt = (
+        f"Genera una app de {stack} llamada '{app_name}'.\n"
+        f"Descripción: {description or 'App web funcional con buenas prácticas.'}\n"
+        f"Color de marca: {brand_color}\n"
+        f"Genera estos archivos: {files_list}\n\n"
+        f"Responde SOLO con un objeto JSON válido donde las claves son los nombres de archivo "
+        f"y los valores son el contenido completo del archivo. Sin explicaciones fuera del JSON.\n"
+        f"Ejemplo: {{\"main.py\": \"# contenido...\", \"requirements.txt\": \"fastapi\\n\"}}"
+    )
+
+    import json as _json
+    import time as _time
+    import re as _re
+
+    _hint = "" if provider_hint == "auto" else provider_hint
+    client, model = get_client("high" if provider_hint in ("openrouter",) else "low",
+                               provider_hint=_hint)
+    t0 = _time.monotonic()
+    try:
+        resp = await asyncio.wait_for(
+            client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=3000,
+                temperature=0.3,
+            ),
+            timeout=AI_GEN_TIMEOUT_SECS,
+        )
+        elapsed_ms = int((_time.monotonic() - t0) * 1000)
+        if hasattr(resp, "usage") and resp.usage:
+            await track_llm_call(
+                module="e3_builder", provider=model.split("/")[0],
+                model=model,
+                prompt_tokens=resp.usage.prompt_tokens,
+                completion_tokens=resp.usage.completion_tokens,
+                elapsed_ms=elapsed_ms,
+                metadata={"prompt_version": _PROMPT_VERSION, "stack": stack},
+            )
+        raw = (resp.choices[0].message.content or "").strip()
+        # Extract JSON block — LLM sometimes adds markdown fences
+        m = _re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, _re.DOTALL)
+        if m:
+            raw = m.group(1)
+        generated = _json.loads(raw)
+        if not isinstance(generated, dict):
+            raise ValueError("LLM no devolvió dict")
+        # Sanitize: solo archivos en la lista esperada
+        return {f: str(generated[f]) for f in target_files if f in generated}
+    except asyncio.TimeoutError:
+        logger.warning(f"[e3] AI gen timeout ({AI_GEN_TIMEOUT_SECS}s) stack={stack} — usando fallback mínimo")
+    except Exception as exc:
+        logger.warning(f"[e3] AI gen error: {exc} — usando fallback mínimo")
+
+    # Fallback mínimo funcional si LLM falla
+    fallback: dict[str, str] = {}
+    for fname in target_files:
+        fallback[fname] = f"# {app_name} — {fname}\n# Generated by Lluvia App Studio\n"
+    return fallback
 
 
 # ─── Business logic ───────────────────────────────────────────────────────────
@@ -114,8 +228,24 @@ async def _generate_app(data: dict, actor: str) -> dict:
         raise HTTPException(status_code=404, detail=f"Template {data['template_id']} no encontrado")
 
     app_id = "app_" + secrets.token_urlsafe(8)
+    files  = dict(template.get("files", {}))
+
+    # Si ai_generate=True y el template no tiene archivos → generación real vía LLM
+    if data.get("ai_generate") and not files:
+        tenant_id = data.get("tenant_id") or ""
+        await _check_ai_quota(tenant_id, actor)
+        files = await _ai_generate_files(
+            stack=template.get("stack", "fastapi"),
+            app_name=data["app_name"],
+            description=data.get("ai_description") or template.get("description", ""),
+            brand_color=data.get("brand_color", "#2563eb"),
+            provider_hint=data.get("ai_provider", "auto"),
+        )
+        await _audit("ai_files_generated", actor,
+                     {"app_id": app_id, "stack": template.get("stack"), "files": list(files.keys())},
+                     tenant_id)
+
     # Aplica customizaciones al template
-    files = dict(template.get("files", {}))
     for fname, content in files.items():
         content = content.replace("{{APP_NAME}}", data["app_name"])
         content = content.replace("{{BRAND_COLOR}}", data["brand_color"])

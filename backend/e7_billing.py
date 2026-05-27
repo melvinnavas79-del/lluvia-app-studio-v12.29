@@ -281,7 +281,8 @@ class PayPalProvider(PaymentProvider):
         return product_id
 
     async def get_or_create_billing_plan(self, plan_key: str) -> str:
-        """Retorna PayPal plan_id para el plan_key dado. Cachea en MongoDB."""
+        """Retorna PayPal plan_id para el plan_key dado. Cachea en MongoDB.
+        Race-safe: uses upsert with retry to handle concurrent plan creation."""
         # Buscar en caché
         cached = await _db().e7_billing_plans.find_one(
             {"plan_key": plan_key, "provider": "paypal", "status": "ACTIVE"}
@@ -330,16 +331,25 @@ class PayPalProvider(PaymentProvider):
         })
 
         provider_plan_id = paypal_plan["id"]
-        await _db().e7_billing_plans.insert_one({
-            "plan_key": plan_key,
-            "provider": "paypal",
-            "provider_plan_id": provider_plan_id,
-            "amount_usd": plan["amount_usd"],
-            "currency": plan["currency"],
-            "interval": plan["interval"],
-            "status": "ACTIVE",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
+        try:
+            await _db().e7_billing_plans.insert_one({
+                "plan_key": plan_key,
+                "provider": "paypal",
+                "provider_plan_id": provider_plan_id,
+                "amount_usd": plan["amount_usd"],
+                "currency": plan["currency"],
+                "interval": plan["interval"],
+                "status": "ACTIVE",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
+        except _DuplicateKeyError:
+            # Race: another concurrent request already inserted. Use that one.
+            winner = await _db().e7_billing_plans.find_one(
+                {"plan_key": plan_key, "provider": "paypal", "status": "ACTIVE"}
+            )
+            if winner:
+                logger.info(f"[e7/paypal] Race duplicate plan_key={plan_key} — using existing {winner['provider_plan_id']}")
+                return winner["provider_plan_id"]
         logger.info(f"[e7/paypal] Billing plan creado: {provider_plan_id} para {plan_key}")
         return provider_plan_id
 
@@ -398,6 +408,36 @@ class PayPalProvider(PaymentProvider):
             "last_payment": data.get("billing_info", {}).get("last_payment"),
             "cycles_completed": data.get("billing_info", {}).get("cycles_completed", 0),
             "raw": data,
+        }
+
+    async def refund_payment(self, sale_id: str, amount_usd: float, currency: str,
+                              reason: str = "") -> dict:
+        """Refund a completed PayPal sale. sale_id is the PayPal transaction ID."""
+        base, _, _ = self._env()
+        token = await self._async_token()
+        payload: dict = {"note_to_payer": reason or "Reembolso procesado"}
+        if amount_usd > 0:
+            payload["amount"] = {"total": f"{amount_usd:.2f}", "currency": currency}
+
+        def _sync():
+            return _requests.post(
+                f"{base}/v1/payments/sale/{sale_id}/refund",
+                json=payload,
+                headers=self._headers(token),
+                timeout=20,
+            )
+
+        resp = await asyncio.to_thread(_sync)
+        if resp.status_code not in (200, 201):
+            raise HTTPException(
+                status_code=502,
+                detail=f"PayPal refund error {resp.status_code}: {resp.text[:300]}"
+            )
+        data = resp.json()
+        return {
+            "refund_id": data.get("id", ""),
+            "status": data.get("state", ""),
+            "amount_usd": float(data.get("amount", {}).get("total", amount_usd)),
         }
 
     async def verify_webhook(self, headers: dict, body: bytes) -> bool:
@@ -910,7 +950,27 @@ async def handle_provider_webhook(provider_key: str, headers: dict, body: bytes)
 
     logger.info(f"[e7/webhook/{provider_key}] {event.get('raw_event_type')} → {event_type}")
 
-    # ── Replay protection para Stripe (eventos tienen ID único) ──────────────
+    # ── Replay protection — dedup por event_id (Stripe) o PayPal transmission_id ──
+    paypal_txn_id = event.get("raw_event_type", "")  # used as fallback key for PayPal
+    if provider_key == "paypal":
+        # PayPal provides a unique PAYPAL-TRANSMISSION-ID header per delivery
+        paypal_event_id = headers.get("paypal-transmission-id", "")
+        if paypal_event_id:
+            existing = await _db().e7_webhook_events.find_one({"event_id": paypal_event_id})
+            if existing:
+                logger.debug(f"[e7/webhook] PayPal duplicate ignored: {paypal_event_id}")
+                return {"received": True, "duplicate": True, "event_type": event.get("event_type", "unknown")}
+            try:
+                await _db().e7_webhook_events.insert_one({
+                    "event_id":     paypal_event_id,
+                    "provider":     "paypal",
+                    "event_type":   event.get("event_type", "unknown"),
+                    "processed_at": datetime.now(timezone.utc),
+                })
+            except _DuplicateKeyError:
+                logger.debug(f"[e7/webhook] PayPal race duplicate: {paypal_event_id}")
+                return {"received": True, "duplicate": True, "event_type": event.get("event_type", "unknown")}
+
     stripe_event_id = event.get("stripe_event_id", "")
     if stripe_event_id:
         existing = await _db().e7_webhook_events.find_one({"event_id": stripe_event_id})
@@ -1017,6 +1077,9 @@ async def handle_provider_webhook(provider_key: str, headers: dict, body: bytes)
         await _audit("payment_failed_tenant_suspended", "webhook",
                       {"tenant_id": tenant_id, "sub_id": sub_id,
                        "provider": provider_key}, tenant_id)
+        await engine_send_payment_failure_notification(
+            sub_id, tenant_id, sub_doc.get("plan_key", ""), actor="webhook"
+        )
 
     elif event_type == "subscription_updated":
         # Sincronizar estado si el provider cambió el status (ej: trial → active)
@@ -1034,6 +1097,91 @@ async def handle_provider_webhook(provider_key: str, headers: dict, body: bytes)
             "sub_id": sub_id, "tenant_id": tenant_id}
 
 
+# ─── Refunds ──────────────────────────────────────────────────────────────────
+
+async def engine_refund(sub_id: str, sale_id: str, amount_usd: float,
+                         currency: str, reason: str, actor: str) -> dict:
+    """
+    Emite un reembolso vía el provider de la suscripción.
+    sale_id: ID de la transacción en el provider (PayPal sale ID / Stripe charge ID).
+    amount_usd=0 → reembolso completo.
+    """
+    sub_doc = await _db().e7_subscriptions.find_one({"id": sub_id})
+    if not sub_doc:
+        raise HTTPException(status_code=404, detail="Suscripción no encontrada")
+
+    provider_key = sub_doc.get("payment_provider", "paypal")
+    tenant_id    = sub_doc.get("tenant_id", "")
+    provider     = get_provider(provider_key)
+
+    if not hasattr(provider, "refund_payment"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Provider '{provider_key}' no soporta refunds directos en este nivel"
+        )
+
+    result = await provider.refund_payment(sale_id, amount_usd, currency, reason)
+
+    ref_id = "ref_" + secrets.token_urlsafe(10)
+    doc = {
+        "id": ref_id,
+        "sub_id": sub_id,
+        "tenant_id": tenant_id,
+        "payment_provider": provider_key,
+        "sale_id": sale_id,
+        "refund_id": result.get("refund_id", ""),
+        "amount_usd": result.get("amount_usd", amount_usd),
+        "currency": currency,
+        "reason": reason,
+        "status": result.get("status", "completed"),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": actor,
+    }
+    await _db().e7_refunds.insert_one(doc)
+    await _audit("refund_issued", actor,
+                  {"ref_id": ref_id, "sub_id": sub_id, "amount_usd": doc["amount_usd"],
+                   "sale_id": sale_id}, tenant_id)
+    return {k: v for k, v in doc.items() if k != "_id"}
+
+
+async def engine_send_payment_failure_notification(sub_id: str, tenant_id: str,
+                                                    plan_key: str, actor: str = "webhook") -> None:
+    """
+    Emite evento E9 + encola email de notificación de pago fallido.
+    No lanza excepción si falla — el sistema ya suspendió el tenant.
+    """
+    try:
+        from e9_emitters import track_call as _track
+        # Email via E4 si está disponible
+        try:
+            import e4_email
+            sub_doc = await _db().e7_subscriptions.find_one({"id": sub_id})
+            billing_email = (sub_doc or {}).get("billing_email", "")
+            if billing_email and e4_email._db() is not None:
+                plan_info = BILLING_PLANS.get(plan_key, {})
+                await e4_email.send_email(
+                    tenant_id=tenant_id,
+                    to_email=billing_email,
+                    subject="Pago fallido — acción requerida",
+                    html_body=(
+                        f"<p>Tu pago para el plan <strong>{plan_info.get('name', plan_key)}</strong> "
+                        f"no pudo procesarse.</p>"
+                        f"<p>Tu cuenta ha sido suspendida temporalmente. "
+                        f"Por favor actualiza tu método de pago para reactivarla.</p>"
+                        f"<p>Si crees que es un error, contáctanos.</p>"
+                    ),
+                    include_unsub=False,
+                    idempotency_key=f"payment_fail_{sub_id}",
+                )
+        except Exception as email_exc:
+            logger.warning(f"[e7] payment failure email failed: {email_exc}")
+
+        await _audit("payment_failure_notification_sent", actor,
+                      {"sub_id": sub_id, "tenant_id": tenant_id}, tenant_id)
+    except Exception as exc:
+        logger.error(f"[e7] payment failure notification failed: {exc}")
+
+
 # ─── Indexes ──────────────────────────────────────────────────────────────────
 
 async def create_indexes() -> None:
@@ -1046,10 +1194,11 @@ async def create_indexes() -> None:
         [("plan_key", 1), ("provider", 1)], unique=True, sparse=True
     )
     await db.e7_webhook_events.create_index("event_id", unique=True)
-    # TTL: mantener webhook dedup log 30 días
     await db.e7_webhook_events.create_index(
         "processed_at", expireAfterSeconds=86400 * 30
     )
+    await db.e7_refunds.create_index([("sub_id", 1), ("created_at", -1)])
+    await db.e7_refunds.create_index([("tenant_id", 1), ("status", 1)])
     logger.info("[e7] Indexes OK")
 
 
@@ -1252,6 +1401,31 @@ async def stripe_webhook(request: Request):
     """Webhook Stripe — Phase 2. Activo cuando STRIPE_SECRET_KEY esté configurado."""
     body = await request.body()
     return await handle_provider_webhook("stripe", dict(request.headers), body)
+
+
+class RefundIn(BaseModel):
+    sub_id: str
+    sale_id: str
+    amount_usd: float = Field(0.0, description="0 = reembolso completo")
+    currency: str = "USD"
+    reason: str = ""
+
+
+@router.post("/refunds")
+async def create_refund(data: RefundIn, user: dict = Depends(auth.require_admin)):
+    """Emite un reembolso vía el provider de la suscripción."""
+    return await engine_refund(
+        data.sub_id, data.sale_id, data.amount_usd,
+        data.currency, data.reason, actor=user["email"]
+    )
+
+
+@router.get("/refunds")
+async def list_refunds(tenant_id: Optional[str] = None,
+                        user: dict = Depends(auth.require_admin)):
+    q = {"tenant_id": tenant_id} if tenant_id else {}
+    cur = _db().e7_refunds.find(q, {"_id": 0}).sort("created_at", -1).limit(100)
+    return {"refunds": [r async for r in cur]}
 
 
 @router.get("/providers")
