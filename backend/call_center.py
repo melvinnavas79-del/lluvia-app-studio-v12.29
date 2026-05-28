@@ -24,9 +24,9 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
-from openai import AsyncOpenAI
 
 import config
+import llm_router
 import agents_catalog
 import credits as credits_mod
 from auth import get_current_user
@@ -43,9 +43,9 @@ def set_db(db) -> None:
 
 
 def _client():
-    if not config.OPENAI_API_KEY:
-        raise HTTPException(status_code=503, detail="OPENAI_API_KEY no configurada")
-    return AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+    if not llm_router.llm_available():
+        raise HTTPException(status_code=503, detail="Motor IA no configurado")
+    return llm_router.get_client("low")
 
 
 async def _resolve_agent(agent_id: str) -> dict:
@@ -72,7 +72,7 @@ async def call_turn(
 ):
     """Un turno completo: audio_in -> texto_user -> texto_agente -> audio_out."""
     agent = await _resolve_agent(agent_id)
-    client = _client()
+    client, _cc_model = _client()
     db = _db_ref.get("db")
     if db is None:
         raise HTTPException(status_code=503, detail="DB no inicializada")
@@ -151,7 +151,7 @@ async def call_turn(
     # 7) GPT
     try:
         resp = await client.chat.completions.create(
-            model=config.LLM_MODEL,
+            model=_cc_model,
             messages=messages,
             temperature=0.4,
             max_tokens=180,  # respuestas cortas para voz

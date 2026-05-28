@@ -34,10 +34,10 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from openai import AsyncOpenAI
 
 from auth import get_current_user
 import config
+import llm_router
 
 logger = logging.getLogger("devops_ai")
 router = APIRouter(prefix="/devops", tags=["devops_ai"])
@@ -385,11 +385,11 @@ async def _execute_devops_tool(name: str, args: dict) -> str:
 
 
 async def _analyze_with_ai(request_text: str) -> dict:
-    """Llama a OpenAI con tools para analizar el request y generar propuesta estructurada."""
-    if not config.OPENAI_API_KEY:
-        raise HTTPException(503, "Motor IA no configurado. Configura OPENAI_API_KEY.")
+    """Llama al LLM con tools para analizar el request y generar propuesta estructurada."""
+    if not llm_router.llm_available():
+        raise HTTPException(503, "Motor IA no configurado.")
 
-    client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+    client, _llm_model = llm_router.get_client("low")
     messages = [
         {"role": "system", "content": DEVOPS_SYSTEM},
         {"role": "user", "content": f"REQUEST: {request_text}"},
@@ -397,7 +397,7 @@ async def _analyze_with_ai(request_text: str) -> dict:
 
     for iteration in range(8):  # max 8 vueltas de tool-calling
         response = await client.chat.completions.create(
-            model=config.LLM_MODEL,
+            model=_llm_model,
             messages=messages,
             tools=DEVOPS_TOOLS,
             tool_choice="auto",

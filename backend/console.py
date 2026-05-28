@@ -16,10 +16,9 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from openai import AsyncOpenAI
-
 import config
 import credits as credits_mod
+import llm_router
 import agents_catalog
 import appointments as appt_mod
 from auth import get_current_user
@@ -434,6 +433,29 @@ OPENAI_TOOLS = [
             "vps_id": {"type": "string"},
             "service": {"type": "string"},
         }, "required": ["vps_id", "service"]},
+    }},
+    # ── Ojos: búsqueda web y navegación ──────────────────────────────────────
+    {"type": "function", "function": {
+        "name": "web_search",
+        "description": (
+            "Busca en internet con DuckDuckGo. Usar cuando no sabes algo, necesitas "
+            "documentación de una API, quieres verificar un error, o el usuario pregunta "
+            "algo que requiere información actualizada o externa."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "query": {"type": "string", "description": "Consulta de búsqueda en lenguaje natural"},
+        }, "required": ["query"]},
+    }},
+    {"type": "function", "function": {
+        "name": "web_browse",
+        "description": (
+            "Navega y lee el contenido de una URL. Usar para leer documentación, "
+            "ver el contenido de un repositorio en GitHub, leer un error en una página, "
+            "o analizar cualquier recurso web que el usuario o una búsqueda previa indique."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "url": {"type": "string", "description": "URL completa a navegar (debe empezar con http:// o https://)"},
+        }, "required": ["url"]},
     }},
     # ── Meta-tool E1→E2-E9 (additive) ────────────────────────────────────────
     {"type": "function", "function": {
@@ -1256,11 +1278,70 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
             data = await _dispatch_to_specialist(
                 args.get("agent", ""), args.get("tool", ""), args.get("params", {})
             )
+        elif name == "web_search":
+            query = args.get("query", "")
+            if not query:
+                data = {"error": "query requerido"}
+            else:
+                result = await _web_search(query)
+                data = {"query": query, "results": result}
+        elif name == "web_browse":
+            url = args.get("url", "")
+            if not url:
+                data = {"error": "url requerido"}
+            elif not url.startswith(("http://", "https://")):
+                data = {"error": "URL debe empezar con http:// o https://"}
+            else:
+                result = await _web_browse(url)
+                data = {"url": url, "content": result}
         else:
             return json.dumps({"error": f"Tool desconocida: {name}"}), 0
         return json.dumps(data, ensure_ascii=False)[:30000], cost
     except Exception as e:
         return json.dumps({"error": str(e)}), 0
+
+
+async def _web_search(query: str) -> str:
+    import httpx, html as _html
+    try:
+        async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
+            r = await client.get(
+                "https://api.duckduckgo.com/",
+                params={"q": query, "format": "json", "no_html": "1", "skip_disambig": "1"},
+                headers={"User-Agent": "LluviaAppStudio/12.55"},
+            )
+            data = r.json()
+    except Exception as e:
+        return f"Error buscando: {e}"
+    lines = []
+    if data.get("Answer"):
+        lines.append(f"Respuesta directa: {data['Answer']}")
+    if data.get("AbstractText"):
+        lines.append(f"Resumen: {data['AbstractText'][:800]}")
+        if data.get("AbstractURL"):
+            lines.append(f"Fuente: {data['AbstractURL']}")
+    for topic in data.get("RelatedTopics", [])[:8]:
+        if isinstance(topic, dict) and "Text" in topic:
+            url = topic.get("FirstURL", "")
+            lines.append(f"• {topic['Text'][:250]}" + (f" — {url}" if url else ""))
+    return "\n".join(lines) if lines else f"Sin resultados para: {query}"
+
+
+async def _web_browse(url: str) -> str:
+    import httpx, html as _html, re
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            r = await client.get(url, headers={"User-Agent": "LluviaAppStudio/12.55"})
+            r.raise_for_status()
+            text = r.text
+    except Exception as e:
+        return f"Error obteniendo URL: {e}"
+    text = re.sub(r"<script[^>]*>[\s\S]*?</script>", "", text, flags=re.I)
+    text = re.sub(r"<style[^>]*>[\s\S]*?</style>", "", text, flags=re.I)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = _html.unescape(text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:8000] or "(página vacía)"
 
 
 # ============================================================
@@ -1536,17 +1617,17 @@ async def send_message(
     tool_calls_made = []
     extra_cost = 0
 
-    if not config.OPENAI_API_KEY:
-        raise HTTPException(status_code=503, detail="OPENAI_API_KEY no configurada en backend")
+    if not llm_router.llm_available():
+        raise HTTPException(status_code=503, detail="Motor IA no configurado en backend")
 
-    client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+    client, _console_model = llm_router.get_client("low")
 
     # 3. Loop de tool calling (max 5 vueltas)
     final_text = ""
     for _ in range(5):
         try:
             resp = await client.chat.completions.create(
-                model=config.LLM_MODEL,
+                model=_console_model,
                 messages=messages,
                 tools=tools,
                 tool_choice="auto" if tools else None,

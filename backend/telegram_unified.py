@@ -20,7 +20,7 @@ from typing import Optional
 
 import agents_catalog
 import credits as credits_mod
-from openai import AsyncOpenAI
+import llm_router
 import config
 
 logger = logging.getLogger("tg_unified")
@@ -168,14 +168,14 @@ async def run_with_selected_agent(text: str, user_key: str, is_admin: bool) -> s
                                      f"telegram_chat:{aid}"):
         return ("Saldo insuficiente. Usa /recargar o vincula tu cuenta web "
                 "con /vincular <codigo>.")
-    client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+    client, _tg_model = llm_router.get_client("low")
     now_utc = datetime.now(timezone.utc)
     weekdays_es = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
     date_ctx = (f"\n\n[FECHA ACTUAL] {now_utc.strftime('%Y-%m-%d %H:%M')} UTC "
                 f"({weekdays_es[now_utc.weekday()]}). Usa esta fecha como 'hoy'.")
     try:
         resp = await client.chat.completions.create(
-            model=config.LLM_MODEL,
+            model=_tg_model,
             messages=[
                 {"role": "system", "content": agent["system"] + date_ctx},
                 {"role": "user", "content": text},

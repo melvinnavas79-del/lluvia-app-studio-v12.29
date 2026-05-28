@@ -68,7 +68,10 @@ def get_client(complexity: str = "low", provider_hint: str = "") -> tuple[AsyncO
         logger.debug(f"[llm_router] auto→OpenAI mini")
         return AsyncOpenAI(api_key=OPENAI_KEY), OPENAI_MODEL
 
-    # Auto: high complexity
+    # Auto: high complexity — Groq first, then OpenRouter, then OpenAI
+    if GROQ_API_KEY:
+        logger.debug(f"[llm_router] auto→Groq high:{GROQ_MODEL}")
+        return AsyncOpenAI(base_url=GROQ_BASE_URL, api_key=GROQ_API_KEY), GROQ_MODEL
     if OPENROUTER_API_KEY:
         logger.debug(f"[llm_router] auto→OpenRouter high:{OPENROUTER_MODEL_HIGH}")
         return AsyncOpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY), OPENROUTER_MODEL_HIGH
@@ -84,3 +87,7 @@ def groq_available() -> bool:
 
 def openrouter_available() -> bool:
     return bool(OPENROUTER_API_KEY)
+
+
+def llm_available() -> bool:
+    return bool(GROQ_API_KEY or OPENROUTER_API_KEY or OPENAI_KEY)

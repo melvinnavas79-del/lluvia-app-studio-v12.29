@@ -22,7 +22,7 @@ export default function AdminDashboard() {
   const MVP_TABS = ["builder","branding","overview","settings"];
   const hashToTab = (h) => {
     const key = (h || "").replace(/^#\/?/, "").trim();
-    return ALLOWED_TABS.includes(key) ? key : "builder";
+    return ALLOWED_TABS.includes(key) ? key : "console";
   };
   const [tab, setTab] = useState(() => hashToTab(window.location.hash));
   const [network, setNetwork] = useState(null);
@@ -81,23 +81,32 @@ export default function AdminDashboard() {
       </div>
 
       <header className="hero">
-        <span className="hero-tag">PANEL DE CONTROL</span>
-        <h1>{branding?.product_name ? `${branding.product_name}.` : "Red de afiliados."}</h1>
+        <span className="hero-tag">PANEL DE CONTROL — ADMIN</span>
+        <h1>{branding?.product_name ? `${branding.product_name}.` : "Lluvia App Studio."}</h1>
         <p className="hero-sub">
-          Gestiona afiliados, registra ventas, consulta el rendimiento de toda la red
-          y personaliza la marca. Solo tu, como admin, ves estos numeros consolidados.
+          Consola maestra, agentes E1-E11, DevOps AI, usuarios, ventas y configuración completa.
         </p>
       </header>
 
       {err && <div className="alert" data-testid="admin-error">{err}</div>}
       {msg && <div className="success" data-testid="admin-success">{msg}</div>}
 
-      <div className="tabs" data-testid="admin-tabs">
+      <div className="tabs" data-testid="admin-tabs" style={{ flexWrap: "wrap", gap: "4px" }}>
         {[
-          ["builder", "Mis Apps"],
-          ["branding", "Branding"],
-          ["overview", "Vision general"],
-          ["settings", "Mi Cuenta"],
+          ["console",   "💬 Chat / Agentes"],
+          ["overview",  "📊 Overview"],
+          ["super",     "👥 Usuarios"],
+          ["builder",   "🤖 Constructor"],
+          ["agency",    "🏢 Agencia"],
+          ["callcenter","📞 Call Center"],
+          ["devops",    "⚙️ DevOps AI"],
+          ["masterops", "🖥️ Master Console"],
+          ["affiliates","🔗 Afiliados"],
+          ["sales",     "💰 Ventas"],
+          ["proposals", "📋 Propuestas"],
+          ["promos",    "🎁 Promos"],
+          ["branding",  "🎨 Branding"],
+          ["settings",  "⚙️ Mi Cuenta"],
         ].map(([k, label]) => (
           <button
             key={k}

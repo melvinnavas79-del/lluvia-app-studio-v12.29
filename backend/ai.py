@@ -8,9 +8,9 @@ Sin ego, sin clases, sin planes. Ejecuta tools y reporta.
 
 import json
 import logging
-from openai import AsyncOpenAI
 
 import config
+import llm_router
 import memory
 from actions import github as gh
 from actions import server as srv
@@ -210,11 +210,7 @@ async def _execute_tool(name: str, args: dict, is_admin: bool) -> str:
 
 
 def is_ready() -> bool:
-    return bool(config.OPENAI_API_KEY)
-
-
-def _client() -> AsyncOpenAI:
-    return AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+    return llm_router.llm_available()
 
 
 def _build_messages(user: str, text: str, is_admin: bool) -> list:
@@ -231,17 +227,17 @@ def _build_messages(user: str, text: str, is_admin: bool) -> list:
 
 
 async def generate(user: str, text: str, is_admin: bool = False) -> str:
-    if not config.OPENAI_API_KEY:
-        return "Motor IA no configurado. Agrega OPENAI_API_KEY en backend/.env"
+    if not llm_router.llm_available():
+        return "Motor IA no configurado. Agrega GROQ_API_KEY o OPENAI_API_KEY en backend/.env"
 
     try:
-        client = _client()
+        client, llm_model = llm_router.get_client("low")
         messages = _build_messages(user, text, is_admin)
 
         # Loop de tool calling: hasta 5 vueltas
         for _ in range(5):
             response = await client.chat.completions.create(
-                model=config.LLM_MODEL,
+                model=llm_model,
                 messages=messages,
                 tools=TOOLS if is_admin else None,
                 tool_choice="auto" if is_admin else None,
