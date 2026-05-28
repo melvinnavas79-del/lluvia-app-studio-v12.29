@@ -81,6 +81,40 @@ def get_client(complexity: str = "low", provider_hint: str = "") -> tuple[AsyncO
     return AsyncOpenAI(api_key=OPENAI_KEY), model
 
 
+GROQ_CONSOLE_MODEL = os.getenv("GROQ_CONSOLE_MODEL", "llama-3.3-70b-versatile")
+# Override explícito: "openai" | "groq" | "openrouter" | "" (auto)
+CONSOLE_LLM_PROVIDER = os.getenv("CONSOLE_LLM_PROVIDER", "")
+
+
+def get_console_client() -> tuple[AsyncOpenAI, str]:
+    """
+    Cliente para el loop de orquestación con tool-calling (E1 console).
+    llama-3.1-8b-instant no es fiable para tool-calling; usa 70b o OpenAI.
+
+    Chain (auto): openai-mini → openrouter → groq-70b
+    Override: set CONSOLE_LLM_PROVIDER=groq|openai|openrouter en el env.
+    """
+    provider = CONSOLE_LLM_PROVIDER.lower()
+
+    if provider == "groq" or (not provider and not OPENAI_KEY and not OPENROUTER_API_KEY and GROQ_API_KEY):
+        logger.debug(f"[llm_router] console→Groq70b:{GROQ_CONSOLE_MODEL}")
+        return AsyncOpenAI(base_url=GROQ_BASE_URL, api_key=GROQ_API_KEY), GROQ_CONSOLE_MODEL
+
+    if provider == "openrouter" or (not provider and not OPENAI_KEY and OPENROUTER_API_KEY):
+        logger.debug(f"[llm_router] console→OpenRouter:{OPENROUTER_MODEL}")
+        return AsyncOpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY), OPENROUTER_MODEL
+
+    if OPENAI_KEY:
+        logger.debug(f"[llm_router] console→OpenAI:{OPENAI_MODEL}")
+        return AsyncOpenAI(api_key=OPENAI_KEY), OPENAI_MODEL
+
+    if GROQ_API_KEY:
+        logger.debug(f"[llm_router] console→Groq70b (fallback):{GROQ_CONSOLE_MODEL}")
+        return AsyncOpenAI(base_url=GROQ_BASE_URL, api_key=GROQ_API_KEY), GROQ_CONSOLE_MODEL
+
+    raise RuntimeError("No LLM provider configured")
+
+
 def groq_available() -> bool:
     return bool(GROQ_API_KEY)
 

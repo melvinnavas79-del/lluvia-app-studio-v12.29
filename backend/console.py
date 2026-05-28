@@ -3501,24 +3501,31 @@ _BUNDLE_KEYWORDS: dict[str, list[str]] = {
 }
 
 _ALWAYS_ON = {"call_specialist_tool", "web_search", "web_browse", "list_agents"}
-_MAX_TOOLS_PER_REQUEST = 20
+_MAX_TOOLS_PER_REQUEST = 15
 
 
 def _select_tools_for_message(message: str, filtered_tools: list) -> list:
     """Selecciona ≤MAX_TOOLS herramientas relevantes al mensaje. Token-efficient para Llama 8B."""
     msg_lower = message.lower()
     selected: set[str] = set(_ALWAYS_ON)
+    pinned: set[str] = set()  # tools mencionadas por nombre → nunca se recortan
     for bundle, keywords in _BUNDLE_KEYWORDS.items():
         if any(kw in msg_lower for kw in keywords):
             selected |= _TOOL_BUNDLES.get(bundle, set())
+    # Si el mensaje menciona un tool por nombre, incluirlo y fijarlo para que no sea recortado
+    for t in filtered_tools:
+        name = t["function"]["name"]
+        if name in msg_lower or name.replace("_", " ") in msg_lower:
+            selected.add(name)
+            pinned.add(name)
     allowed_names = {t["function"]["name"] for t in filtered_tools}
     selected &= allowed_names
     result = [t for t in filtered_tools if t["function"]["name"] in selected]
     if len(result) < 5:
         result = filtered_tools[:_MAX_TOOLS_PER_REQUEST]
     elif len(result) > _MAX_TOOLS_PER_REQUEST:
-        always = [t for t in result if t["function"]["name"] in _ALWAYS_ON]
-        rest = [t for t in result if t["function"]["name"] not in _ALWAYS_ON]
+        always = [t for t in result if t["function"]["name"] in _ALWAYS_ON or t["function"]["name"] in pinned]
+        rest = [t for t in result if t["function"]["name"] not in _ALWAYS_ON and t["function"]["name"] not in pinned]
         result = (always + rest)[:_MAX_TOOLS_PER_REQUEST]
     return result
 
@@ -3802,7 +3809,7 @@ async def send_message(
     if not llm_router.llm_available():
         raise HTTPException(status_code=503, detail="Motor IA no configurado en backend")
 
-    client, _console_model = llm_router.get_client("low")
+    client, _console_model = llm_router.get_console_client()
 
     # 3. Loop de tool calling (max 5 vueltas)
     final_text = ""
@@ -3855,8 +3862,8 @@ async def send_message(
                             break
                 args["_last_image_url"] = last_img_url
             result, cost = await _exec_tool(tc.function.name, args, user["id"], is_admin)
-            # cobrar el coste de la tool (si falla, abortamos)
-            if cost > 0:
+            # cobrar el coste de la tool (si falla, abortamos); admin está exento
+            if cost > 0 and not is_admin:
                 charged = await credits_mod.charge(user["id"], cost,
                                                     f"tool:{tc.function.name}",
                                                     {"session_id": session_id})
