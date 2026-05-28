@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, memo } from "react";
 import { api, formatError } from "../api";
 import AgentAvatar from "./AgentAvatar";
 import PreviewIframe from "./PreviewIframe";
+import PreviewPanel from "./PreviewPanel";
 
 export default function BossConsole() {
   const [agents, setAgents] = useState([]);
@@ -23,6 +24,9 @@ export default function BossConsole() {
   const [cameraErr, setCameraErr] = useState("");
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [appPickerForPush, setAppPickerForPush] = useState(null); // null | [{name,size_bytes,modified}]
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewSlug, setPreviewSlug] = useState(null); // app slug for preview
+  const [userApps, setUserApps] = useState([]); // list of user's apps
   const scrollRef = useRef(null);
   const mediaRef = useRef(null);
   const chunksRef = useRef([]);
@@ -57,6 +61,32 @@ export default function BossConsole() {
     } catch (e) {
       setErr(formatError(e));
     }
+    // Load user apps for preview
+    try {
+      const { data } = await api.get("/me/apps");
+      setUserApps(data.apps || []);
+    } catch (_) {}
+  };
+
+  // Auto-detect app slug from conversation messages (for preview auto-open)
+  const detectPreviewSlug = (messages) => {
+    if (!messages || !messages.length) return null;
+    // Look for tool calls that created/modified an app
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (!msg.tool_calls) continue;
+      for (const tc of msg.tool_calls) {
+        if (tc.name === "generate_audio_room_app" || tc.name === "generate_tiktok_app") {
+          try {
+            const r = JSON.parse(tc.result_preview || "{}");
+            if (r.app_name || r.slug) return r.app_name || r.slug;
+          } catch (_) {}
+        }
+      }
+    }
+    // Fallback: check if there's only 1 user app
+    if (userApps.length === 1) return userApps[0].name;
+    return null;
   };
 
   useEffect(() => { refreshAll(); }, []);
@@ -474,7 +504,7 @@ export default function BossConsole() {
   };
 
   return (
-    <div className="boss-console" data-testid="boss-console">
+    <div className={`boss-console${previewOpen ? " boss-console--split" : ""}`} data-testid="boss-console">
       <aside className="bc-sidebar">
         <div className="bc-side-head">
           <button className="bc-new-btn" onClick={() => setShowPicker(true)} data-testid="bc-new-thread-btn">
@@ -519,6 +549,23 @@ export default function BossConsole() {
             ) : <div className="bc-header-tag">Elige un agente para empezar</div>}
           </div>
           <div className="bc-header-right">
+            {/* Preview toggle */}
+            <button
+              className={`bc-shop-btn${previewOpen ? " bc-shop-btn--active" : ""}`}
+              onClick={() => {
+                if (!previewOpen) {
+                  const slug = previewSlug || detectPreviewSlug(activeSession?.messages) || (userApps[0]?.name);
+                  setPreviewSlug(slug || null);
+                }
+                setPreviewOpen(o => !o);
+              }}
+              title={previewOpen ? "Cerrar preview" : "Ver preview en vivo"}
+              style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
+              data-testid="bc-preview-toggle"
+            >
+              <span style={{ fontSize: "0.9rem" }}>👁</span>
+              Preview
+            </button>
             <button className="bc-shop-btn" onClick={pushNow} data-testid="bc-push-github"
                     title="Push de tu workspace a GitHub"
                     style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
@@ -1690,6 +1737,49 @@ function VideoJobCard({ card, agent, backendBase }) {
           </div>
         )}
       </div>
+
+      {/* ── Live Preview Panel (split view) ──────────────────────────── */}
+      {previewOpen && (
+        <div className="bc-preview-pane" data-testid="bc-preview-pane">
+          {previewSlug ? (
+            <PreviewPanel
+              appSlug={previewSlug}
+              autoStart={true}
+              onClose={() => setPreviewOpen(false)}
+            />
+          ) : (
+            <div className="preview-panel">
+              <div className="preview-header">
+                <span style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>Preview</span>
+                <button className="preview-btn" onClick={() => setPreviewOpen(false)}>✕</button>
+              </div>
+              <div className="preview-empty">
+                <span style={{ fontSize: "2rem", opacity: 0.3, marginBottom: "1rem" }}>👁</span>
+                <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>
+                  Sin app seleccionada
+                </p>
+                {userApps.length > 0 && (
+                  <div style={{ marginTop: "1rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    <p style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>Tus apps:</p>
+                    {userApps.slice(0, 5).map(app => (
+                      <button key={app.name} className="cta-secondary"
+                              onClick={() => setPreviewSlug(app.name)}
+                              style={{ fontSize: "0.85rem" }}>
+                        ▶ {app.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {userApps.length === 0 && (
+                  <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginTop: "0.5rem" }}>
+                    Pídele a E1 que genere una app primero
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

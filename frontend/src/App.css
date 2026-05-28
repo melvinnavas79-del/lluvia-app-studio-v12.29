@@ -2981,3 +2981,231 @@ code {
   background: rgba(217,119,6,0.14);
   border-color: rgba(253,211,77,0.2);
 }
+
+/* ======================================================================
+   PREVIEW PANEL — Live Preview integrado en BossConsole
+   ====================================================================== */
+
+/* Split view: chat + preview */
+.boss-console--split {
+  display: grid !important;
+  grid-template-columns: 260px 1fr 1fr !important;
+}
+
+.bc-preview-pane {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* On mobile, stack vertically */
+@media (max-width: 900px) {
+  .boss-console--split {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: 1fr 1fr;
+  }
+  .bc-sidebar { display: none !important; }
+  .bc-preview-pane { border-left: none; border-top: 1px solid var(--border); }
+}
+
+.bc-shop-btn--active {
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--brand-accent);
+  border-color: rgba(37, 99, 235, 0.3);
+}
+
+/* ── Preview panel layout ────────────────────────────────────────────── */
+.preview-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--brand-bg);
+}
+
+.preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.preview-status-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.preview-status-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.preview-app-name {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.preview-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  padding: 0.3rem 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+  white-space: nowrap;
+  font-family: var(--font-body);
+}
+
+.preview-btn:hover {
+  background: var(--surface-soft);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+.preview-btn--active {
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--brand-accent);
+  border-color: rgba(37, 99, 235, 0.2);
+}
+
+.preview-btn--success {
+  color: var(--success);
+}
+
+.preview-btn--danger:hover {
+  background: rgba(220, 38, 38, 0.08);
+  color: #DC2626;
+  border-color: rgba(220, 38, 38, 0.2);
+}
+
+/* ── Iframe area ─────────────────────────────────────────────────────── */
+.preview-iframe-wrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-iframe-container {
+  flex: 1;
+  position: relative;
+}
+
+.preview-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+  background: #fff;
+}
+
+.preview-iframe-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-soft);
+  color: var(--text-muted);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.preview-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-secondary);
+  gap: 0.25rem;
+}
+
+.preview-empty p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.preview-empty--error { background: rgba(220, 38, 38, 0.03); }
+
+/* ── Logs panel ──────────────────────────────────────────────────────── */
+.preview-logs {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  max-height: 180px;
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-logs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0.75rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.preview-logs-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem 0.75rem;
+  background: #0d1117;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.preview-log-line {
+  color: #c9d1d9;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.preview-log-error { color: #f85149; }
+.preview-log-ok    { color: #56d364; }
+
+/* ── Spin animation ──────────────────────────────────────────────────── */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
