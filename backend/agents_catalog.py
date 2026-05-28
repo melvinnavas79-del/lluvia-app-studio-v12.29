@@ -58,6 +58,14 @@ TOOL_NAMES = {
     # Memoria/Razonamiento
     "memory_write": 1, "memory_search": 0,
     "task_planner": 3, "summarize_context": 2,
+    # ── 15 tools adicionales (Master Console + Generadores + Comms + Agents) ─
+    "run_python": 3, "system_metrics": 0,
+    "get_logs": 0, "list_services": 0, "list_env_vars": 0,
+    "generate_changelog": 4,
+    "generate_backend_module": 8, "generate_dashboard": 6,
+    "generate_mobile_screen": 6, "generate_pitch": 4, "generate_sales_copy": 3,
+    "send_telegram": 2, "send_webhook": 2,
+    "clone_agent": 5, "create_workflow": 3,
 }
 
 COST_CHAT_MESSAGE = 1
@@ -435,6 +443,11 @@ AGENTS = {
             "generate_component", "generate_crud", "generate_api_route", "generate_agent_config",
             "generate_proposal", "generate_pricing", "generate_report", "crm_lookup", "track_lead",
             "memory_write", "memory_search", "task_planner", "summarize_context",
+            # 15 tools adicionales
+            "run_python", "system_metrics", "get_logs", "list_services", "list_env_vars",
+            "generate_changelog", "generate_backend_module", "generate_dashboard",
+            "generate_mobile_screen", "generate_pitch", "generate_sales_copy",
+            "send_telegram", "send_webhook", "clone_agent", "create_workflow",
         ],
     },
     # ── E2-E9 Enterprise Sub-Orchestrators (additive) ─────────────────────────

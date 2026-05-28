@@ -730,6 +730,140 @@ OPENAI_TOOLS = [
             "format": {"type": "string", "enum": ["bullets", "paragraph", "outline"]},
         }, "required": ["text"]},
     }},
+    # ── Master Console / Ejecución interna ───────────────────────────────────
+    {"type": "function", "function": {
+        "name": "run_python",
+        "description": "Ejecuta Python en sandbox seguro (sin I/O, sin red). Para cálculos, scripts, análisis. Solo admin.",
+        "parameters": {"type": "object", "properties": {
+            "code": {"type": "string", "description": "Código Python a ejecutar"},
+            "timeout": {"type": "integer", "description": "Timeout en segundos (default 10, max 30)"},
+        }, "required": ["code"]},
+    }},
+    {"type": "function", "function": {
+        "name": "system_metrics",
+        "description": "Snapshot de CPU, RAM, disco, procesos y estado del worker. Vista operacional del servidor.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "get_logs",
+        "description": "Obtiene logs de un contenedor Docker o servicio systemd. Últimas N líneas.",
+        "parameters": {"type": "object", "properties": {
+            "target": {"type": "string", "description": "Nombre del contenedor o servicio (ej: lluvia_backend, nginx)"},
+            "lines": {"type": "integer", "description": "Líneas a obtener (default 50, max 500)"},
+            "source": {"type": "string", "enum": ["docker", "journald"], "description": "Fuente de logs (default: docker)"},
+        }, "required": ["target"]},
+    }},
+    {"type": "function", "function": {
+        "name": "list_services",
+        "description": "Lista servicios systemd activos y su estado. Equivalente a systemctl status. Solo admin.",
+        "parameters": {"type": "object", "properties": {
+            "filter": {"type": "string", "description": "Filtrar por nombre (opcional)"},
+        }, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "list_env_vars",
+        "description": "Lista variables de entorno del servidor, sanitizadas (oculta secrets/tokens). Solo admin.",
+        "parameters": {"type": "object", "properties": {
+            "filter": {"type": "string", "description": "Filtrar vars que contengan este string (opcional)"},
+        }, "required": []},
+    }},
+    # ── Generadores: código avanzado ──────────────────────────────────────────
+    {"type": "function", "function": {
+        "name": "generate_changelog",
+        "description": "Genera CHANGELOG.md profesional desde git log usando IA.",
+        "parameters": {"type": "object", "properties": {
+            "path": {"type": "string", "description": "Path del repo (default: /opt/lluvia-studio)"},
+            "since": {"type": "string", "description": "Desde qué commit/tag (ej: v1.0.0 o HEAD~20)"},
+            "language": {"type": "string", "description": "Idioma (default: español)"},
+        }, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "generate_backend_module",
+        "description": "Genera módulo FastAPI completo: router, modelos Pydantic, handlers, índices Mongo.",
+        "parameters": {"type": "object", "properties": {
+            "module_name": {"type": "string", "description": "Nombre del módulo (ej: inventory, payments)"},
+            "description": {"type": "string", "description": "Qué hace el módulo"},
+            "entities": {"type": "array", "items": {"type": "string"}, "description": "Entidades principales (ej: [Product, Category])"},
+        }, "required": ["module_name", "description"]},
+    }},
+    {"type": "function", "function": {
+        "name": "generate_dashboard",
+        "description": "Genera componente dashboard con gráficas y métricas usando IA (React o HTML).",
+        "parameters": {"type": "object", "properties": {
+            "title": {"type": "string", "description": "Título del dashboard"},
+            "metrics": {"type": "array", "items": {"type": "string"}, "description": "Métricas a mostrar (ej: ['Ventas', 'Usuarios', 'Tickets'])"},
+            "framework": {"type": "string", "enum": ["react", "html"], "description": "Framework (default: react)"},
+        }, "required": ["title", "metrics"]},
+    }},
+    {"type": "function", "function": {
+        "name": "generate_mobile_screen",
+        "description": "Genera screen de React Native (Expo) usando IA.",
+        "parameters": {"type": "object", "properties": {
+            "screen_name": {"type": "string", "description": "Nombre de la pantalla (ej: HomeScreen, ProfileScreen)"},
+            "description": {"type": "string", "description": "Qué debe mostrar y hacer la pantalla"},
+            "navigation": {"type": "boolean", "description": "Incluir navegación (default: true)"},
+        }, "required": ["screen_name", "description"]},
+    }},
+    # ── Generadores: negocio/marketing ────────────────────────────────────────
+    {"type": "function", "function": {
+        "name": "generate_pitch",
+        "description": "Genera elevator pitch o estructura de pitch deck en Markdown usando IA.",
+        "parameters": {"type": "object", "properties": {
+            "product": {"type": "string", "description": "Nombre del producto/startup"},
+            "problem": {"type": "string", "description": "Problema que resuelve"},
+            "audience": {"type": "string", "description": "Audiencia objetivo (ej: inversionistas, clientes B2B)"},
+            "format": {"type": "string", "enum": ["elevator_30s", "elevator_2min", "deck_outline"], "description": "Formato del pitch"},
+        }, "required": ["product", "problem"]},
+    }},
+    {"type": "function", "function": {
+        "name": "generate_sales_copy",
+        "description": "Genera copy de ventas/marketing (headline, beneficios, CTA) usando IA.",
+        "parameters": {"type": "object", "properties": {
+            "product": {"type": "string", "description": "Producto o servicio"},
+            "audience": {"type": "string", "description": "Audiencia objetivo"},
+            "format": {"type": "string", "enum": ["landing_hero", "email_subject", "ad_copy", "product_description"], "description": "Formato del copy"},
+            "language": {"type": "string", "description": "Idioma (default: español)"},
+        }, "required": ["product", "audience", "format"]},
+    }},
+    # ── Comunicación adicional ────────────────────────────────────────────────
+    {"type": "function", "function": {
+        "name": "send_telegram",
+        "description": "Envía mensaje via el bot Telegram configurado en la plataforma. Solo admin.",
+        "parameters": {"type": "object", "properties": {
+            "chat_id": {"type": "string", "description": "Chat ID o username del destinatario"},
+            "message": {"type": "string", "description": "Mensaje a enviar (max 4000 chars)"},
+        }, "required": ["chat_id", "message"]},
+    }},
+    {"type": "function", "function": {
+        "name": "send_webhook",
+        "description": "Dispara una llamada POST a una URL externa con payload JSON. Para integraciones.",
+        "parameters": {"type": "object", "properties": {
+            "url": {"type": "string", "description": "URL del webhook (debe ser https://)"},
+            "payload": {"type": "object", "description": "Datos a enviar como JSON"},
+            "headers": {"type": "object", "description": "Headers HTTP adicionales (opcional)"},
+        }, "required": ["url", "payload"]},
+    }},
+    # ── Agent management avanzado ─────────────────────────────────────────────
+    {"type": "function", "function": {
+        "name": "clone_agent",
+        "description": "Clona la configuración de un agente existente con un nuevo ID. Solo admin.",
+        "parameters": {"type": "object", "properties": {
+            "source_id": {"type": "string", "description": "ID del agente a clonar"},
+            "new_id": {"type": "string", "description": "ID del nuevo agente (snake_case)"},
+            "new_name": {"type": "string", "description": "Nombre del nuevo agente"},
+        }, "required": ["source_id", "new_id", "new_name"]},
+    }},
+    {"type": "function", "function": {
+        "name": "create_workflow",
+        "description": "Crea un workflow automatizado (job_scheduler): trigger + pasos + schedule. Solo admin.",
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string", "description": "Nombre del workflow"},
+            "job_type": {"type": "string", "description": "Tipo de job (ej: social_post_publish, campaign_dispatch)"},
+            "payload": {"type": "object", "description": "Payload del workflow"},
+            "run_at": {"type": "string", "description": "ISO datetime para ejecución única (opcional)"},
+            "tenant_id": {"type": "string", "description": "Tenant ID (opcional)"},
+        }, "required": ["name", "job_type", "payload"]},
+    }},
     # ── Meta-tool E1→E2-E9 (additive) ────────────────────────────────────────
     {"type": "function", "function": {
         "name": "call_specialist_tool",
@@ -769,8 +903,12 @@ ADMIN_ONLY_TOOLS = {
     "send_notification", "send_quick_email",
     # DevOps
     "create_checkpoint", "docker_exec", "run_tests",
-    # Agent generation
-    "generate_agent_config",
+    # Agent generation / management
+    "generate_agent_config", "clone_agent", "create_workflow",
+    # Master Console
+    "run_python", "list_services", "list_env_vars", "get_logs",
+    # Comms externos
+    "send_telegram", "send_webhook",
 }
 
 
@@ -1656,6 +1794,56 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
             data = await _tool_task_planner(args)
         elif name == "summarize_context":
             data = await _tool_summarize_context(args)
+        # ── Master Console / Ejecución interna ──────────────────────────────
+        elif name == "run_python":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_run_python(args)
+        elif name == "system_metrics":
+            data = await _tool_system_metrics()
+        elif name == "get_logs":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_get_logs(args)
+        elif name == "list_services":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_list_services(args)
+        elif name == "list_env_vars":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = _tool_list_env_vars(args)
+        # ── Generadores avanzados ────────────────────────────────────────────
+        elif name == "generate_changelog":
+            data = await _tool_generate_changelog(args)
+        elif name == "generate_backend_module":
+            data = await _tool_generate_advanced_code(args, "backend_module")
+        elif name == "generate_dashboard":
+            data = await _tool_generate_advanced_code(args, "dashboard")
+        elif name == "generate_mobile_screen":
+            data = await _tool_generate_advanced_code(args, "mobile_screen")
+        elif name == "generate_pitch":
+            data = await _tool_generate_advanced_code(args, "pitch")
+        elif name == "generate_sales_copy":
+            data = await _tool_generate_advanced_code(args, "sales_copy")
+        # ── Comunicación adicional ───────────────────────────────────────────
+        elif name == "send_telegram":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_send_telegram(args)
+        elif name == "send_webhook":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_send_webhook(args)
+        # ── Agent management avanzado ────────────────────────────────────────
+        elif name == "clone_agent":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_clone_agent(args, user_id)
+        elif name == "create_workflow":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_create_workflow(args, user_id)
         else:
             return json.dumps({"error": f"Tool desconocida: {name}"}), 0
         return json.dumps(data, ensure_ascii=False)[:30000], cost
@@ -2252,53 +2440,328 @@ async def _tool_summarize_context(args: dict) -> dict:
     return {"summary": resp.choices[0].message.content.strip(), "format": fmt}
 
 
+# ── 15 nuevas tools (Master Console + Generadores + Comms + Agents) ─────────
+
+async def _tool_run_python(args: dict) -> dict:
+    import master_console as mc
+    import asyncio
+    code = (args.get("code") or "").strip()
+    if not code:
+        return {"error": "code requerido"}
+    timeout = max(1, min(int(args.get("timeout", 10)), 30))
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, mc._run_python_sandbox, code, timeout)
+
+
+async def _tool_system_metrics() -> dict:
+    import master_console as mc
+    return await mc._live_monitor_snapshot()
+
+
+async def _tool_get_logs(args: dict) -> dict:
+    import asyncio
+    target = re.sub(r"[^a-zA-Z0-9_.-]", "", (args.get("target") or "").strip())[:80]
+    if not target:
+        return {"error": "target requerido"}
+    lines = max(10, min(int(args.get("lines", 50)), 500))
+    source = args.get("source", "docker")
+    if source == "journald":
+        cmd = ["journalctl", "-u", target, "-n", str(lines), "--no-pager", "--output=short"]
+    else:
+        cmd = ["docker", "logs", target, "--tail", str(lines)]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
+    except asyncio.TimeoutError:
+        proc.kill()
+        return {"error": "Timeout obteniendo logs"}
+    output = (stdout + stderr).decode("utf-8", errors="replace").strip()
+    return {"target": target, "lines": lines, "source": source, "output": output[-6000:]}
+
+
+async def _tool_list_services(args: dict) -> dict:
+    import asyncio
+    filt = (args.get("filter") or "").strip()[:40]
+    proc = await asyncio.create_subprocess_exec(
+        "systemctl", "list-units", "--state=active", "--type=service", "--no-pager",
+        "--output=json",
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+    except asyncio.TimeoutError:
+        return {"error": "Timeout listando servicios"}
+    try:
+        import json as _json
+        services = _json.loads(stdout.decode())
+        if filt:
+            services = [s for s in services if filt.lower() in (s.get("unit", "") + s.get("description", "")).lower()]
+        return {"services": services[:50], "count": len(services)}
+    except Exception:
+        output = stdout.decode().strip()[:3000]
+        if filt:
+            output = "\n".join(l for l in output.splitlines() if filt.lower() in l.lower())
+        return {"output": output}
+
+
+def _tool_list_env_vars(args: dict) -> dict:
+    import os as _os
+    filt = (args.get("filter") or "").strip().lower()
+    SECRET_PATTERNS = {"TOKEN", "SECRET", "KEY", "PASSWORD", "PASS", "AUTH", "PRIVATE", "CERT"}
+    result = {}
+    for k, v in sorted(_os.environ.items()):
+        if filt and filt not in k.lower():
+            continue
+        hidden = any(p in k.upper() for p in SECRET_PATTERNS)
+        result[k] = "***HIDDEN***" if hidden else v[:200]
+    return {"env_vars": result, "count": len(result)}
+
+
+async def _tool_generate_changelog(args: dict) -> dict:
+    import asyncio
+    path = re.sub(r"[^a-zA-Z0-9_./-]", "", (args.get("path") or "/opt/lluvia-studio").strip())
+    since = re.sub(r"[^a-zA-Z0-9_.~^-]", "", (args.get("since") or "HEAD~30").strip())[:40]
+    lang = args.get("language", "español")
+    proc = await asyncio.create_subprocess_exec(
+        "git", "log", since + "..HEAD", "--oneline", "--no-merges",
+        cwd=path, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+    except asyncio.TimeoutError:
+        return {"error": "Timeout leyendo git log"}
+    git_log = stdout.decode().strip()[:3000]
+    if not git_log:
+        return {"error": "Sin commits en el rango especificado"}
+    prompt = (f"Genera un CHANGELOG.md profesional en {lang} agrupando por categoría "
+              "(Features, Bug Fixes, DevOps, Improvements) desde este git log:\n{git_log}\n"
+              "Formato Markdown. Solo el contenido del CHANGELOG.")
+    client, model = llm_router.get_client("low")
+    resp = await client.chat.completions.create(
+        model=model, messages=[{"role": "user", "content": prompt}],
+        max_tokens=700, temperature=0.3,
+    )
+    return {"changelog": resp.choices[0].message.content.strip(), "commits_count": len(git_log.splitlines())}
+
+
+async def _tool_generate_advanced_code(args: dict, code_type: str) -> dict:
+    client, model = llm_router.get_client("low")
+    if code_type == "backend_module":
+        mod = (args.get("module_name") or "").strip()[:60]
+        desc = (args.get("description") or "").strip()[:400]
+        entities = args.get("entities") or []
+        if not mod or not desc:
+            return {"error": "module_name y description requeridos"}
+        ents_str = ", ".join(str(e) for e in entities[:5])
+        prompt = (f"Genera módulo FastAPI completo '{mod}' en Python. Función: {desc}. "
+                  f"{'Entidades: ' + ents_str + '. ' if ents_str else ''}"
+                  "Incluye: router, modelos Pydantic, endpoints CRUD, create_indexes(). Solo código.")
+        max_tok = 1000
+    elif code_type == "dashboard":
+        title = (args.get("title") or "Dashboard").strip()[:80]
+        metrics = args.get("metrics") or ["Usuarios", "Ventas", "Tickets"]
+        fw = args.get("framework", "react")
+        metrics_str = ", ".join(str(m) for m in metrics[:8])
+        prompt = (f"Genera componente {fw} de dashboard '{title}' con métricas: {metrics_str}. "
+                  "Incluye cards de stats y gráfica simple (Chart.js o Recharts). Solo código.")
+        max_tok = 800
+    elif code_type == "mobile_screen":
+        screen = (args.get("screen_name") or "Screen").strip()[:60]
+        desc = (args.get("description") or "").strip()[:300]
+        nav = args.get("navigation", True)
+        if not desc:
+            return {"error": "description requerido"}
+        prompt = (f"Genera screen React Native (Expo) '{screen}': {desc}. "
+                  f"{'Con useNavigation hook. ' if nav else ''}"
+                  "StyleSheet inline, sin dependencias externas. Solo código.")
+        max_tok = 700
+    elif code_type == "pitch":
+        product = (args.get("product") or "").strip()[:80]
+        problem = (args.get("problem") or "").strip()[:300]
+        audience = args.get("audience", "inversionistas")
+        fmt = args.get("format", "elevator_2min")
+        fmt_hints = {
+            "elevator_30s": "30 segundos, 3-4 frases",
+            "elevator_2min": "2 minutos, estructura: problema/solución/mercado/CTA",
+            "deck_outline": "estructura de 10 slides con bullet points",
+        }
+        if not product or not problem:
+            return {"error": "product y problem requeridos"}
+        prompt = (f"Genera pitch en español para {audience}. Formato: {fmt_hints.get(fmt, fmt)}. "
+                  f"Producto: {product}. Problema: {problem}. Potente y convincente.")
+        max_tok = 500
+    else:  # sales_copy
+        product = (args.get("product") or "").strip()[:100]
+        audience = (args.get("audience") or "").strip()[:100]
+        fmt = args.get("format", "landing_hero")
+        lang = args.get("language", "español")
+        fmt_hints = {
+            "landing_hero": "headline + subtítulo + 3 beneficios + CTA",
+            "email_subject": "5 subject lines A/B con emojis",
+            "ad_copy": "copy de anuncio: headline + descripción + CTA (max 90 chars c/u)",
+            "product_description": "descripción de producto 100-150 palabras con keywords",
+        }
+        if not product or not audience:
+            return {"error": "product y audience requeridos"}
+        prompt = (f"Genera copy en {lang} para '{product}', audiencia: {audience}. "
+                  f"Formato: {fmt_hints.get(fmt, fmt)}. Persuasivo y orientado a conversión.")
+        max_tok = 400
+    resp = await client.chat.completions.create(
+        model=model, messages=[{"role": "user", "content": prompt}],
+        max_tokens=max_tok, temperature=0.5,
+    )
+    return {"type": code_type, "content": resp.choices[0].message.content.strip()}
+
+
+async def _tool_send_telegram(args: dict) -> dict:
+    import config as cfg, httpx
+    if not cfg.TELEGRAM_TOKEN:
+        return {"error": "TELEGRAM_TOKEN no configurado"}
+    chat_id = str(args.get("chat_id") or "").strip()
+    message = (args.get("message") or "").strip()[:4000]
+    if not chat_id or not message:
+        return {"error": "chat_id y message requeridos"}
+    api_url = f"https://api.telegram.org/bot{cfg.TELEGRAM_TOKEN}/sendMessage"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(api_url, json={"chat_id": chat_id, "text": message})
+            data = r.json()
+            return {"sent": data.get("ok", False), "message_id": data.get("result", {}).get("message_id")}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+async def _tool_send_webhook(args: dict) -> dict:
+    import httpx
+    url = (args.get("url") or "").strip()
+    if not url or not url.startswith("https://"):
+        return {"error": "url debe ser https://"}
+    payload = args.get("payload") or {}
+    headers = {"Content-Type": "application/json", "User-Agent": "LluviaAppStudio/E1"}
+    extra_headers = args.get("headers") or {}
+    if isinstance(extra_headers, dict):
+        safe_headers = {str(k)[:60]: str(v)[:200] for k, v in list(extra_headers.items())[:10]}
+        headers.update(safe_headers)
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(url, json=payload, headers=headers)
+            return {
+                "url": url, "status_code": r.status_code,
+                "ok": 200 <= r.status_code < 300,
+                "response": r.text[:500],
+            }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+async def _tool_clone_agent(args: dict, user_id: str) -> dict:
+    source_id = (args.get("source_id") or "").strip()
+    new_id = re.sub(r"[^a-z0-9_-]", "", (args.get("new_id") or "").lower())[:40]
+    new_name = (args.get("new_name") or "").strip()[:40]
+    if not source_id or not new_id or not new_name:
+        return {"error": "source_id, new_id y new_name requeridos"}
+    source = await _get_agent_any(source_id)
+    if not source:
+        return {"error": f"Agente '{source_id}' no encontrado"}
+    clone = dict(source)
+    clone.pop("_id", None)
+    clone["id"] = new_id
+    clone["name"] = new_name
+    clone["created_by"] = user_id
+    clone["cloned_from"] = source_id
+    clone["created_at"] = datetime.now(timezone.utc).isoformat()
+    clone.pop("is_custom", None)
+    clone["is_custom"] = True
+    db = _db_ref["db"]
+    if await db.custom_agents.find_one({"id": new_id}, {"_id": 0}):
+        return {"error": f"Ya existe agente con id '{new_id}'"}
+    if new_id in agents_catalog.AGENTS:
+        return {"error": f"'{new_id}' colisiona con built-in"}
+    await db.custom_agents.insert_one(clone)
+    clone.pop("_id", None)
+    return {"cloned": True, "agent": clone}
+
+
+async def _tool_create_workflow(args: dict, user_id: str) -> dict:
+    import job_scheduler as js
+    name = (args.get("name") or "").strip()[:120]
+    job_type = re.sub(r"[^a-z0-9_]", "_", (args.get("job_type") or "").strip().lower())[:60]
+    payload = args.get("payload") or {}
+    if not name or not job_type:
+        return {"error": "name y job_type requeridos"}
+    tenant_id = (args.get("tenant_id") or user_id).strip()
+    run_at = (args.get("run_at") or "").strip()[:30]
+    enqueue_args = dict(
+        job_type=job_type,
+        payload={**payload, "_workflow_name": name},
+        tenant_id=tenant_id,
+        priority=5,
+    )
+    if run_at:
+        enqueue_args["run_after"] = run_at
+    result = await js.enqueue_job(**enqueue_args)
+    return {**result, "workflow_name": name, "job_type": job_type}
+
+
 # ── Dynamic tool selector (token optimization for Llama 3.1 8B) ──────────────
 
 _TOOL_BUNDLES: dict[str, set[str]] = {
     "devops":    {"shell_run", "list_my_vps", "run_vps_command", "deploy_app_to_vps",
                   "tail_vps_logs", "restart_vps_service", "create_checkpoint",
-                  "docker_exec", "run_tests", "list_containers", "get_platform_status", "list_jobs"},
+                  "docker_exec", "run_tests", "list_containers", "get_platform_status",
+                  "list_jobs", "get_logs", "list_services", "system_metrics",
+                  "create_workflow"},
     "workspace": {"list_workspace_files", "read_workspace_file", "write_workspace_file",
                   "search_replace_workspace", "search_codebase"},
     "github":    {"github_list_repos", "github_list_files", "github_read_file",
-                  "github_search_code", "push_to_my_github"},
+                  "github_search_code", "push_to_my_github", "generate_changelog"},
     "agents":    {"create_agent", "update_agent", "delete_agent", "list_agents",
-                  "generate_agent_config"},
+                  "generate_agent_config", "clone_agent"},
     "business":  {"book_appointment", "check_availability", "list_appointments",
                   "cancel_appointment", "paypal_invoice_card", "service_card",
                   "provision_client_quick"},
-    "comms":     {"send_notification", "send_quick_email"},
+    "comms":     {"send_notification", "send_quick_email", "send_telegram", "send_webhook"},
     "builder":   {"generate_social_post", "generate_qr_card", "generate_landing_page",
                   "create_intake_form", "generate_haircut_preview", "generate_promo_video",
                   "generate_audio_room_app", "generate_tiktok_app", "video_script_card",
                   "generate_component", "generate_crud", "generate_api_route",
-                  "generate_landing_page"},
+                  "generate_backend_module", "generate_dashboard", "generate_mobile_screen"},
     "analytics": {"get_platform_status", "list_jobs", "get_agent_stats",
                   "inspect_database", "benchmark_endpoint", "get_openapi_schema",
-                  "generate_report"},
-    "business2": {"generate_proposal", "generate_pricing", "crm_lookup",
-                  "track_lead"},
+                  "generate_report", "system_metrics"},
+    "business2": {"generate_proposal", "generate_pricing", "crm_lookup", "track_lead",
+                  "generate_pitch", "generate_sales_copy"},
     "memory":    {"memory_write", "memory_search", "task_planner", "summarize_context"},
+    "master":    {"run_python", "system_metrics", "get_logs", "list_services",
+                  "list_env_vars", "inspect_database"},
 }
 
 _BUNDLE_KEYWORDS: dict[str, list[str]] = {
     "devops":    ["deploy", "server", "docker", "vps", "ssh", "restart", "service",
-                  "logs", "container", "checkpoint", "test", "migration", "git"],
+                  "logs", "container", "checkpoint", "test", "migration", "git",
+                  "workflow", "cron", "queue", "job"],
     "workspace": ["archivo", "file", "código", "code", "edita", "write", "read",
                   "search_code", "grep", "workspace"],
-    "github":    ["github", "repo", "push", "repository", "branch"],
-    "agents":    ["agente", "agent", "crear agente", "delete agent", "list agent"],
+    "github":    ["github", "repo", "push", "repository", "branch", "changelog", "commit"],
+    "agents":    ["agente", "agent", "crear agente", "delete agent", "list agent",
+                  "clonar", "clone"],
     "business":  ["cita", "appointment", "reserva", "disponibilidad", "pago",
                   "factura", "invoice", "cliente", "provision"],
-    "comms":     ["notif", "notify", "email", "correo", "aviso", "mensaje"],
+    "comms":     ["notif", "notify", "email", "correo", "aviso", "mensaje",
+                  "telegram", "webhook", "whatsapp"],
     "builder":   ["genera", "generate", "landing", "social", "post", "qr",
-                  "formulario", "form", "video", "app", "component", "crud"],
+                  "formulario", "form", "video", "app", "component", "crud",
+                  "dashboard", "mobile", "screen", "módulo", "module"],
     "analytics": ["status", "jobs", "stats", "métricas", "platform", "dashboard",
-                  "benchmark", "openapi", "schema", "report", "reporte"],
+                  "benchmark", "openapi", "schema", "report", "reporte", "metrics"],
     "business2": ["propuesta", "proposal", "precio", "pricing", "lead", "crm",
-                  "contacto", "campaign"],
+                  "contacto", "campaign", "pitch", "ventas", "copy", "marketing"],
     "memory":    ["recuerda", "memory", "tarea", "task", "plan", "resume",
-                  "resumen", "compress"],
+                  "resumen", "compress", "contexto"],
+    "master":    ["python", "sandbox", "ejecuta", "run", "monitor", "cpu", "ram",
+                  "disco", "disk", "env", "environment", "proceso", "process"],
 }
 
 _ALWAYS_ON = {"call_specialist_tool", "web_search", "web_browse", "list_agents"}
