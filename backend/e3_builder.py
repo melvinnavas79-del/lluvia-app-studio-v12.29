@@ -421,3 +421,37 @@ async def list_agent_configs(tenant_id: Optional[str] = None,
     q = {"tenant_id": tenant_id} if tenant_id else {}
     cur = _db().e3_agent_configs.find(q, {"_id": 0}).limit(100)
     return {"agents": [a async for a in cur]}
+
+
+async def create_indexes() -> None:
+    db = _db()
+
+    # e3_app_templates — lookups by id (every generate + get), public filter
+    await db.e3_app_templates.create_index("id", unique=True)
+    await db.e3_app_templates.create_index("public")
+
+    # e3_generated_apps — lookup by id + list by tenant sorted by date
+    await db.e3_generated_apps.create_index("id", unique=True)
+    await db.e3_generated_apps.create_index(
+        [("tenant_id", 1), ("created_at", -1)],
+        name="idx_e3_apps_tenant_date"
+    )
+    await db.e3_generated_apps.create_index("template_id")
+
+    # e3_agent_configs — lookup by id + per-tenant listing
+    await db.e3_agent_configs.create_index("id", unique=True)
+    await db.e3_agent_configs.create_index("tenant_id", sparse=True)
+
+    # e3_builder_logs — audit queries by tenant/time
+    await db.e3_builder_logs.create_index(
+        [("tenant_id", 1), ("ts", -1)],
+        name="idx_e3_logs_tenant_ts"
+    )
+
+    # e3_ai_quotas — upsert key: (tenant_id, period) — monthly quota enforcement
+    await db.e3_ai_quotas.create_index(
+        [("tenant_id", 1), ("period", 1)], unique=True,
+        name="idx_e3_ai_quotas_tenant_period"
+    )
+
+    logger.info("[e3] Indexes OK")

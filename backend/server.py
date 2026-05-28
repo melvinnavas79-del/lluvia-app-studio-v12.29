@@ -170,6 +170,9 @@ async def on_startup():
     # E10 Social — indexes de posts, campañas, conexiones OAuth, quotas
     await e10_module.create_indexes()
 
+    # E3 Builder — indexes de templates, apps generadas, agent configs, quotas AI
+    await e3_module.create_indexes()
+
 
 @app.on_event("shutdown")
 async def on_shutdown():
