@@ -2585,8 +2585,13 @@ async def _tool_run_python(args: dict) -> dict:
 
 
 async def _tool_system_metrics() -> dict:
-    import master_console as mc
-    return await mc._live_monitor_snapshot()
+    import asyncio, master_console as mc
+    hw = await asyncio.get_event_loop().run_in_executor(None, _read_local_metrics)
+    try:
+        snapshot = await mc._live_monitor_snapshot()
+    except Exception:
+        snapshot = {}
+    return {**hw, "platform": snapshot}
 
 
 async def _tool_get_logs(args: dict) -> dict:
@@ -2838,19 +2843,65 @@ async def _tool_create_workflow(args: dict, user_id: str) -> dict:
 
 # ── CTO Layer: 12 tools de estabilidad, seguridad y observabilidad ───────────
 
+def _read_local_metrics() -> dict:
+    """Lee CPU/RAM/disco desde /proc y df. Sin psutil."""
+    import subprocess as _sp
+    # RAM desde /proc/meminfo
+    try:
+        with open("/proc/meminfo") as f:
+            lines = f.readlines()
+        mem = {}
+        for line in lines:
+            parts = line.split(":")
+            if len(parts) == 2:
+                mem[parts[0].strip()] = int(parts[1].strip().split()[0])
+        total = mem.get("MemTotal", 0)
+        avail = mem.get("MemAvailable", 0)
+        ram_pct = round((total - avail) / total * 100, 1) if total else 0
+        ram_used_mb = round((total - avail) / 1024)
+        ram_total_mb = round(total / 1024)
+    except Exception:
+        ram_pct, ram_used_mb, ram_total_mb = "?", "?", "?"
+    # CPU desde /proc/stat (snapshot puntual)
+    try:
+        with open("/proc/stat") as f:
+            line = f.readline()
+        vals = list(map(int, line.split()[1:8]))
+        idle = vals[3] + vals[4]  # idle + iowait
+        total_cpu = sum(vals)
+        cpu_pct = round((1 - idle / total_cpu) * 100, 1) if total_cpu else 0
+    except Exception:
+        cpu_pct = "?"
+    # Disco desde df -h /
+    try:
+        r = _sp.run(["df", "-h", "/"], capture_output=True, text=True, timeout=3)
+        parts = r.stdout.strip().splitlines()[-1].split()
+        disk_pct = parts[4] if len(parts) > 4 else "?"
+        disk_used = parts[2] if len(parts) > 2 else "?"
+        disk_total = parts[1] if len(parts) > 1 else "?"
+    except Exception:
+        disk_pct, disk_used, disk_total = "?", "?", "?"
+    return {
+        "cpu_pct": cpu_pct, "ram_pct": ram_pct,
+        "ram_used_mb": ram_used_mb, "ram_total_mb": ram_total_mb,
+        "disk_pct": disk_pct, "disk_used": disk_used, "disk_total": disk_total,
+    }
+
+
 async def _tool_self_diagnostic() -> dict:
     """Agrega datos del sistema y genera diagnóstico CTO via LLM."""
     import asyncio, master_console as mc
     # Gather en paralelo — tolerante a errores individuales
-    results = await asyncio.gather(
-        mc._live_monitor_snapshot(),
+    hw_metrics = await asyncio.get_event_loop().run_in_executor(None, _read_local_metrics)
+    platform_result, queue_result, snapshot_result = await asyncio.gather(
         _tool_get_platform_status({}),
         _tool_queue_monitor(),
+        mc._live_monitor_snapshot(),
         return_exceptions=True,
     )
-    metrics = results[0] if not isinstance(results[0], Exception) else {}
-    platform = results[1] if not isinstance(results[1], Exception) else {}
-    queue = results[2] if not isinstance(results[2], Exception) else {}
+    platform = platform_result if not isinstance(platform_result, Exception) else {}
+    queue = queue_result if not isinstance(queue_result, Exception) else {}
+    snapshot = snapshot_result if not isinstance(snapshot_result, Exception) else {}
 
     db = _db_ref["db"]
     recent_failures = [
@@ -2860,14 +2911,19 @@ async def _tool_self_diagnostic() -> dict:
     ]
 
     summary = {
-        "cpu_pct": metrics.get("cpu_pct", "?"),
-        "ram_pct": metrics.get("ram_pct", "?"),
-        "disk_pct": metrics.get("disk_pct", "?"),
+        "cpu_pct": hw_metrics.get("cpu_pct"),
+        "ram_pct": hw_metrics.get("ram_pct"),
+        "disk_pct": hw_metrics.get("disk_pct"),
+        "ram_used_mb": hw_metrics.get("ram_used_mb"),
+        "ram_total_mb": hw_metrics.get("ram_total_mb"),
+        "disk_used": hw_metrics.get("disk_used"),
+        "disk_total": hw_metrics.get("disk_total"),
         "jobs": platform.get("jobs", {}),
         "errors_24h": platform.get("errors_24h", 0),
         "active_modules": platform.get("active_modules", []),
         "dlq": queue.get("dlq", 0),
         "worker_running": queue.get("worker", {}).get("running", False),
+        "recent_errors": snapshot.get("recent_errors", [])[:3],
         "recent_failures": [f.get("action") for f in recent_failures],
     }
     prompt = (
