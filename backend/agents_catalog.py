@@ -66,6 +66,13 @@ TOOL_NAMES = {
     "generate_mobile_screen": 6, "generate_pitch": 4, "generate_sales_copy": 3,
     "send_telegram": 2, "send_webhook": 2,
     "clone_agent": 5, "create_workflow": 3,
+    # ── 12 CTO stability tools ────────────────────────────────────────────────
+    "self_diagnostic": 0, "smart_rollback": 5,
+    "analyze_architecture": 3, "auto_fix_build": 5,
+    "dependency_audit": 2, "security_scan_basic": 3,
+    "audit_log_search": 0, "service_health_check": 0,
+    "queue_monitor": 0, "git_diff_summary": 2,
+    "process_manager": 1, "inspect_config": 0,
 }
 
 COST_CHAT_MESSAGE = 1
@@ -448,6 +455,11 @@ AGENTS = {
             "generate_changelog", "generate_backend_module", "generate_dashboard",
             "generate_mobile_screen", "generate_pitch", "generate_sales_copy",
             "send_telegram", "send_webhook", "clone_agent", "create_workflow",
+            # 12 CTO stability tools
+            "self_diagnostic", "smart_rollback", "analyze_architecture", "auto_fix_build",
+            "dependency_audit", "security_scan_basic", "audit_log_search",
+            "service_health_check", "queue_monitor", "git_diff_summary",
+            "process_manager", "inspect_config",
         ],
     },
     # ── E2-E9 Enterprise Sub-Orchestrators (additive) ─────────────────────────

@@ -730,6 +730,95 @@ OPENAI_TOOLS = [
             "format": {"type": "string", "enum": ["bullets", "paragraph", "outline"]},
         }, "required": ["text"]},
     }},
+    # ── Estabilidad, seguridad y observabilidad (CTO layer) ──────────────────
+    {"type": "function", "function": {
+        "name": "self_diagnostic",
+        "description": "E1 se inspecciona solo: métricas, jobs, módulos, errores recientes. Devuelve health_score + issues + recomendaciones. Solo admin.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "smart_rollback",
+        "description": "Rollback inteligente: lista checkpoints, revierte al target (git reset --hard), verifica salud. Solo admin.",
+        "parameters": {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["list", "execute"], "description": "list=ver checkpoints, execute=ejecutar rollback"},
+            "target": {"type": "string", "description": "Hash o HEAD~N (requerido si action=execute)"},
+            "path": {"type": "string", "description": "Path del repo (default: /opt/lluvia-studio)"},
+            "restart_service": {"type": "string", "description": "Nombre del contenedor a reiniciar post-rollback (ej: lluvia_backend)"},
+        }, "required": ["action"]},
+    }},
+    {"type": "function", "function": {
+        "name": "analyze_architecture",
+        "description": "Mapea módulos backend, rutas API, dependencias y cuellos de botella. Retorna recomendaciones de arquitectura.",
+        "parameters": {"type": "object", "properties": {
+            "focus": {"type": "string", "description": "Aspecto a analizar: modules, routes, performance (default: modules)"},
+        }, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "auto_fix_build",
+        "description": "Detecta errores de compilación Python en workspace/backend y propone fix via IA. NO auto-aplica (devuelve propuesta). Solo admin.",
+        "parameters": {"type": "object", "properties": {
+            "app_slug": {"type": "string", "description": "Workspace a revisar (opcional, default: backend del servidor)"},
+            "file_path": {"type": "string", "description": "Archivo específico a revisar (opcional)"},
+        }, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "dependency_audit",
+        "description": "Audita vulnerabilidades y packages desactualizados en Python (pip) y frontend (npm).",
+        "parameters": {"type": "object", "properties": {
+            "target": {"type": "string", "enum": ["python", "frontend", "both"], "description": "Qué auditar (default: both)"},
+        }, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "security_scan_basic",
+        "description": "Escaneo de seguridad básico: secrets hardcodeados, permisos de archivos, puertos expuestos. Solo admin.",
+        "parameters": {"type": "object", "properties": {
+            "scope": {"type": "string", "enum": ["secrets", "ports", "permissions", "all"], "description": "Qué escanear (default: all)"},
+        }, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "audit_log_search",
+        "description": "Busca en el audit trail de Master Console: acciones, IPs, resultados. Solo admin.",
+        "parameters": {"type": "object", "properties": {
+            "action": {"type": "string", "description": "Filtrar por acción (opcional, regex)"},
+            "since": {"type": "string", "description": "Desde ISO datetime (opcional)"},
+            "limit": {"type": "integer", "description": "Max entradas (default 20)"},
+        }, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "service_health_check",
+        "description": "HTTP health check de todos los servicios: backend, MongoDB, job worker. Devuelve status por servicio.",
+        "parameters": {"type": "object", "properties": {
+            "urls": {"type": "array", "items": {"type": "string"}, "description": "URLs adicionales a verificar (opcional)"},
+        }, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "queue_monitor",
+        "description": "Estado detallado de la cola de background jobs: stats por tipo/estado, DLQ, worker activo.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "git_diff_summary",
+        "description": "Muestra cambios pendientes en git y los resume con IA. Para revisar antes de commit.",
+        "parameters": {"type": "object", "properties": {
+            "staged": {"type": "boolean", "description": "Solo cambios staged (default: false = all changes)"},
+            "path": {"type": "string", "description": "Path del repo (default: /opt/lluvia-studio)"},
+        }, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "process_manager",
+        "description": "Lista procesos activos por CPU/RAM. Puede terminar un proceso por PID (action=kill). Solo admin.",
+        "parameters": {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["list", "kill"], "description": "list=ver procesos, kill=terminar PID"},
+            "pid": {"type": "integer", "description": "PID a terminar (requerido si action=kill)"},
+        }, "required": ["action"]},
+    }},
+    {"type": "function", "function": {
+        "name": "inspect_config",
+        "description": "Muestra qué variables de config están seteadas vs faltantes. Sanitizado (no expone valores secretos). Solo admin.",
+        "parameters": {"type": "object", "properties": {
+            "filter": {"type": "string", "description": "Filtrar por nombre de variable (opcional)"},
+        }, "required": []},
+    }},
     # ── Master Console / Ejecución interna ───────────────────────────────────
     {"type": "function", "function": {
         "name": "run_python",
@@ -909,6 +998,9 @@ ADMIN_ONLY_TOOLS = {
     "run_python", "list_services", "list_env_vars", "get_logs",
     # Comms externos
     "send_telegram", "send_webhook",
+    # CTO stability layer
+    "self_diagnostic", "smart_rollback", "auto_fix_build",
+    "security_scan_basic", "audit_log_search", "process_manager", "inspect_config",
 }
 
 
@@ -1844,6 +1936,45 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
             if not is_admin:
                 return json.dumps({"error": "requiere admin"}), 0
             data = await _tool_create_workflow(args, user_id)
+        # ── CTO: Estabilidad, seguridad y observabilidad ─────────────────────
+        elif name == "self_diagnostic":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_self_diagnostic()
+        elif name == "smart_rollback":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_smart_rollback(args)
+        elif name == "analyze_architecture":
+            data = await _tool_analyze_architecture(args)
+        elif name == "auto_fix_build":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_auto_fix_build(args, user_id)
+        elif name == "dependency_audit":
+            data = await _tool_dependency_audit(args)
+        elif name == "security_scan_basic":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_security_scan_basic(args)
+        elif name == "audit_log_search":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_audit_log_search(args)
+        elif name == "service_health_check":
+            data = await _tool_service_health_check(args)
+        elif name == "queue_monitor":
+            data = await _tool_queue_monitor()
+        elif name == "git_diff_summary":
+            data = await _tool_git_diff_summary(args)
+        elif name == "process_manager":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_process_manager(args)
+        elif name == "inspect_config":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = _tool_inspect_config(args)
         else:
             return json.dumps({"error": f"Tool desconocida: {name}"}), 0
         return json.dumps(data, ensure_ascii=False)[:30000], cost
@@ -2705,6 +2836,521 @@ async def _tool_create_workflow(args: dict, user_id: str) -> dict:
     return {**result, "workflow_name": name, "job_type": job_type}
 
 
+# ── CTO Layer: 12 tools de estabilidad, seguridad y observabilidad ───────────
+
+async def _tool_self_diagnostic() -> dict:
+    """Agrega datos del sistema y genera diagnóstico CTO via LLM."""
+    import asyncio, master_console as mc
+    # Gather en paralelo — tolerante a errores individuales
+    results = await asyncio.gather(
+        mc._live_monitor_snapshot(),
+        _tool_get_platform_status({}),
+        _tool_queue_monitor(),
+        return_exceptions=True,
+    )
+    metrics = results[0] if not isinstance(results[0], Exception) else {}
+    platform = results[1] if not isinstance(results[1], Exception) else {}
+    queue = results[2] if not isinstance(results[2], Exception) else {}
+
+    db = _db_ref["db"]
+    recent_failures = [
+        d async for d in db.master_console_audit.find(
+            {"result_ok": False}, {"_id": 0, "action": 1, "ts": 1}
+        ).sort("ts", -1).limit(5)
+    ]
+
+    summary = {
+        "cpu_pct": metrics.get("cpu_pct", "?"),
+        "ram_pct": metrics.get("ram_pct", "?"),
+        "disk_pct": metrics.get("disk_pct", "?"),
+        "jobs": platform.get("jobs", {}),
+        "errors_24h": platform.get("errors_24h", 0),
+        "active_modules": platform.get("active_modules", []),
+        "dlq": queue.get("dlq", 0),
+        "worker_running": queue.get("worker", {}).get("running", False),
+        "recent_failures": [f.get("action") for f in recent_failures],
+    }
+    prompt = (
+        "Analiza el estado de producción y genera diagnóstico CTO. "
+        f"Datos: {json.dumps(summary, ensure_ascii=False)[:1200]}\n"
+        "Responde SOLO JSON: {\"health_score\": 0-100, \"status\": \"healthy|degraded|critical\", "
+        "\"critical_issues\": [], \"warnings\": [], \"recommendations\": [], \"summary\": \"...\"}"
+    )
+    client, model = llm_router.get_client("low")
+    resp = await client.chat.completions.create(
+        model=model, messages=[{"role": "user", "content": prompt}],
+        max_tokens=400, temperature=0.2,
+    )
+    raw = resp.choices[0].message.content.strip()
+    try:
+        m = re.search(r"\{[\s\S]+\}", raw)
+        diagnosis = json.loads(m.group() if m else raw)
+    except Exception:
+        diagnosis = {"raw": raw}
+    diagnosis["raw_data"] = summary
+    return diagnosis
+
+
+async def _tool_smart_rollback(args: dict) -> dict:
+    import asyncio
+    action = args.get("action", "list")
+    path = re.sub(r"[^a-zA-Z0-9_./-]", "", (args.get("path") or "/opt/lluvia-studio").strip())
+
+    async def _git(cmd: list) -> tuple[str, int]:
+        p = await asyncio.create_subprocess_exec(
+            *cmd, cwd=path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        out, err = await asyncio.wait_for(p.communicate(), timeout=30)
+        return (out + err).decode().strip(), p.returncode
+
+    if action == "list":
+        log_out, _ = await _git(["git", "log", "--oneline", "-15"])
+        commits = [{"hash": l.split()[0], "msg": " ".join(l.split()[1:])}
+                   for l in log_out.splitlines() if l]
+        return {"available_checkpoints": commits, "hint": "Usa action=execute con target=<hash> para revertir"}
+
+    # action == "execute"
+    target = re.sub(r"[^a-zA-Z0-9_.~^-]", "", (args.get("target") or "").strip())[:40]
+    if not target:
+        return {"error": "target requerido para action=execute (hash o HEAD~N)"}
+
+    # Safety: crear checkpoint ANTES de rollback
+    safety = await _tool_create_checkpoint({"message": f"pre-rollback safety to {target}", "path": path})
+    if "error" in safety:
+        return {"error": f"No se pudo crear checkpoint de seguridad: {safety['error']}"}
+    safety_hash = safety.get("checkpoint", "HEAD@{1}")
+
+    # Ejecutar reset
+    reset_out, rc = await _git(["git", "reset", "--hard", target])
+    if rc != 0:
+        await _git(["git", "reset", "--hard", safety_hash])
+        return {"error": f"Rollback falló: {reset_out[:300]}", "reverted_to_safety": safety_hash}
+
+    new_head, _ = await _git(["git", "rev-parse", "--short", "HEAD"])
+
+    # Reiniciar servicio si se especifica
+    restart_ok = None
+    svc = (args.get("restart_service") or "").strip()
+    if svc:
+        svc_safe = re.sub(r"[^a-zA-Z0-9_.-]", "", svc)[:60]
+        proc = await asyncio.create_subprocess_exec(
+            "docker", "restart", svc_safe,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        await asyncio.wait_for(proc.communicate(), timeout=30)
+        restart_ok = proc.returncode == 0
+
+    # Health check post-rollback
+    health = await _tool_service_health_check({})
+
+    return {
+        "rolled_back": True,
+        "from_safety_checkpoint": safety_hash,
+        "new_head": new_head,
+        "target": target,
+        "service_restarted": restart_ok,
+        "health_after": health.get("overall"),
+        "undo_command": f"git reset --hard {safety_hash}",
+    }
+
+
+async def _tool_analyze_architecture(args: dict) -> dict:
+    import os as _os
+    backend_path = "/opt/lluvia-studio/backend"
+    modules = []
+    for fname in sorted(_os.listdir(backend_path)):
+        if not fname.endswith(".py") or fname.startswith("__"):
+            continue
+        fpath = _os.path.join(backend_path, fname)
+        try:
+            with open(fpath) as fp:
+                lines = fp.readlines()
+            imports = [l.strip()[:80] for l in lines if l.startswith(("import ", "from ")) ][:8]
+            modules.append({"name": fname, "lines": len(lines), "imports": imports})
+        except Exception:
+            pass
+    modules.sort(key=lambda x: -x["lines"])
+    schema = await _tool_get_openapi_schema({})
+    routes_count = schema.get("total", "?")
+    top = modules[:15]
+    context = {
+        "top_modules": [{"name": m["name"], "lines": m["lines"]} for m in top],
+        "total_modules": len(modules),
+        "total_routes": routes_count,
+        "focus": args.get("focus", "modules"),
+    }
+    prompt = (
+        "Analiza la arquitectura de este sistema FastAPI/Python. "
+        f"Datos: {json.dumps(context, ensure_ascii=False)[:1200]}\n"
+        "Identifica: módulos críticos, posibles cuellos de botella, acoplamiento excesivo, oportunidades de mejora. "
+        "Responde JSON: {\"key_modules\": [], \"bottlenecks\": [], \"recommendations\": [], \"summary\": \"...\"}"
+    )
+    client, model = llm_router.get_client("low")
+    resp = await client.chat.completions.create(
+        model=model, messages=[{"role": "user", "content": prompt}],
+        max_tokens=500, temperature=0.3,
+    )
+    raw = resp.choices[0].message.content.strip()
+    try:
+        m = re.search(r"\{[\s\S]+\}", raw)
+        result = json.loads(m.group() if m else raw)
+    except Exception:
+        result = {"raw": raw}
+    result["modules_overview"] = context["top_modules"]
+    result["total_modules"] = len(modules)
+    result["total_routes"] = routes_count
+    return result
+
+
+async def _tool_auto_fix_build(args: dict, user_id: str) -> dict:
+    import subprocess, os as _os
+    app_slug = re.sub(r"[^a-zA-Z0-9_.-]", "", (args.get("app_slug") or "").strip())[:80]
+    file_arg = (args.get("file_path") or "").strip()
+
+    if app_slug:
+        base = _os.environ.get("LLUVIA_HOME", "/app")
+        scan_path = _os.path.join(base, "user_apps", user_id, app_slug)
+    else:
+        scan_path = "/opt/lluvia-studio/backend"
+
+    if not _os.path.isdir(scan_path):
+        return {"error": f"Path no encontrado: {scan_path}"}
+
+    files_to_check = []
+    if file_arg:
+        files_to_check = [_os.path.join(scan_path, file_arg)]
+    else:
+        files_to_check = [_os.path.join(scan_path, f)
+                          for f in _os.listdir(scan_path) if f.endswith(".py")][:30]
+
+    errors = []
+    for fpath in files_to_check:
+        r = subprocess.run(
+            ["python3", "-m", "py_compile", fpath],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode != 0:
+            errors.append({"file": _os.path.basename(fpath), "error": r.stderr.strip()[:400]})
+
+    if not errors:
+        return {"status": "no_errors_found", "files_checked": len(files_to_check)}
+
+    # Proponer fix via LLM (sin auto-aplicar)
+    proposals = []
+    client, model = llm_router.get_client("low")
+    for err in errors[:3]:
+        fpath_full = _os.path.join(scan_path, err["file"])
+        try:
+            with open(fpath_full) as fp:
+                content = fp.read()[:2000]
+        except Exception:
+            content = ""
+        prompt = (
+            f"Archivo Python con error:\n{err['file']}\nError: {err['error']}\n"
+            f"Código:\n{content}\n\n"
+            "Propón el fix mínimo. Responde SOLO JSON: "
+            "{\"fix_description\": \"...\", \"search\": \"línea exacta a reemplazar\", \"replace\": \"línea corregida\"}"
+        )
+        resp = await client.chat.completions.create(
+            model=model, messages=[{"role": "user", "content": prompt}],
+            max_tokens=250, temperature=0.1,
+        )
+        raw = resp.choices[0].message.content.strip()
+        try:
+            m = re.search(r"\{[\s\S]+\}", raw)
+            proposal = json.loads(m.group() if m else raw)
+        except Exception:
+            proposal = {"raw": raw}
+        proposal["file"] = err["file"]
+        proposals.append(proposal)
+
+    return {
+        "errors_found": len(errors),
+        "errors": errors,
+        "proposals": proposals,
+        "apply_hint": "Usar search_replace_workspace para aplicar el fix propuesto.",
+    }
+
+
+async def _tool_dependency_audit(args: dict) -> dict:
+    import asyncio, json as _json
+    target = args.get("target", "both")
+    results: dict = {}
+
+    if target in ("python", "both"):
+        proc = await asyncio.create_subprocess_exec(
+            "pip3", "list", "--outdated", "--format=json",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+            outdated = _json.loads(stdout.decode())[:20]
+        except Exception:
+            outdated = []
+        results["python"] = {"outdated_packages": outdated, "count": len(outdated)}
+
+    if target in ("frontend", "both"):
+        proc = await asyncio.create_subprocess_exec(
+            "npm", "audit", "--json",
+            cwd="/opt/lluvia-studio/frontend",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=60)
+            data = _json.loads(stdout.decode())
+            results["frontend"] = {
+                "vulnerabilities": data.get("metadata", {}).get("vulnerabilities", {}),
+                "packages_affected": list(data.get("vulnerabilities", {}).keys())[:15],
+            }
+        except Exception as e:
+            results["frontend"] = {"error": str(e)[:100]}
+
+    return results
+
+
+async def _tool_security_scan_basic(args: dict) -> dict:
+    import os as _os
+    scope = args.get("scope", "all")
+    issues: list = []
+    SECRET_KEYS = {"TOKEN", "SECRET", "KEY", "PASSWORD", "PASSWD", "AUTH", "PRIVATE", "CERT", "CREDENTIAL"}
+    SKIP = {"config.py"}  # config.py usa os.getenv, no hardcoded
+
+    if scope in ("secrets", "all"):
+        backend_path = "/opt/lluvia-studio/backend"
+        pattern = re.compile(r'(?i)(password|secret|api_key|apikey|token|private_key)\s*=\s*["\'][^${\'"]{8,}["\']')
+        for fname in _os.listdir(backend_path):
+            if not fname.endswith(".py") or fname in SKIP:
+                continue
+            try:
+                with open(_os.path.join(backend_path, fname)) as fp:
+                    content = fp.read()
+                if pattern.search(content):
+                    issues.append({"type": "potential_hardcoded_secret", "file": fname, "severity": "high"})
+            except Exception:
+                pass
+
+    if scope in ("permissions", "all"):
+        for env_path in ["/opt/lluvia-studio/.env", "/app/.env", "/opt/lluvia/.env"]:
+            if _os.path.exists(env_path):
+                perms = oct(_os.stat(env_path).st_mode)[-3:]
+                if perms not in ("600", "400"):
+                    issues.append({"type": "insecure_file_permissions", "file": env_path,
+                                   "perms": perms, "recommended": "600", "severity": "medium"})
+
+    open_ports: list = []
+    if scope in ("ports", "all"):
+        import asyncio
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "ss", "-tlnp",
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            ports = re.findall(r":(\d{3,5})\s", stdout.decode())
+            open_ports = sorted(set(ports))
+            db_ports = [p for p in open_ports if p in {"3306", "5432", "27017", "6379", "9200"}]
+            if db_ports:
+                issues.append({"type": "exposed_db_ports", "ports": db_ports, "severity": "high",
+                                "note": "Verificar que no estén expuestos públicamente"})
+        except Exception:
+            pass
+
+    issues.sort(key=lambda x: {"high": 0, "medium": 1, "low": 2}.get(x.get("severity", "low"), 2))
+    return {
+        "issues": issues,
+        "total": len(issues),
+        "high_severity": sum(1 for i in issues if i.get("severity") == "high"),
+        "open_ports": open_ports,
+        "clean": len(issues) == 0,
+    }
+
+
+async def _tool_audit_log_search(args: dict) -> dict:
+    db = _db_ref["db"]
+    q: dict = {}
+    action = (args.get("action") or "").strip()[:60]
+    since = (args.get("since") or "").strip()[:30]
+    limit = max(1, min(int(args.get("limit", 20)), 100))
+    if action:
+        q["action"] = {"$regex": action, "$options": "i"}
+    if since:
+        q["ts"] = {"$gte": since}
+    entries = [d async for d in db.master_console_audit.find(q, {"_id": 0}).sort("ts", -1).limit(limit)]
+    return {"entries": entries, "count": len(entries)}
+
+
+async def _tool_service_health_check(args: dict) -> dict:
+    import httpx, asyncio
+    SERVICES = [
+        ("backend_8000", "http://localhost:8000/health"),
+        ("backend_8001", "http://localhost:8001/health"),
+    ]
+    for extra in (args.get("urls") or [])[:5]:
+        SERVICES.append((extra, extra))
+
+    async def _http_check(name: str, url: str) -> tuple[str, dict]:
+        try:
+            async with httpx.AsyncClient(timeout=4) as c:
+                r = await c.get(url)
+                return name, {"status": "up", "code": r.status_code,
+                               "latency_ms": round(r.elapsed.total_seconds() * 1000, 1)}
+        except Exception as e:
+            return name, {"status": "down", "error": str(e)[:80]}
+
+    checks = await asyncio.gather(*[_http_check(n, u) for n, u in SERVICES], return_exceptions=True)
+    results: dict = {}
+    for item in checks:
+        if isinstance(item, tuple):
+            results[item[0]] = item[1]
+
+    # MongoDB
+    try:
+        await _db_ref["db"].command("ping")
+        results["mongodb"] = {"status": "up"}
+    except Exception as e:
+        results["mongodb"] = {"status": "down", "error": str(e)[:80]}
+
+    # Job worker
+    try:
+        import job_scheduler as js
+        ws = js._worker.status() if hasattr(js, "_worker") else {}
+        results["job_worker"] = {"status": "up" if ws.get("running") else "idle", **ws}
+    except Exception:
+        results["job_worker"] = {"status": "unknown"}
+
+    up = sum(1 for v in results.values() if isinstance(v, dict) and v.get("status") in ("up", "idle"))
+    total = len(results)
+    return {
+        "services": results, "healthy": up, "total": total,
+        "overall": "healthy" if up >= total - 1 else ("degraded" if up > 0 else "critical"),
+    }
+
+
+async def _tool_queue_monitor() -> dict:
+    import job_scheduler as js
+    db = _db_ref["db"]
+    rows = [d async for d in db.jobs.aggregate([
+        {"$group": {"_id": {"status": "$status", "type": "$job_type"}, "count": {"$sum": 1}}}
+    ])]
+    stats: dict = {}
+    for r in rows:
+        stats.setdefault(r["_id"]["status"], {})[r["_id"]["type"]] = r["count"]
+    dlq = await db.jobs.count_documents({"status": "dead_letter"})
+    running = [d async for d in db.jobs.find(
+        {"status": "running"}, {"_id": 0, "id": 1, "job_type": 1, "started_at": 1}
+    ).limit(10)]
+    worker = js._worker.status() if hasattr(js, "_worker") else {}
+    return {
+        "stats": stats, "dlq": dlq, "running": running, "worker": worker,
+        "alert": dlq > 10 or not worker.get("running"),
+    }
+
+
+async def _tool_git_diff_summary(args: dict) -> dict:
+    import asyncio
+    path = re.sub(r"[^a-zA-Z0-9_./-]", "", (args.get("path") or "/opt/lluvia-studio").strip())
+    staged = bool(args.get("staged", False))
+
+    async def _git(cmd: list) -> str:
+        p = await asyncio.create_subprocess_exec(
+            *cmd, cwd=path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        out, _ = await asyncio.wait_for(p.communicate(), timeout=10)
+        return out.decode().strip()
+
+    stat = await _git(["git", "diff"] + (["--staged"] if staged else []) + ["--stat"])
+    if not stat:
+        return {"summary": "No hay cambios pendientes", "files": [], "staged": staged}
+
+    diff_text = await _git(["git", "diff"] + (["--staged"] if staged else []) + ["--unified=2"])
+    prompt = (f"Resume estos cambios git en ≤5 bullets concisos:\n{diff_text[:2000]}\n"
+              "Solo lo que cambió y por qué importa.")
+    client, model = llm_router.get_client("low")
+    resp = await client.chat.completions.create(
+        model=model, messages=[{"role": "user", "content": prompt}],
+        max_tokens=150, temperature=0.3,
+    )
+    files = [l.split("|")[0].strip() for l in stat.splitlines() if "|" in l]
+    return {
+        "summary": resp.choices[0].message.content.strip(),
+        "files_changed": files,
+        "stats": stat[-400:],
+        "staged": staged,
+    }
+
+
+async def _tool_process_manager(args: dict) -> dict:
+    import asyncio
+    action = args.get("action", "list")
+    if action == "list":
+        proc = await asyncio.create_subprocess_exec(
+            "ps", "aux", "--sort=-%cpu",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+        lines = stdout.decode().strip().splitlines()
+        processes = []
+        for line in lines[1:26]:
+            parts = line.split()
+            if len(parts) >= 11:
+                processes.append({
+                    "pid": parts[1], "cpu": parts[2], "mem": parts[3],
+                    "cmd": " ".join(parts[10:])[:80],
+                })
+        return {"processes": processes, "count": len(processes)}
+    elif action == "kill":
+        pid = str(args.get("pid", "")).strip()
+        if not pid.isdigit() or pid in ("0", "1"):
+            return {"error": "pid inválido o protegido"}
+        proc = await asyncio.create_subprocess_exec(
+            "kill", "-15", pid,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=5)
+        return {"killed": proc.returncode == 0, "pid": pid,
+                "error": stderr.decode().strip()[:100] or None}
+    return {"error": f"action debe ser list o kill"}
+
+
+def _tool_inspect_config(args: dict) -> dict:
+    import os as _os, re as _re
+    filt = (args.get("filter") or "").strip().lower()
+    SECRET_KEYS = {"TOKEN", "SECRET", "KEY", "PASSWORD", "PASSWD", "PRIVATE", "AUTH", "CERT"}
+    config_path = "/opt/lluvia-studio/backend/config.py"
+    try:
+        with open(config_path) as fp:
+            content = fp.read()
+    except Exception as e:
+        return {"error": str(e)}
+    # Extract all os.environ.get("VAR_NAME", ...) patterns
+    pattern = _re.compile(r'os\.environ\.get\(\s*["\']([A-Z0-9_]+)["\']\s*(?:,\s*([^)]+))?\)')
+    matches = pattern.findall(content)
+    result = []
+    for var_name, default in matches:
+        if filt and filt not in var_name.lower():
+            continue
+        is_secret = any(k in var_name for k in SECRET_KEYS)
+        is_set = var_name in _os.environ
+        has_default = bool(default.strip()) if default else False
+        result.append({
+            "var": var_name,
+            "set": is_set,
+            "has_default": has_default,
+            "value": "***HIDDEN***" if is_secret else (_os.environ.get(var_name, "(not set)")[:80]),
+            "required": not has_default,
+        })
+    missing_required = [r["var"] for r in result if not r["set"] and r["required"]]
+    return {
+        "config_vars": result,
+        "total": len(result),
+        "set_count": sum(1 for r in result if r["set"]),
+        "missing_required": missing_required,
+        "alert": len(missing_required) > 0,
+    }
+
+
 # ── Dynamic tool selector (token optimization for Llama 3.1 8B) ──────────────
 
 _TOOL_BUNDLES: dict[str, set[str]] = {
@@ -2736,6 +3382,11 @@ _TOOL_BUNDLES: dict[str, set[str]] = {
     "memory":    {"memory_write", "memory_search", "task_planner", "summarize_context"},
     "master":    {"run_python", "system_metrics", "get_logs", "list_services",
                   "list_env_vars", "inspect_database"},
+    "cto":       {"self_diagnostic", "smart_rollback", "analyze_architecture",
+                  "auto_fix_build", "dependency_audit", "security_scan_basic",
+                  "audit_log_search", "service_health_check", "queue_monitor",
+                  "git_diff_summary", "process_manager", "inspect_config",
+                  "get_platform_status"},
 }
 
 _BUNDLE_KEYWORDS: dict[str, list[str]] = {
@@ -2762,6 +3413,10 @@ _BUNDLE_KEYWORDS: dict[str, list[str]] = {
                   "resumen", "compress", "contexto"],
     "master":    ["python", "sandbox", "ejecuta", "run", "monitor", "cpu", "ram",
                   "disco", "disk", "env", "environment", "proceso", "process"],
+    "cto":       ["diagnós", "diagnostic", "salud", "health", "rollback", "revert",
+                  "arquitectura", "architecture", "vulnerabilidad", "security", "audit",
+                  "error de build", "import error", "fix build", "queue dlq", "diff",
+                  "proceso", "process", "config", "scan", "seguridad", "dependencia"],
 }
 
 _ALWAYS_ON = {"call_specialist_tool", "web_search", "web_browse", "list_agents"}
