@@ -1,12 +1,12 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# IDE and editors
+# ── IDE / editors ────────────────────────────────────────────────────────────
 .idea/
 .vscode/
+*.swp
+*.swo
 
-# Dependencies
+# ── Node / frontend ───────────────────────────────────────────────────────────
 node_modules/
-/node_modules
+frontend/node_modules/
 /.pnp
 .pnp.js
 .yarn/install-state.gz
@@ -15,56 +15,57 @@ node_modules/
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
-
-# Testing
 /coverage
-
-# Next.js
 /.next/
 /out/
 next-env.d.ts
 *.tsbuildinfo
-
-# Production builds
 /build
 dist/
-dist
+frontend/build/
 
-# Environment files (comprehensive coverage)
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+*.egg-info/
+.pytest_cache/
 
-*token.json*
-*credentials.json*
+# ── Environment / secrets ─────────────────────────────────────────────────────
+.env
+.env.*
+*.env
+!.env.example
+credentials.json
+*token.json
+*.pem
+*.key
+.credentials
 
-# Logs and debug files
+# ── Runtime-generated files (uploads, AI output, built apps) ─────────────────
+backend/uploads/
+backend/generated_apps/
+backend/app_templates/audio_room/node_modules/
+backend/app_templates/tiktok_clone/node_modules/
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.pnpm-debug.log*
 dump.rdb
 
-# System files
+# ── OS ───────────────────────────────────────────────────────────────────────
 .DS_Store
-*.pem
+Thumbs.db
 
-# Python
-__pycache__/
-*pyc*
-venv/
-.venv/
-
-# Development tools
-chainlit.md
-.chainlit
-.ipynb_checkpoints/
-.ac
-
-# Deployment
+# ── Build caches ──────────────────────────────────────────────────────────────
+.cache/
 .vercel
 
-# Data and databases
-agenthub/agents/youtube/db
-
-# Archive files and large assets
+# ── Archives / binaries ───────────────────────────────────────────────────────
 **/*.zip
 **/*.tar.gz
 **/*.tar
@@ -73,45 +74,9 @@ agenthub/agents/youtube/db
 *.deb
 *.dylib
 
-# Build caches
-.cache/
-
+# ── Misc dev tools ────────────────────────────────────────────────────────────
+chainlit.md
+.chainlit
+.ipynb_checkpoints/
 memory/test_credentials.md
-
-# Mobile development
 android-sdk/
-# Environment and credential files
-.env
-.env.*
-*.env
-credentials.json
-*.pem
-*.key
-.credentials
-credentials.json
-*.pem
-*.key
-.credentials
-frontend/node_modules/.cache/default-development/4.pack
-frontend/node_modules/.cache/default-development/8.pack
-frontend/node_modules/.cache/default-development/16.pack
-frontend/node_modules/.cache/default-development/1.pack
-frontend/node_modules/.cache/default-development/5.pack
-frontend/node_modules/.cache/default-development/15.pack
-frontend/node_modules/.cache/default-development/19.pack
-frontend/node_modules/.cache/default-development/2.pack
-frontend/node_modules/.cache/default-development/18.pack
-frontend/node_modules/.cache/default-development/23.pack
-frontend/node_modules/.cache/default-development/24.pack
-frontend/node_modules/.cache/default-development/9.pack
-frontend/node_modules/.cache/default-development/22.pack
-frontend/node_modules/.cache/default-development/0.pack
--e 
-# Environment and credential files
-.env
-.env.*
-*.env
-credentials.json
-*.pem
-*.key
-.credentials

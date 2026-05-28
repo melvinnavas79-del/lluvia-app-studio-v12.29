@@ -1,0 +1,50 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "docker-compose.yml"
+      - ".github/workflows/deploy.yml"
+
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Force deploy even without code changes"
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    name: Deploy VPS
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: production
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/lluvia
+            git pull origin main
+            # Sync backend source to build directory
+            cp -r /opt/lluvia-studio/backend/console.py /opt/lluvia/backend/console.py
+            cp -r /opt/lluvia-studio/backend/llm_router.py /opt/lluvia/backend/llm_router.py
+            cp -r /opt/lluvia-studio/backend/agents_catalog.py /opt/lluvia/backend/agents_catalog.py
+            # Rebuild and restart
+            docker compose build --no-cache backend
+            docker compose up -d
+            # Verify
+            sleep 10
+            curl -fs http://localhost:8001/api/ || exit 1
+            echo "Deploy successful"
