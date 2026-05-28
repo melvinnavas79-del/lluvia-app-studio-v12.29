@@ -2985,17 +2985,39 @@ async def _tool_smart_rollback(args: dict) -> dict:
 
     new_head, _ = await _git(["git", "rev-parse", "--short", "HEAD"])
 
-    # Reiniciar servicio si se especifica
-    restart_ok = None
-    svc = (args.get("restart_service") or "").strip()
-    if svc:
-        svc_safe = re.sub(r"[^a-zA-Z0-9_.-]", "", svc)[:60]
-        proc = await asyncio.create_subprocess_exec(
-            "docker", "restart", svc_safe,
+    # Sincronizar archivos git → container via docker cp
+    import os as _os
+    backend_src = _os.path.join(path, "backend")
+    SYNC_FILES = [
+        "console.py", "agents_catalog.py", "llm_router.py", "server.py",
+        "e2_infra.py", "e3_builder.py", "e4_email.py", "e4_sales.py",
+        "e5_whitelabel.py", "e6_legal.py", "e7_billing.py", "e8_support.py",
+        "e9_analytics.py", "e9_emitters.py", "e10_social.py", "e11_gmail_support.py",
+        "job_scheduler.py", "master_console.py",
+    ]
+    synced, failed_sync = [], []
+    for fname in SYNC_FILES:
+        fpath = _os.path.join(backend_src, fname)
+        if not _os.path.exists(fpath):
+            continue
+        cp_proc = await asyncio.create_subprocess_exec(
+            "docker", "cp", fpath, f"lluvia_backend:/app/{fname}",
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
-        await asyncio.wait_for(proc.communicate(), timeout=30)
-        restart_ok = proc.returncode == 0
+        _, _ = await asyncio.wait_for(cp_proc.communicate(), timeout=15)
+        (synced if cp_proc.returncode == 0 else failed_sync).append(fname)
+
+    # Reiniciar container (default: lluvia_backend)
+    svc = re.sub(r"[^a-zA-Z0-9_.-]", "", (args.get("restart_service") or "lluvia_backend").strip())[:60]
+    restart_proc = await asyncio.create_subprocess_exec(
+        "docker", "restart", svc,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    await asyncio.wait_for(restart_proc.communicate(), timeout=45)
+    restart_ok = restart_proc.returncode == 0
+
+    # Esperar que el backend arranque
+    await asyncio.sleep(7)
 
     # Health check post-rollback
     health = await _tool_service_health_check({})
@@ -3005,9 +3027,12 @@ async def _tool_smart_rollback(args: dict) -> dict:
         "from_safety_checkpoint": safety_hash,
         "new_head": new_head,
         "target": target,
+        "synced_files": synced,
+        "failed_sync": failed_sync,
         "service_restarted": restart_ok,
         "health_after": health.get("overall"),
-        "undo_command": f"git reset --hard {safety_hash}",
+        "health_services": {k: v.get("status") for k, v in health.get("services", {}).items()},
+        "undo_command": f"smart_rollback(action=execute, target={safety_hash})",
     }
 
 
