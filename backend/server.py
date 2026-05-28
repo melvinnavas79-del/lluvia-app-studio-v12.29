@@ -167,6 +167,9 @@ async def on_startup():
     # Master Console — indexes del audit trail
     await master_console_module.create_indexes()
 
+    # E10 Social — indexes de posts, campañas, conexiones OAuth, quotas
+    await e10_module.create_indexes()
+
 
 @app.on_event("shutdown")
 async def on_shutdown():

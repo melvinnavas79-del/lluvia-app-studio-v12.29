@@ -499,6 +499,51 @@ async def analytics(tenant_id: str = "default", platform: str = "", period_days:
     return await tool_social_analytics(tenant_id, platform, period_days)
 
 
+async def create_indexes() -> None:
+    db = _db()
+    # e10_connections — (platform, tenant_id) is effectively the PK for OAuth creds
+    await db.e10_connections.create_index(
+        [("platform", 1), ("tenant_id", 1)], unique=True,
+        name="idx_e10_conn_platform_tenant"
+    )
+    await db.e10_connections.create_index("tenant_id")
+
+    # e10_posts — primary access pattern: by tenant ordered by date, with optional status filter
+    await db.e10_posts.create_index(
+        [("tenant_id", 1), ("created_at", -1)],
+        name="idx_e10_posts_tenant_date"
+    )
+    await db.e10_posts.create_index(
+        [("tenant_id", 1), ("status", 1), ("created_at", -1)],
+        name="idx_e10_posts_tenant_status_date"
+    )
+    # campaign_id for batch lookups; post_id for dedup / external references
+    await db.e10_posts.create_index("campaign_id", sparse=True)
+    await db.e10_posts.create_index("post_id", unique=True, sparse=True)
+
+    # e10_campaigns — list by tenant, count active
+    await db.e10_campaigns.create_index(
+        [("tenant_id", 1), ("created_at", -1)],
+        name="idx_e10_campaigns_tenant_date"
+    )
+    await db.e10_campaigns.create_index("status")
+    await db.e10_campaigns.create_index("campaign_id", unique=True, sparse=True)
+
+    # e10_dm_logs — analytics count: {tenant_id, ts≥cutoff}
+    await db.e10_dm_logs.create_index(
+        [("tenant_id", 1), ("ts", -1)],
+        name="idx_e10_dm_logs_tenant_ts"
+    )
+
+    # e10_quotas — upsert key: (tenant_id, date)
+    await db.e10_quotas.create_index(
+        [("tenant_id", 1), ("date", 1)], unique=True,
+        name="idx_e10_quotas_tenant_date"
+    )
+
+    logger.info("[e10] Indexes OK")
+
+
 @router.get("/status")
 async def e10_status(user: dict = Depends(auth.get_current_user)):
     db = _db()
