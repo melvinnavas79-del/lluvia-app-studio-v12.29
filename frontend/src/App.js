@@ -1,28 +1,21 @@
 import "@/App.css";
 import { useState } from "react";
 import { AuthProvider, useAuth } from "./AuthContext";
-import { BrandingProvider } from "./BrandingContext";
+import { BrandingProvider, useBranding } from "./BrandingContext";
 import { ThemeProvider } from "./ThemeContext";
 import Login from "./components/Login";
 import AdminDashboard from "./components/AdminDashboard";
 import ClientDashboard from "./components/ClientDashboard";
 import PublicChat from "./components/PublicChat";
+import { SkeletonAppShell } from "./components/SkeletonLoader";
 
 function Inner() {
   const { user, checking } = useAuth();
+  const { branding } = useBranding();
   const [authView, setAuthView] = useState(null); // null | "login" | "register"
 
   if (checking) {
-    return (
-      <div className="login-wrap">
-        <div className="login-card" style={{ textAlign: "center" }}>
-          <div className="brand-mark" style={{ justifyContent: "center" }}>
-            <span className="brand-dot" />
-            <span>CARGANDO...</span>
-          </div>
-        </div>
-      </div>
-    );
+    return <SkeletonAppShell brandName={branding?.product_name || "Lluvia"} />;
   }
 
   if (!user) {

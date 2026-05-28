@@ -2537,3 +2537,447 @@ code {
   border-radius: 10px;
   font-size: 0.88rem;
 }
+
+/* ======================================================================
+   SKELETON LOADERS — Shimmer animations
+   ====================================================================== */
+
+@keyframes sk-shimmer {
+  0%   { background-position: -600px 0; }
+  100% { background-position: 600px 0; }
+}
+
+.sk-line, .sk-card {
+  background: linear-gradient(
+    90deg,
+    var(--surface-soft) 25%,
+    var(--surface-warm) 50%,
+    var(--surface-soft) 75%
+  );
+  background-size: 600px 100%;
+  animation: sk-shimmer 1.4s ease-in-out infinite;
+}
+
+[data-theme="dark"] .sk-line,
+[data-theme="dark"] .sk-card {
+  background: linear-gradient(90deg, #1e2130 25%, #252840 50%, #1e2130 75%);
+  background-size: 600px 100%;
+  animation: sk-shimmer 1.4s ease-in-out infinite;
+}
+
+.sk-session-row {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.75rem 1rem;
+}
+
+.sk-stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 1.25rem;
+  display: flex; flex-direction: column;
+}
+
+.sk-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.sk-chat-msg {
+  display: flex; align-items: flex-start; gap: 0.75rem;
+}
+
+.sk-sessions { display: flex; flex-direction: column; }
+
+/* App-level skeleton shell */
+.sk-app-shell {
+  display: flex; flex-direction: column;
+  min-height: 100vh;
+  background: var(--brand-bg);
+}
+
+.sk-app-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1rem 2rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  height: 64px;
+}
+
+.sk-app-body {
+  display: flex; flex: 1; overflow: hidden;
+}
+
+.sk-sidebar {
+  width: 280px;
+  border-right: 1px solid var(--border);
+  padding: 0.5rem 0;
+  flex-shrink: 0;
+}
+
+.sk-main-area {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ======================================================================
+   EMPTY STATES
+   ====================================================================== */
+
+.empty-state {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 2.5rem;
+  margin-bottom: 1.25rem;
+  opacity: 0.35;
+  line-height: 1;
+}
+
+.empty-title {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  margin: 0 0 0.5rem;
+}
+
+.empty-desc {
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+  line-height: 1.55;
+  max-width: 360px;
+  margin: 0;
+}
+
+/* ======================================================================
+   PRICING SECTION
+   ====================================================================== */
+
+.landing-pricing {
+  max-width: 1180px;
+  margin: 6rem auto 2rem;
+  padding: 0 2rem;
+}
+
+.pricing-header {
+  text-align: center;
+  margin-bottom: 3.5rem;
+}
+
+.pricing-eyebrow {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--brand-accent);
+  background: rgba(37, 99, 235, 0.08);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  padding: 0.3rem 0.85rem;
+  border-radius: 999px;
+  margin-bottom: 1.1rem;
+}
+
+.pricing-header h2 {
+  font-family: var(--font-display);
+  font-size: clamp(1.8rem, 3.2vw, 2.6rem);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+  margin: 0 0 0.85rem;
+}
+
+.pricing-sub {
+  color: var(--text-secondary);
+  font-size: 1.02rem;
+  line-height: 1.55;
+}
+
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .pricing-grid { grid-template-columns: 1fr; max-width: 440px; margin: 0 auto; }
+}
+
+.pricing-card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  padding: 2rem 1.75rem 2rem;
+  display: flex; flex-direction: column;
+  gap: 0;
+  box-shadow: var(--shadow-sm);
+  transition: transform .22s ease, box-shadow .22s ease;
+}
+
+.pricing-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md);
+}
+
+.pricing-card--highlight {
+  border-color: var(--brand-accent);
+  background: linear-gradient(135deg, rgba(37,99,235,0.03), var(--surface));
+  box-shadow: 0 0 0 1px rgba(37,99,235,0.2), var(--shadow-md);
+  transform: scale(1.025);
+}
+
+.pricing-card--highlight:hover {
+  transform: scale(1.025) translateY(-4px);
+}
+
+.pricing-tag {
+  position: absolute;
+  top: -0.65rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--brand-accent);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+  padding: 0.25rem 0.85rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.pricing-plan-icon {
+  width: 42px; height: 42px;
+  border-radius: var(--r-md);
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--brand-accent);
+  margin-bottom: 1.25rem;
+}
+
+.pricing-card--highlight .pricing-plan-icon {
+  background: rgba(37,99,235,0.08);
+  border-color: rgba(37,99,235,0.2);
+}
+
+.pricing-name {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.6rem;
+}
+
+.pricing-price {
+  display: flex; align-items: baseline; gap: 0.2rem;
+  margin-bottom: 0.75rem;
+}
+
+.pricing-amount {
+  font-family: var(--font-display);
+  font-size: 2.6rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+.pricing-period {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.pricing-desc {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin: 0 0 1rem;
+}
+
+.pricing-oros {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--gold-soft);
+  color: var(--gold);
+  border: 1px solid #FDE68A;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-bottom: 1.25rem;
+  width: fit-content;
+}
+
+.pricing-oros::before { content: "◈"; font-size: 0.7rem; }
+
+.pricing-features {
+  list-style: none;
+  padding: 0; margin: 0 0 1.75rem;
+  display: flex; flex-direction: column; gap: 0.6rem;
+  flex: 1;
+}
+
+.pricing-features li {
+  display: flex; align-items: flex-start; gap: 0.55rem;
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.pricing-check {
+  color: var(--success);
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.pricing-card--highlight .pricing-features li { color: var(--text-primary); }
+
+.cta-outline {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--r-md);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .2s ease;
+  background: transparent;
+  border: 1.5px solid var(--border-strong);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.cta-outline:hover {
+  background: var(--surface-soft);
+  border-color: var(--text-primary);
+}
+
+.pricing-note {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin-top: 2rem;
+}
+
+/* ======================================================================
+   MOBILE RESPONSIVE — Comprehensive breakpoints
+   ====================================================================== */
+
+/* ── Tablet (≤ 1024px) ─────────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .sk-sidebar { width: 240px; }
+  .cd-main { padding: 1.5rem; }
+}
+
+/* ── Mobile large (≤ 768px) ────────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Landing */
+  .pc-header {
+    padding: 0.85rem 1.25rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .landing-hero { padding: 2.5rem 1.25rem 1.5rem; }
+  .landing-hero h1 { font-size: clamp(1.9rem, 6vw, 2.6rem); }
+  .landing-pillars, .landing-features,
+  .landing-agents, .landing-cta-final, .landing-pricing {
+    padding: 0 1.25rem;
+    margin-top: 3.5rem;
+  }
+  .feature-grid { grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+  .landing-agents-grid { grid-template-columns: 1fr 1fr; }
+
+  /* Dashboard header */
+  .brand { flex-wrap: wrap; gap: 0.5rem; padding: 0.85rem 1.25rem; }
+  .hero { padding: 1.5rem 1.25rem; }
+  .hero h1 { font-size: 1.6rem; }
+  .tabs { flex-wrap: nowrap; overflow-x: auto; padding: 0 1rem; gap: 0; }
+  .tabs button { padding: 0.7rem 0.75rem; font-size: 0.82rem; white-space: nowrap; }
+
+  /* Client dashboard */
+  .cd-header { padding: 0.85rem 1.25rem; }
+  .cd-tabs { padding: 0 1rem; top: 65px; }
+  .cd-main { padding: 1.25rem; }
+  .cd-balance { display: none; } /* show on tablet+ only */
+
+  /* BossConsole */
+  .bc-layout { flex-direction: column !important; }
+  .bc-sidebar {
+    width: 100% !important;
+    max-height: 40vh;
+    border-right: none !important;
+    border-bottom: 1px solid var(--border) !important;
+  }
+  .bc-chat { flex: 1; }
+
+  /* App shell skeleton */
+  .sk-sidebar { display: none; }
+  .sk-app-header { padding: 0.85rem 1.25rem; }
+
+  /* Pricing */
+  .pricing-card--highlight { transform: none; }
+  .pricing-card--highlight:hover { transform: translateY(-4px); }
+}
+
+/* ── Mobile small (≤ 480px) ────────────────────────────────────────── */
+@media (max-width: 480px) {
+  /* Landing CTA */
+  .landing-cta { flex-direction: column; align-items: stretch; }
+  .cta-primary, .cta-secondary, .cta-outline { width: 100%; text-align: center; }
+  .landing-mini { flex-direction: column; gap: 0.3rem; align-items: center; }
+
+  /* Feature grid single col */
+  .feature-grid { grid-template-columns: 1fr; }
+  .landing-agents-grid { grid-template-columns: 1fr; }
+
+  /* Dashboard */
+  .hero h1 { font-size: 1.4rem; }
+  .hero-sub { font-size: 0.9rem; }
+
+  /* Tabs scroll on mobile */
+  .tabs, .cd-tabs {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar, .cd-tabs::-webkit-scrollbar { display: none; }
+
+  /* Pricing amounts smaller on mobile */
+  .pricing-amount { font-size: 2.1rem; }
+  .pricing-card { padding: 1.5rem 1.25rem; }
+}
+
+/* ── Animations: reduce for accessibility ──────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .sk-line, .sk-card { animation: none; background: var(--surface-soft); }
+  .pillar-card, .pricing-card, .feature-card { transition: none; }
+}
+
+/* Dark mode pricing adjustments */
+[data-theme="dark"] .pricing-card {
+  background: rgba(255,255,255,0.03);
+}
+[data-theme="dark"] .pricing-card--highlight {
+  background: rgba(37,99,235,0.08);
+  box-shadow: 0 0 0 1px rgba(37,99,235,0.3), var(--shadow-md);
+}
+[data-theme="dark"] .pricing-oros {
+  background: rgba(217,119,6,0.14);
+  border-color: rgba(253,211,77,0.2);
+}

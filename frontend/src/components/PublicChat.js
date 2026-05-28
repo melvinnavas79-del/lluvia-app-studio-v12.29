@@ -10,8 +10,73 @@ import AgentAvatar from "./AgentAvatar";
 import * as LucideIcons from "lucide-react";
 import {
   Video, Bot, Radio, Sparkles, Calendar, CreditCard,
-  Mic, Github, Smartphone,
+  Mic, Github, Smartphone, Check, Zap, Building2, Users,
 } from "lucide-react";
+
+const PRICING_PLANS = [
+  {
+    id: "starter",
+    name: "Starter",
+    price: "Gratis",
+    period: "",
+    desc: "Para probar y explorar la plataforma.",
+    oros: 15,
+    highlight: false,
+    tag: null,
+    features: [
+      "15 oros de prueba",
+      "1 agente activo",
+      "Chat web + Telegram",
+      "Reservas y pagos básicos",
+      "Push a tu GitHub",
+      "Soporte por comunidad",
+    ],
+    cta: "Empezar gratis",
+    ctaVariant: "secondary",
+  },
+  {
+    id: "pro",
+    name: "Pro",
+    price: "$29",
+    period: "/mes",
+    desc: "Para freelancers y agencias pequeñas.",
+    oros: 500,
+    highlight: true,
+    tag: "Más popular",
+    features: [
+      "500 oros/mes incluidos",
+      "Agentes ilimitados",
+      "Todas las 91 tools de E1",
+      "WhatsApp + Instagram + Telegram",
+      "App Builder Pro (Audio Room, TikTok clone)",
+      "Dominio personalizado",
+      "Soporte prioritario",
+    ],
+    cta: "Empezar con Pro →",
+    ctaVariant: "primary",
+  },
+  {
+    id: "agency",
+    name: "Agency",
+    price: "$99",
+    period: "/mes",
+    desc: "Para agencias con múltiples clientes.",
+    oros: 2000,
+    highlight: false,
+    tag: "White-Label",
+    features: [
+      "2000 oros/mes incluidos",
+      "White-label completo (tu marca)",
+      "Panel de afiliados + comisiones",
+      "Sub-cuentas por cliente",
+      "E2–E11 specialist agents",
+      "Deploy VPS por cliente",
+      "SLA + soporte dedicado",
+    ],
+    cta: "Contactar ventas",
+    ctaVariant: "outline",
+  },
+];
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -238,6 +303,65 @@ export default function PublicChat({ onLoginClick, onRegisterClick }) {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* ── Pricing ──────────────────────────────────────────────────── */}
+      <section className="landing-pricing" id="pricing" data-testid="pricing-section">
+        <div className="pricing-header">
+          <span className="pricing-eyebrow">Planes y precios</span>
+          <h2>Empieza gratis. Escala cuando estés listo.</h2>
+          <p className="pricing-sub">
+            Sin contratos. Sin sorpresas. Cancela cuando quieras.
+          </p>
+        </div>
+        <div className="pricing-grid">
+          {PRICING_PLANS.map((plan) => (
+            <div
+              key={plan.id}
+              className={`pricing-card${plan.highlight ? " pricing-card--highlight" : ""}`}
+              data-testid={`pricing-${plan.id}`}
+            >
+              {plan.tag && (
+                <div className="pricing-tag">{plan.tag}</div>
+              )}
+              <div className="pricing-plan-icon">
+                {plan.id === "starter" && <Zap size={22} />}
+                {plan.id === "pro" && <Users size={22} />}
+                {plan.id === "agency" && <Building2 size={22} />}
+              </div>
+              <div className="pricing-name">{plan.name}</div>
+              <div className="pricing-price">
+                <span className="pricing-amount">{plan.price}</span>
+                {plan.period && <span className="pricing-period">{plan.period}</span>}
+              </div>
+              <p className="pricing-desc">{plan.desc}</p>
+              {plan.oros > 0 && (
+                <div className="pricing-oros">
+                  {plan.oros === 15 ? "15 oros de prueba" : `${plan.oros.toLocaleString()} oros/mes`}
+                </div>
+              )}
+              <ul className="pricing-features">
+                {plan.features.map((f, i) => (
+                  <li key={i}>
+                    <Check size={15} strokeWidth={2.5} className="pricing-check" />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              <button
+                className={plan.ctaVariant === "primary" ? "cta-primary" : plan.ctaVariant === "outline" ? "cta-outline" : "cta-secondary"}
+                onClick={plan.id === "agency" ? () => window.location.href = "mailto:lluviaappstudio@gmail.com?subject=Agency Plan" : plan.id === "starter" ? onRegisterClick : onRegisterClick}
+                style={{ width: "100%", marginTop: "auto" }}
+                data-testid={`pricing-cta-${plan.id}`}
+              >
+                {plan.cta}
+              </button>
+            </div>
+          ))}
+        </div>
+        <p className="pricing-note">
+          ¿Necesitás más oros? Recargás desde el panel en cualquier momento. Oros no vencen.
+        </p>
       </section>
 
       <section className="landing-cta-final">
