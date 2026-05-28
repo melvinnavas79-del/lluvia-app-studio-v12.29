@@ -723,15 +723,6 @@ async def engine_subscribe(tenant_id: str, plan_key: str, payment_provider: str,
     if payment_provider not in PROVIDERS:
         raise HTTPException(status_code=400, detail=f"Provider inválido: {payment_provider}")
 
-    # Idempotencia: evitar crear segunda suscripción activa/pendiente para el mismo tenant
-    existing = await _db().e7_subscriptions.find_one(
-        {"tenant_id": tenant_id, "status": {"$in": ["active", "pending_approval"]}},
-        {"_id": 0}
-    )
-    if existing:
-        return {**{k: v for k, v in existing.items() if k != "_id"},
-                "idempotent": True}
-
     # Genérico primero, con fallback a las vars PayPal legacy para retrocompat.
     return_url = os.getenv("BILLING_RETURN_URL",
                            os.getenv("PAYPAL_RETURN_URL", "https://lluvia.app/billing/success"))
@@ -766,13 +757,27 @@ async def engine_subscribe(tenant_id: str, plan_key: str, payment_provider: str,
         "billing_interval": plan_info["interval"],
         "approval_url": result.get("approval_url"),
         "status": "active" if result["status"] == "ACTIVE" else "pending_approval",
+        # active_slot is present on active/pending docs so the unique sparse index
+        # (tenant_id, active_slot) blocks concurrent double-subscribe atomically.
+        # It is $unset when the subscription is cancelled or expires.
+        "active_slot": "1",
         "created_at": now.isoformat(),
         "created_by": actor,
         "activated_at": now.isoformat() if result["status"] == "ACTIVE" else None,
         "cancelled_at": None,
         "next_billing_date": None,
     }
-    await _db().e7_subscriptions.insert_one(doc)
+    try:
+        await _db().e7_subscriptions.insert_one(doc)
+    except _DuplicateKeyError:
+        # Another concurrent call already claimed the active slot for this tenant
+        existing = await _db().e7_subscriptions.find_one(
+            {"tenant_id": tenant_id, "active_slot": "1"}, {"_id": 0}
+        )
+        if existing:
+            logger.info(f"[e7] concurrent subscribe blocked for tenant={tenant_id}, existing sub={existing.get('id')}")
+            return {**existing, "idempotent": True}
+        raise
 
     # Si es manual → activar tenant inmediatamente
     if payment_provider == "manual" and result["status"] == "ACTIVE":
@@ -799,7 +804,8 @@ async def engine_cancel(sub_id: str, reason: str, actor: str) -> dict:
     now = datetime.now(timezone.utc).isoformat()
     await _db().e7_subscriptions.update_one(
         {"id": sub_id},
-        {"$set": {"status": "cancelled", "cancelled_at": now}}
+        {"$set": {"status": "cancelled", "cancelled_at": now},
+         "$unset": {"active_slot": ""}}
     )
     await _audit("subscription_cancelled", actor,
                   {"sub_id": sub_id, "reason": reason}, doc.get("tenant_id", ""))
@@ -1034,7 +1040,8 @@ async def handle_provider_webhook(provider_key: str, headers: dict, body: bytes)
     elif event_type in ("subscription_cancelled", "subscription_expired"):
         await _db().e7_subscriptions.update_one(
             {"id": sub_id},
-            {"$set": {"status": event_type.replace("subscription_", ""), "cancelled_at": now}}
+            {"$set": {"status": event_type.replace("subscription_", ""), "cancelled_at": now},
+             "$unset": {"active_slot": ""}}
         )
         # Suspender tenant en E5
         await _db().e5_tenants.update_one(
@@ -1189,6 +1196,13 @@ async def create_indexes() -> None:
     await db.e7_subscriptions.create_index("id", unique=True)
     await db.e7_subscriptions.create_index([("tenant_id", 1), ("status", 1)])
     await db.e7_subscriptions.create_index("provider_subscription_id", sparse=True)
+    # Unique sparse: exactly one active/pending subscription per tenant.
+    # active_slot="1" is set on insert, $unset on cancel/expire.
+    await db.e7_subscriptions.create_index(
+        [("tenant_id", 1), ("active_slot", 1)],
+        unique=True, sparse=True,
+        name="idx_e7_active_slot_per_tenant"
+    )
     await db.e7_payments.create_index([("sub_id", 1), ("received_at", -1)])
     await db.e7_billing_plans.create_index(
         [("plan_key", 1), ("provider", 1)], unique=True, sparse=True
