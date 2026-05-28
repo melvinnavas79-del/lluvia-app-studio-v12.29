@@ -457,6 +457,279 @@ OPENAI_TOOLS = [
             "url": {"type": "string", "description": "URL completa a navegar (debe empezar con http:// o https://)"},
         }, "required": ["url"]},
     }},
+    # ── Plataforma: estado, jobs, stats ──────────────────────────────────────
+    {"type": "function", "function": {
+        "name": "get_platform_status",
+        "description": "Estado general de la plataforma: jobs activos, errores 24h, módulos E2-E11, worker.",
+        "parameters": {"type": "object", "properties": {
+            "tenant_id": {"type": "string"},
+        }, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "list_jobs",
+        "description": "Lista background jobs de la cola. Filtra por status (pending/running/done/failed).",
+        "parameters": {"type": "object", "properties": {
+            "status": {"type": "string", "enum": ["pending", "running", "done", "failed"]},
+            "job_type": {"type": "string"},
+            "limit": {"type": "integer"},
+        }, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "get_agent_stats",
+        "description": "Métricas de uso de un agente: llamadas, errores, ms promedio, últimos N días.",
+        "parameters": {"type": "object", "properties": {
+            "agent_id": {"type": "string"},
+            "days": {"type": "integer"},
+        }, "required": ["agent_id"]},
+    }},
+    # ── Comunicación directa ──────────────────────────────────────────────────
+    {"type": "function", "function": {
+        "name": "send_notification",
+        "description": "Envía notificación in-app a un usuario. Aparece en su panel.",
+        "parameters": {"type": "object", "properties": {
+            "user_id": {"type": "string"},
+            "message": {"type": "string"},
+            "type": {"type": "string", "enum": ["info", "success", "warning", "error"]},
+            "title": {"type": "string"},
+        }, "required": ["user_id", "message"]},
+    }},
+    {"type": "function", "function": {
+        "name": "send_quick_email",
+        "description": "Envía un email puntual sin pasar por campañas E4.",
+        "parameters": {"type": "object", "properties": {
+            "to_email": {"type": "string"},
+            "subject": {"type": "string"},
+            "body": {"type": "string"},
+            "from_name": {"type": "string"},
+        }, "required": ["to_email", "subject", "body"]},
+    }},
+    # ── Generadores: contenido / negocio ─────────────────────────────────────
+    {"type": "function", "function": {
+        "name": "generate_social_post",
+        "description": "Genera copy + hashtags para RRSS usando IA.",
+        "parameters": {"type": "object", "properties": {
+            "topic": {"type": "string"},
+            "platform": {"type": "string", "enum": ["instagram", "twitter", "linkedin", "tiktok", "threads"]},
+            "tone": {"type": "string"},
+            "language": {"type": "string"},
+        }, "required": ["topic", "platform"]},
+    }},
+    {"type": "function", "function": {
+        "name": "generate_qr_card",
+        "description": "Genera tarjeta con QR code. Devuelve URL del QR y HTML embeddable.",
+        "parameters": {"type": "object", "properties": {
+            "data": {"type": "string"},
+            "title": {"type": "string"},
+            "description": {"type": "string"},
+            "size": {"type": "integer"},
+        }, "required": ["data", "title"]},
+    }},
+    {"type": "function", "function": {
+        "name": "generate_landing_page",
+        "description": "Genera HTML de landing page para un negocio usando IA.",
+        "parameters": {"type": "object", "properties": {
+            "business_name": {"type": "string"},
+            "tagline": {"type": "string"},
+            "cta_text": {"type": "string"},
+            "cta_url": {"type": "string"},
+            "color": {"type": "string"},
+            "language": {"type": "string"},
+        }, "required": ["business_name", "tagline", "cta_text"]},
+    }},
+    {"type": "function", "function": {
+        "name": "create_intake_form",
+        "description": "Crea formulario de captura de leads/contacto. Guarda en DB, retorna embed code.",
+        "parameters": {"type": "object", "properties": {
+            "title": {"type": "string"},
+            "fields": {"type": "array", "items": {"type": "object"}},
+            "redirect_url": {"type": "string"},
+            "notify_email": {"type": "string"},
+        }, "required": ["title", "fields"]},
+    }},
+    # ── Awareness: codebase / infra / DB ─────────────────────────────────────
+    {"type": "function", "function": {
+        "name": "search_codebase",
+        "description": "Grep en archivos del workspace. Devuelve líneas que coinciden con el patrón.",
+        "parameters": {"type": "object", "properties": {
+            "app_slug": {"type": "string"},
+            "pattern": {"type": "string"},
+            "file_ext": {"type": "string", "description": "py, js, ts, etc."},
+        }, "required": ["app_slug", "pattern"]},
+    }},
+    {"type": "function", "function": {
+        "name": "inspect_database",
+        "description": "Stats de colecciones MongoDB: docs, tamaño, índices. Sin exponer datos de usuarios.",
+        "parameters": {"type": "object", "properties": {
+            "collection": {"type": "string"},
+        }, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "get_openapi_schema",
+        "description": "Obtiene el schema OpenAPI del backend: rutas, métodos, parámetros.",
+        "parameters": {"type": "object", "properties": {
+            "filter_path": {"type": "string"},
+        }, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "list_containers",
+        "description": "Lista contenedores Docker activos (docker ps). Solo admin.",
+        "parameters": {"type": "object", "properties": {
+            "all": {"type": "boolean"},
+        }, "required": []},
+    }},
+    # ── DevOps / Git ──────────────────────────────────────────────────────────
+    {"type": "function", "function": {
+        "name": "create_checkpoint",
+        "description": "Crea checkpoint git (git add + commit). Para rollback seguro antes de cambios.",
+        "parameters": {"type": "object", "properties": {
+            "message": {"type": "string"},
+            "path": {"type": "string"},
+        }, "required": ["message"]},
+    }},
+    {"type": "function", "function": {
+        "name": "docker_exec",
+        "description": "Ejecuta comando dentro de un contenedor Docker (docker exec). Solo admin.",
+        "parameters": {"type": "object", "properties": {
+            "container": {"type": "string"},
+            "command": {"type": "string"},
+        }, "required": ["container", "command"]},
+    }},
+    {"type": "function", "function": {
+        "name": "run_tests",
+        "description": "Ejecuta suite de tests del proyecto. Devuelve pass/fail y output. Solo admin.",
+        "parameters": {"type": "object", "properties": {
+            "test_path": {"type": "string"},
+            "framework": {"type": "string", "enum": ["pytest", "jest", "npm_test"]},
+        }, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "benchmark_endpoint",
+        "description": "Mide latencia de un endpoint HTTP: p50/p95/p99 con N requests.",
+        "parameters": {"type": "object", "properties": {
+            "url": {"type": "string"},
+            "n": {"type": "integer"},
+            "method": {"type": "string", "enum": ["GET", "POST"]},
+        }, "required": ["url"]},
+    }},
+    # ── Generadores: código / UI ──────────────────────────────────────────────
+    {"type": "function", "function": {
+        "name": "generate_component",
+        "description": "Genera código de componente React/Vue/HTML usando IA.",
+        "parameters": {"type": "object", "properties": {
+            "description": {"type": "string"},
+            "framework": {"type": "string", "enum": ["react", "vue", "html"]},
+            "style": {"type": "string"},
+        }, "required": ["description"]},
+    }},
+    {"type": "function", "function": {
+        "name": "generate_crud",
+        "description": "Genera código CRUD completo (API + modelo) para una entidad.",
+        "parameters": {"type": "object", "properties": {
+            "entity": {"type": "string"},
+            "fields": {"type": "array", "items": {"type": "object"}},
+            "stack": {"type": "string", "enum": ["fastapi_mongo", "express_mongo", "django_postgres"]},
+        }, "required": ["entity", "fields"]},
+    }},
+    {"type": "function", "function": {
+        "name": "generate_api_route",
+        "description": "Genera una ruta FastAPI completa (schema + handler) usando IA.",
+        "parameters": {"type": "object", "properties": {
+            "route_description": {"type": "string"},
+            "method": {"type": "string", "enum": ["GET", "POST", "PUT", "DELETE", "PATCH"]},
+            "path": {"type": "string"},
+        }, "required": ["route_description", "method", "path"]},
+    }},
+    {"type": "function", "function": {
+        "name": "generate_agent_config",
+        "description": "Genera config de un agente AI (nombre, personalidad, tools) y lo crea. Solo admin.",
+        "parameters": {"type": "object", "properties": {
+            "agent_purpose": {"type": "string"},
+            "tools": {"type": "array", "items": {"type": "string"}},
+            "language": {"type": "string"},
+        }, "required": ["agent_purpose"]},
+    }},
+    # ── Business / Agency Brain ───────────────────────────────────────────────
+    {"type": "function", "function": {
+        "name": "generate_proposal",
+        "description": "Genera propuesta de negocio/proyecto profesional en Markdown usando IA.",
+        "parameters": {"type": "object", "properties": {
+            "project": {"type": "string"},
+            "client": {"type": "string"},
+            "budget_range": {"type": "string"},
+            "timeline": {"type": "string"},
+        }, "required": ["project", "client"]},
+    }},
+    {"type": "function", "function": {
+        "name": "generate_pricing",
+        "description": "Genera estrategia de precios o tabla de planes SaaS usando IA.",
+        "parameters": {"type": "object", "properties": {
+            "product": {"type": "string"},
+            "model": {"type": "string", "enum": ["saas", "agency", "freelance", "ecommerce"]},
+            "currency": {"type": "string"},
+        }, "required": ["product", "model"]},
+    }},
+    {"type": "function", "function": {
+        "name": "generate_report",
+        "description": "Genera reporte de analytics delegando a E9. Tipos: agent_usage, revenue, leads, errors.",
+        "parameters": {"type": "object", "properties": {
+            "report_type": {"type": "string", "enum": ["agent_usage", "revenue", "leads", "errors", "full"]},
+            "tenant_id": {"type": "string"},
+            "days": {"type": "integer"},
+        }, "required": ["report_type"]},
+    }},
+    {"type": "function", "function": {
+        "name": "crm_lookup",
+        "description": "Busca contacto/cliente en el CRM (E8). Retorna historial e interacciones.",
+        "parameters": {"type": "object", "properties": {
+            "query": {"type": "string"},
+        }, "required": ["query"]},
+    }},
+    {"type": "function", "function": {
+        "name": "track_lead",
+        "description": "Crea o actualiza lead en el CRM (E8).",
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string"},
+            "email": {"type": "string"},
+            "source": {"type": "string"},
+            "notes": {"type": "string"},
+        }, "required": ["name", "email"]},
+    }},
+    # ── Memoria / Razonamiento ────────────────────────────────────────────────
+    {"type": "function", "function": {
+        "name": "memory_write",
+        "description": "Guarda fact/contexto en memoria persistente del agente. Recuperable después.",
+        "parameters": {"type": "object", "properties": {
+            "key": {"type": "string"},
+            "content": {"type": "string"},
+            "tags": {"type": "array", "items": {"type": "string"}},
+        }, "required": ["key", "content"]},
+    }},
+    {"type": "function", "function": {
+        "name": "memory_search",
+        "description": "Busca en memoria persistente del agente por clave, tag o contenido.",
+        "parameters": {"type": "object", "properties": {
+            "query": {"type": "string"},
+            "limit": {"type": "integer"},
+        }, "required": ["query"]},
+    }},
+    {"type": "function", "function": {
+        "name": "task_planner",
+        "description": "Descompone un objetivo complejo en pasos accionables con prioridades usando IA.",
+        "parameters": {"type": "object", "properties": {
+            "goal": {"type": "string"},
+            "context": {"type": "string"},
+            "max_steps": {"type": "integer"},
+        }, "required": ["goal"]},
+    }},
+    {"type": "function", "function": {
+        "name": "summarize_context",
+        "description": "Comprime texto largo manteniendo puntos clave. Útil para resumir conversaciones.",
+        "parameters": {"type": "object", "properties": {
+            "text": {"type": "string"},
+            "max_tokens": {"type": "integer"},
+            "format": {"type": "string", "enum": ["bullets", "paragraph", "outline"]},
+        }, "required": ["text"]},
+    }},
     # ── Meta-tool E1→E2-E9 (additive) ────────────────────────────────────────
     {"type": "function", "function": {
         "name": "call_specialist_tool",
@@ -488,13 +761,16 @@ OPENAI_TOOLS = [
 ADMIN_ONLY_TOOLS = {
     "shell_run",
     "provision_client_quick",
-    "create_agent",
-    "update_agent",
-    "delete_agent",
-    "github_list_repos",
-    "github_list_files",
-    "github_read_file",
-    "github_search_code",
+    "create_agent", "update_agent", "delete_agent",
+    "github_list_repos", "github_list_files", "github_read_file", "github_search_code",
+    # Platform internals
+    "get_platform_status", "list_jobs", "inspect_database", "list_containers",
+    # Comms (anti-spam)
+    "send_notification", "send_quick_email",
+    # DevOps
+    "create_checkpoint", "docker_exec", "run_tests",
+    # Agent generation
+    "generate_agent_config",
 }
 
 
@@ -1294,6 +1570,92 @@ async def _exec_tool(name: str, args: dict, user_id: str, is_admin: bool) -> tup
             else:
                 result = await _web_browse(url)
                 data = {"url": url, "content": result}
+        # ── 9 nuevas tools (plataforma + comms + generadores) ────────────────
+        elif name == "get_platform_status":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_get_platform_status(args)
+        elif name == "list_jobs":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_list_jobs(args)
+        elif name == "get_agent_stats":
+            data = await _tool_get_agent_stats(args)
+        elif name == "send_notification":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_send_notification(args)
+        elif name == "send_quick_email":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_send_quick_email(args, user_id)
+        elif name == "generate_social_post":
+            data = await _tool_generate_social_post(args)
+        elif name == "generate_qr_card":
+            data = _tool_generate_qr_card(args)
+        elif name == "generate_landing_page":
+            data = await _tool_generate_landing_page(args)
+        elif name == "create_intake_form":
+            data = await _tool_create_intake_form(args, user_id)
+        # ── Awareness / infra ────────────────────────────────────────────────
+        elif name == "search_codebase":
+            data = await _tool_search_codebase(args, user_id)
+        elif name == "inspect_database":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_inspect_database(args)
+        elif name == "get_openapi_schema":
+            data = await _tool_get_openapi_schema(args)
+        elif name == "list_containers":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_list_containers(args)
+        # ── DevOps / Git ─────────────────────────────────────────────────────
+        elif name == "create_checkpoint":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_create_checkpoint(args)
+        elif name == "docker_exec":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_docker_exec(args)
+        elif name == "run_tests":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_run_tests(args)
+        elif name == "benchmark_endpoint":
+            data = await _tool_benchmark_endpoint(args)
+        # ── Generadores: código / UI ─────────────────────────────────────────
+        elif name == "generate_component":
+            data = await _tool_generate_code(args, "component")
+        elif name == "generate_crud":
+            data = await _tool_generate_code(args, "crud")
+        elif name == "generate_api_route":
+            data = await _tool_generate_code(args, "api_route")
+        elif name == "generate_agent_config":
+            if not is_admin:
+                return json.dumps({"error": "requiere admin"}), 0
+            data = await _tool_generate_agent_config(args, user_id)
+        # ── Business / Agency Brain ──────────────────────────────────────────
+        elif name == "generate_proposal":
+            data = await _tool_generate_doc(args, "proposal")
+        elif name == "generate_pricing":
+            data = await _tool_generate_doc(args, "pricing")
+        elif name == "generate_report":
+            data = await _tool_generate_report(args)
+        elif name == "crm_lookup":
+            data = await _dispatch_to_specialist("e8", "contact_list", {"search": args.get("query", "")})
+        elif name == "track_lead":
+            data = await _dispatch_to_specialist("e8", "contact_create", args)
+        # ── Memoria / Razonamiento ───────────────────────────────────────────
+        elif name == "memory_write":
+            data = await _tool_memory_write(args, user_id)
+        elif name == "memory_search":
+            data = await _tool_memory_search(args, user_id)
+        elif name == "task_planner":
+            data = await _tool_task_planner(args)
+        elif name == "summarize_context":
+            data = await _tool_summarize_context(args)
         else:
             return json.dumps({"error": f"Tool desconocida: {name}"}), 0
         return json.dumps(data, ensure_ascii=False)[:30000], cost
@@ -1342,6 +1704,624 @@ async def _web_browse(url: str) -> str:
     text = _html.unescape(text)
     text = re.sub(r"\s+", " ", text).strip()
     return text[:8000] or "(página vacía)"
+
+
+# ============================================================
+# IMPLEMENTACIONES — 30 nuevas tools E1
+# ============================================================
+
+async def _tool_get_platform_status(args: dict) -> dict:
+    db = _db_ref["db"]
+    import job_scheduler as js
+    tenant_id = args.get("tenant_id", "")
+    q = {"tenant_id": tenant_id} if tenant_id else {}
+    pipeline = [{"$match": q}, {"$group": {"_id": "$status", "count": {"$sum": 1}}}]
+    job_rows = [doc async for doc in db.jobs.aggregate(pipeline)]
+    job_stats = {r["_id"]: r["count"] for r in job_rows}
+    from datetime import timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    errors_24h = await db.e9_events.count_documents({
+        "event_type": {"$regex": "error", "$options": "i"},
+        "ts": {"$gte": cutoff},
+        **({"tenant_id": tenant_id} if tenant_id else {}),
+    })
+    active_modules: set = set()
+    async for doc in db.e9_counters.find(
+        {"module": {"$in": ["e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9", "e10", "e11"]}},
+        {"_id": 0, "module": 1},
+    ):
+        active_modules.add(doc["module"])
+    worker = js._worker.status() if hasattr(js, "_worker") else {}
+    return {
+        "worker": worker, "jobs": job_stats,
+        "errors_24h": errors_24h, "active_modules": sorted(active_modules),
+        "ts": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+async def _tool_list_jobs(args: dict) -> dict:
+    db = _db_ref["db"]
+    q: dict = {}
+    if args.get("status"):
+        q["status"] = args["status"]
+    if args.get("job_type"):
+        q["job_type"] = args["job_type"]
+    limit = max(1, min(int(args.get("limit", 20)), 100))
+    jobs = [doc async for doc in db.jobs.find(q, {"_id": 0}).sort("created_at", -1).limit(limit)]
+    return {"jobs": jobs, "count": len(jobs)}
+
+
+async def _tool_get_agent_stats(args: dict) -> dict:
+    db = _db_ref["db"]
+    agent_id = (args.get("agent_id") or "").strip()
+    if not agent_id:
+        return {"error": "agent_id requerido"}
+    from datetime import timedelta
+    days = max(1, min(int(args.get("days", 7)), 90))
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    rows = [doc async for doc in db.e9_counters.aggregate([
+        {"$match": {"module": agent_id, "day": {"$gte": cutoff}}},
+        {"$group": {"_id": None, "calls": {"$sum": "$call_count"},
+                    "errors": {"$sum": "$error_count"}, "ms": {"$sum": "$total_elapsed_ms"}}},
+    ])]
+    s = rows[0] if rows else {"calls": 0, "errors": 0, "ms": 0}
+    s.pop("_id", None)
+    if s.get("calls"):
+        s["avg_ms"] = round(s["ms"] / s["calls"])
+    s["agent_id"] = agent_id
+    s["period_days"] = days
+    return s
+
+
+async def _tool_send_notification(args: dict) -> dict:
+    db = _db_ref["db"]
+    user_id = (args.get("user_id") or "").strip()
+    message = (args.get("message") or "").strip()[:500]
+    if not user_id or not message:
+        return {"error": "user_id y message requeridos"}
+    ntype = args.get("type", "info")
+    if ntype not in {"info", "success", "warning", "error"}:
+        ntype = "info"
+    doc = {
+        "id": str(uuid.uuid4()), "user_id": user_id,
+        "title": (args.get("title") or "Notificación").strip()[:80],
+        "message": message, "type": ntype, "read": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.e1_notifications.insert_one(doc)
+    doc.pop("_id", None)
+    return {"sent": True, "notification": doc}
+
+
+async def _tool_send_quick_email(args: dict, user_id: str) -> dict:
+    to_email = (args.get("to_email") or "").strip().lower()
+    subject = (args.get("subject") or "").strip()[:150]
+    body = (args.get("body") or "").strip()[:8000]
+    if not to_email or not subject or not body:
+        return {"error": "to_email, subject y body requeridos"}
+    import e4_email
+    html_body = body if "<" in body else body.replace("\n", "<br>")
+    return await e4_email.send_email(
+        tenant_id=user_id, to_email=to_email, subject=subject,
+        html_body=html_body, text_body=body,
+        idempotency_key=f"quick_{user_id}_{abs(hash(to_email + subject)) % 0xFFFFFF:06x}",
+        include_unsub=False,
+    )
+
+
+async def _tool_generate_social_post(args: dict) -> dict:
+    topic = (args.get("topic") or "").strip()[:300]
+    platform = args.get("platform", "instagram")
+    if not topic:
+        return {"error": "topic requerido"}
+    hints = {
+        "instagram": "≤2200 chars, 5-10 hashtags, emojis",
+        "twitter": "≤280 chars, 1-3 hashtags",
+        "linkedin": "profesional, ≤700 chars",
+        "tiktok": "viral, ≤150 chars, 3-5 hashtags trending",
+        "threads": "conversacional, ≤500 chars",
+    }
+    prompt = (f"Post para {platform} ({hints.get(platform, '')}) en {args.get('language','español')}. "
+              f"Tono: {args.get('tone','casual')}. Tema: {topic}\nDevuelve SOLO el copy del post.")
+    client, model = llm_router.get_client("low")
+    resp = await client.chat.completions.create(
+        model=model, messages=[{"role": "user", "content": prompt}],
+        max_tokens=300, temperature=0.8,
+    )
+    return {"platform": platform, "post": resp.choices[0].message.content.strip(), "topic": topic}
+
+
+def _tool_generate_qr_card(args: dict) -> dict:
+    import urllib.parse
+    data = (args.get("data") or "").strip()
+    title = (args.get("title") or "").strip()[:80]
+    if not data or not title:
+        return {"error": "data y title requeridos"}
+    size = max(100, min(int(args.get("size", 200)), 500))
+    qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size={size}x{size}&data={urllib.parse.quote(data)}"
+    desc = (args.get("description") or "").strip()[:200]
+    html = (f'<div style="text-align:center;font-family:sans-serif;padding:20px">'
+            f'<h2>{title}</h2>{"<p>" + desc + "</p>" if desc else ""}'
+            f'<img src="{qr_url}" style="margin:10px auto;display:block"/>'
+            f'<p style="font-size:12px;color:#888">{data}</p></div>')
+    return {"title": title, "qr_url": qr_url, "html": html}
+
+
+async def _tool_generate_landing_page(args: dict) -> dict:
+    biz = (args.get("business_name") or "").strip()[:80]
+    tagline = (args.get("tagline") or "").strip()[:200]
+    cta = (args.get("cta_text") or "").strip()[:60]
+    if not biz or not tagline or not cta:
+        return {"error": "business_name, tagline y cta_text requeridos"}
+    color = re.sub(r"[^#a-fA-F0-9]", "", args.get("color", "#5fb4ff"))[:7] or "#5fb4ff"
+    cta_url = (args.get("cta_url") or "#").strip()
+    prompt = (f"HTML body de landing page para '{biz}' en {args.get('language','español')}. "
+              f"Tagline: '{tagline}'. Botón: '{cta}' → '{cta_url}'. Color: {color}. "
+              "Incluye: hero, 3 beneficios, CTA. Sin <html>/<head>/<body>. Solo el contenido.")
+    client, model = llm_router.get_client("low")
+    resp = await client.chat.completions.create(
+        model=model, messages=[{"role": "user", "content": prompt}],
+        max_tokens=700, temperature=0.5,
+    )
+    return {"business_name": biz, "html": resp.choices[0].message.content.strip(), "color": color}
+
+
+async def _tool_create_intake_form(args: dict, user_id: str) -> dict:
+    db = _db_ref["db"]
+    title = (args.get("title") or "").strip()[:120]
+    fields = args.get("fields") or []
+    if not title or not isinstance(fields, list) or not fields:
+        return {"error": "title y fields (lista) requeridos"}
+    form_id = str(uuid.uuid4())[:12].replace("-", "")
+    doc = {
+        "id": form_id, "title": title, "fields": fields[:20],
+        "redirect_url": (args.get("redirect_url") or "").strip()[:300],
+        "notify_email": (args.get("notify_email") or "").strip().lower()[:100],
+        "owner_id": user_id, "submissions": 0,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.e1_forms.insert_one(doc)
+    doc.pop("_id", None)
+    embed = f'<iframe src="/forms/{form_id}" width="100%" height="600" frameborder="0"></iframe>'
+    return {"created": True, "form_id": form_id, "embed_code": embed, "form": doc}
+
+
+async def _tool_search_codebase(args: dict, user_id: str) -> dict:
+    import subprocess, os as _os
+    app_slug = re.sub(r"[^a-zA-Z0-9_.-]", "", (args.get("app_slug") or "").strip())[:80]
+    pattern = (args.get("pattern") or "").strip()[:200]
+    if not app_slug or not pattern:
+        return {"error": "app_slug y pattern requeridos"}
+    base_dir = _os.environ.get("LLUVIA_HOME", "/app")
+    base = _os.path.join(base_dir, "user_apps", user_id, app_slug)
+    if not _os.path.isdir(base):
+        return {"error": f"Workspace '{app_slug}' no encontrado"}
+    ext = (args.get("file_ext") or "").strip().lstrip(".")
+    include = [f"--include=*.{ext}"] if ext else []
+    try:
+        r = subprocess.run(
+            ["grep", "-rn", "--max-count=3"] + include + [pattern, base],
+            capture_output=True, text=True, timeout=10,
+        )
+        lines = r.stdout.strip().splitlines()[:50]
+        return {"pattern": pattern, "matches": lines, "total": len(lines)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+async def _tool_inspect_database(args: dict) -> dict:
+    db = _db_ref["db"]
+    target = (args.get("collection") or "").strip()
+    if target:
+        stats = await db.command("collStats", target)
+        return {
+            "collection": target,
+            "count": stats.get("count", 0),
+            "size_mb": round(stats.get("size", 0) / 1024 / 1024, 3),
+            "indexes": stats.get("nindexes", 0),
+        }
+    names = await db.list_collection_names()
+    result = []
+    for name in sorted(names)[:30]:
+        try:
+            c = await db[name].count_documents({})
+            result.append({"collection": name, "count": c})
+        except Exception:
+            result.append({"collection": name, "count": "?"})
+    return {"collections": result}
+
+
+async def _tool_get_openapi_schema(args: dict) -> dict:
+    import httpx
+    filter_path = (args.get("filter_path") or "").strip().lower()
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.get("http://localhost:8000/openapi.json")
+            schema = r.json()
+    except Exception as e:
+        return {"error": f"No se pudo obtener schema: {e}"}
+    paths = schema.get("paths", {})
+    if filter_path:
+        paths = {k: v for k, v in paths.items() if filter_path in k.lower()}
+    summary = []
+    for path, methods in list(paths.items())[:60]:
+        for method, detail in methods.items():
+            summary.append({
+                "path": path, "method": method.upper(),
+                "summary": (detail.get("summary") or detail.get("description") or "")[:80],
+            })
+    return {"routes": summary, "total": len(summary)}
+
+
+async def _tool_list_containers(args: dict) -> dict:
+    import asyncio
+    flag = ["-a"] if args.get("all") else []
+    proc = await asyncio.create_subprocess_exec(
+        "docker", "ps", *flag, "--format", "{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}",
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+    lines = stdout.decode().strip().splitlines()
+    containers = []
+    for line in lines:
+        parts = line.split("\t")
+        containers.append({
+            "name": parts[0] if len(parts) > 0 else "",
+            "image": parts[1] if len(parts) > 1 else "",
+            "status": parts[2] if len(parts) > 2 else "",
+            "ports": parts[3] if len(parts) > 3 else "",
+        })
+    return {"containers": containers, "count": len(containers)}
+
+
+async def _tool_create_checkpoint(args: dict) -> dict:
+    message = (args.get("message") or "").strip()[:200]
+    if not message:
+        return {"error": "message requerido"}
+    path = re.sub(r"[^a-zA-Z0-9_./-]", "", (args.get("path") or "/opt/lluvia-studio").strip())
+    import asyncio
+    async def _git(cmd: list) -> str:
+        p = await asyncio.create_subprocess_exec(
+            *cmd, cwd=path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        out, err = await asyncio.wait_for(p.communicate(), timeout=30)
+        return (out + err).decode().strip()
+    add_out = await _git(["git", "add", "-A"])
+    commit_out = await _git(["git", "commit", "-m", f"[checkpoint] {message}"])
+    hash_out = await _git(["git", "rev-parse", "--short", "HEAD"])
+    return {"checkpoint": hash_out, "message": message, "git_output": commit_out[:400]}
+
+
+async def _tool_docker_exec(args: dict) -> dict:
+    container = re.sub(r"[^a-zA-Z0-9_.-]", "", (args.get("container") or "").strip())[:80]
+    command = (args.get("command") or "").strip()[:500]
+    if not container or not command:
+        return {"error": "container y command requeridos"}
+    safe, reason = is_command_safe(command)
+    if not safe:
+        return {"error": f"Comando bloqueado: {reason}"}
+    import asyncio
+    proc = await asyncio.create_subprocess_exec(
+        "docker", "exec", container, "sh", "-c", command,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+    return {
+        "container": container, "command": command,
+        "output": (stdout + stderr).decode().strip()[:5000],
+        "exit_code": proc.returncode,
+    }
+
+
+async def _tool_run_tests(args: dict) -> dict:
+    import asyncio
+    framework = args.get("framework", "pytest")
+    test_path = re.sub(r"[^a-zA-Z0-9_./-]", "", (args.get("test_path") or "tests/").strip())
+    if framework == "pytest":
+        cmd = ["python", "-m", "pytest", test_path, "-v", "--tb=short", "-q"]
+        cwd = "/opt/lluvia-studio/backend"
+    elif framework == "jest":
+        cmd = ["npx", "jest", test_path, "--no-coverage"]
+        cwd = "/opt/lluvia-studio/frontend"
+    else:
+        cmd = ["npm", "test", "--", "--watchAll=false"]
+        cwd = "/opt/lluvia-studio/frontend"
+    proc = await asyncio.create_subprocess_exec(
+        *cmd, cwd=cwd,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+    except asyncio.TimeoutError:
+        proc.kill()
+        return {"error": "Tests timeout (120s)"}
+    output = (stdout + stderr).decode().strip()[-4000:]
+    return {"framework": framework, "exit_code": proc.returncode,
+            "passed": proc.returncode == 0, "output": output}
+
+
+async def _tool_benchmark_endpoint(args: dict) -> dict:
+    import httpx, statistics, time
+    url = (args.get("url") or "").strip()
+    if not url or not url.startswith(("http://", "https://")):
+        return {"error": "url valida requerida (http/https)"}
+    n = max(1, min(int(args.get("n", 10)), 50))
+    method = args.get("method", "GET").upper()
+    if method not in {"GET", "POST"}:
+        method = "GET"
+    times_ms = []
+    async with httpx.AsyncClient(timeout=10) as client:
+        for _ in range(n):
+            t0 = time.perf_counter()
+            try:
+                fn = client.get if method == "GET" else client.post
+                r = await fn(url)
+                times_ms.append(round((time.perf_counter() - t0) * 1000, 2))
+            except Exception as e:
+                return {"error": str(e)}
+    times_ms.sort()
+    return {
+        "url": url, "n": n, "method": method,
+        "p50_ms": times_ms[len(times_ms) // 2],
+        "p95_ms": times_ms[int(len(times_ms) * 0.95)],
+        "p99_ms": times_ms[int(len(times_ms) * 0.99)],
+        "avg_ms": round(statistics.mean(times_ms), 2),
+        "min_ms": times_ms[0], "max_ms": times_ms[-1],
+    }
+
+
+async def _tool_generate_code(args: dict, code_type: str) -> dict:
+    client, model = llm_router.get_client("low")
+    if code_type == "component":
+        desc = (args.get("description") or "").strip()[:400]
+        fw = args.get("framework", "react")
+        style = args.get("style", "")
+        if not desc:
+            return {"error": "description requerido"}
+        prompt = (f"Genera componente {fw} en español. {('Estilos: ' + style) if style else ''}. "
+                  f"Función: {desc}\nDevuelve SOLO el código, sin explicaciones.")
+        max_tok = 600
+    elif code_type == "crud":
+        entity = (args.get("entity") or "").strip()[:60]
+        fields = args.get("fields") or []
+        stack = args.get("stack", "fastapi_mongo")
+        if not entity or not fields:
+            return {"error": "entity y fields requeridos"}
+        fields_str = json.dumps(fields[:10])
+        prompt = (f"Genera CRUD completo {stack} para entidad '{entity}'. "
+                  f"Campos: {fields_str}. Include: modelo, rutas GET/POST/PUT/DELETE, validación. "
+                  "Devuelve SOLO el código.")
+        max_tok = 900
+    else:  # api_route
+        route_desc = (args.get("route_description") or "").strip()[:400]
+        method = args.get("method", "GET").upper()
+        path = (args.get("path") or "/api/items").strip()[:100]
+        if not route_desc:
+            return {"error": "route_description requerido"}
+        prompt = (f"Genera ruta FastAPI {method} {path}: {route_desc}. "
+                  "Incluye Pydantic schema, handler async, manejo de errores. Solo el código.")
+        max_tok = 500
+    resp = await client.chat.completions.create(
+        model=model, messages=[{"role": "user", "content": prompt}],
+        max_tokens=max_tok, temperature=0.3,
+    )
+    return {"type": code_type, "code": resp.choices[0].message.content.strip()}
+
+
+async def _tool_generate_agent_config(args: dict, user_id: str) -> dict:
+    purpose = (args.get("agent_purpose") or "").strip()[:300]
+    if not purpose:
+        return {"error": "agent_purpose requerido"}
+    lang = args.get("language", "español")
+    client, model = llm_router.get_client("low")
+    prompt = (f"Genera config JSON para agente AI en {lang}. Propósito: {purpose}. "
+              "Responde SOLO JSON con campos: id (snake_case), name, emoji, tagline (≤80 chars), "
+              "system (≤500 chars). Sin texto extra.")
+    resp = await client.chat.completions.create(
+        model=model, messages=[{"role": "user", "content": prompt}],
+        max_tokens=300, temperature=0.5,
+    )
+    raw = resp.choices[0].message.content.strip()
+    try:
+        m = re.search(r"\{[\s\S]+\}", raw)
+        config = json.loads(m.group() if m else raw)
+    except Exception:
+        return {"error": "No se pudo parsear JSON del agente", "raw": raw}
+    tools_override = args.get("tools")
+    if tools_override and isinstance(tools_override, list):
+        config["tools"] = tools_override
+    return await _tool_create_agent(config, user_id)
+
+
+async def _tool_generate_doc(args: dict, doc_type: str) -> dict:
+    client, model = llm_router.get_client("low")
+    if doc_type == "proposal":
+        project = (args.get("project") or "").strip()[:300]
+        client_name = (args.get("client") or "").strip()[:80]
+        if not project or not client_name:
+            return {"error": "project y client requeridos"}
+        budget = args.get("budget_range", "A definir")
+        timeline = args.get("timeline", "A definir")
+        prompt = (f"Genera propuesta profesional en Markdown para cliente '{client_name}'. "
+                  f"Proyecto: {project}. Presupuesto: {budget}. Timeline: {timeline}. "
+                  "Incluye: resumen ejecutivo, alcance, entregables, inversión, next steps.")
+        max_tok = 800
+    else:  # pricing
+        product = (args.get("product") or "").strip()[:200]
+        model_type = args.get("model", "saas")
+        currency = args.get("currency", "USD")
+        if not product:
+            return {"error": "product requerido"}
+        prompt = (f"Genera tabla de precios en Markdown para '{product}' ({model_type}, {currency}). "
+                  "Incluye 3 planes con features, precios y CTA. Formato: tabla Markdown clara.")
+        max_tok = 500
+    llm_client, llm_model = llm_router.get_client("low")
+    resp = await llm_client.chat.completions.create(
+        model=llm_model, messages=[{"role": "user", "content": prompt}],
+        max_tokens=max_tok, temperature=0.4,
+    )
+    return {"type": doc_type, "content": resp.choices[0].message.content.strip()}
+
+
+async def _tool_generate_report(args: dict) -> dict:
+    import e9_analytics
+    report_type = args.get("report_type", "full")
+    tenant_id = args.get("tenant_id", "")
+    days = max(1, min(int(args.get("days", 30)), 365))
+    try:
+        return await e9_analytics.tool_report_generator(
+            report_type=report_type, tenant_id=tenant_id, period_days=days
+        )
+    except Exception as e:
+        return {"error": f"Error generando reporte: {e}"}
+
+
+async def _tool_memory_write(args: dict, user_id: str) -> dict:
+    db = _db_ref["db"]
+    key = re.sub(r"[^a-zA-Z0-9_.-]", "_", (args.get("key") or "").strip())[:80]
+    content = (args.get("content") or "").strip()[:4000]
+    if not key or not content:
+        return {"error": "key y content requeridos"}
+    tags = [str(t)[:40] for t in (args.get("tags") or [])[:10]]
+    doc = {
+        "user_id": user_id, "key": key, "content": content, "tags": tags,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.e1_memories.update_one(
+        {"user_id": user_id, "key": key},
+        {"$set": doc},
+        upsert=True,
+    )
+    return {"saved": True, "key": key, "tags": tags}
+
+
+async def _tool_memory_search(args: dict, user_id: str) -> dict:
+    db = _db_ref["db"]
+    query = (args.get("query") or "").strip()[:200]
+    if not query:
+        return {"error": "query requerido"}
+    limit = max(1, min(int(args.get("limit", 5)), 20))
+    q = {"user_id": user_id, "$or": [
+        {"key": {"$regex": query, "$options": "i"}},
+        {"content": {"$regex": query, "$options": "i"}},
+        {"tags": {"$regex": query, "$options": "i"}},
+    ]}
+    docs = [d async for d in db.e1_memories.find(q, {"_id": 0}).limit(limit)]
+    return {"memories": docs, "count": len(docs)}
+
+
+async def _tool_task_planner(args: dict) -> dict:
+    goal = (args.get("goal") or "").strip()[:400]
+    if not goal:
+        return {"error": "goal requerido"}
+    ctx = (args.get("context") or "").strip()[:300]
+    max_steps = max(3, min(int(args.get("max_steps", 7)), 15))
+    prompt = (f"Descompón el objetivo en ≤{max_steps} pasos accionables con prioridad. "
+              f"{'Contexto: ' + ctx + '. ' if ctx else ''}"
+              f"Objetivo: {goal}\n"
+              "Responde SOLO JSON: {\"steps\": [{\"step\": 1, \"action\": \"...\", \"priority\": \"high/medium/low\"}]}")
+    client, model = llm_router.get_client("low")
+    resp = await client.chat.completions.create(
+        model=model, messages=[{"role": "user", "content": prompt}],
+        max_tokens=400, temperature=0.3,
+    )
+    raw = resp.choices[0].message.content.strip()
+    try:
+        m = re.search(r"\{[\s\S]+\}", raw)
+        result = json.loads(m.group() if m else raw)
+    except Exception:
+        result = {"raw": raw}
+    result["goal"] = goal
+    return result
+
+
+async def _tool_summarize_context(args: dict) -> dict:
+    text = (args.get("text") or "").strip()[:12000]
+    if not text:
+        return {"error": "text requerido"}
+    fmt = args.get("format", "bullets")
+    max_tok = max(50, min(int(args.get("max_tokens", 200)), 500))
+    fmt_hint = {"bullets": "lista con viñetas", "paragraph": "párrafo conciso", "outline": "outline numerado"}.get(fmt, "lista")
+    prompt = f"Resume en {fmt_hint} (≤{max_tok} tokens): {text}"
+    client, model = llm_router.get_client("low")
+    resp = await client.chat.completions.create(
+        model=model, messages=[{"role": "user", "content": prompt}],
+        max_tokens=max_tok, temperature=0.2,
+    )
+    return {"summary": resp.choices[0].message.content.strip(), "format": fmt}
+
+
+# ── Dynamic tool selector (token optimization for Llama 3.1 8B) ──────────────
+
+_TOOL_BUNDLES: dict[str, set[str]] = {
+    "devops":    {"shell_run", "list_my_vps", "run_vps_command", "deploy_app_to_vps",
+                  "tail_vps_logs", "restart_vps_service", "create_checkpoint",
+                  "docker_exec", "run_tests", "list_containers", "get_platform_status", "list_jobs"},
+    "workspace": {"list_workspace_files", "read_workspace_file", "write_workspace_file",
+                  "search_replace_workspace", "search_codebase"},
+    "github":    {"github_list_repos", "github_list_files", "github_read_file",
+                  "github_search_code", "push_to_my_github"},
+    "agents":    {"create_agent", "update_agent", "delete_agent", "list_agents",
+                  "generate_agent_config"},
+    "business":  {"book_appointment", "check_availability", "list_appointments",
+                  "cancel_appointment", "paypal_invoice_card", "service_card",
+                  "provision_client_quick"},
+    "comms":     {"send_notification", "send_quick_email"},
+    "builder":   {"generate_social_post", "generate_qr_card", "generate_landing_page",
+                  "create_intake_form", "generate_haircut_preview", "generate_promo_video",
+                  "generate_audio_room_app", "generate_tiktok_app", "video_script_card",
+                  "generate_component", "generate_crud", "generate_api_route",
+                  "generate_landing_page"},
+    "analytics": {"get_platform_status", "list_jobs", "get_agent_stats",
+                  "inspect_database", "benchmark_endpoint", "get_openapi_schema",
+                  "generate_report"},
+    "business2": {"generate_proposal", "generate_pricing", "crm_lookup",
+                  "track_lead"},
+    "memory":    {"memory_write", "memory_search", "task_planner", "summarize_context"},
+}
+
+_BUNDLE_KEYWORDS: dict[str, list[str]] = {
+    "devops":    ["deploy", "server", "docker", "vps", "ssh", "restart", "service",
+                  "logs", "container", "checkpoint", "test", "migration", "git"],
+    "workspace": ["archivo", "file", "código", "code", "edita", "write", "read",
+                  "search_code", "grep", "workspace"],
+    "github":    ["github", "repo", "push", "repository", "branch"],
+    "agents":    ["agente", "agent", "crear agente", "delete agent", "list agent"],
+    "business":  ["cita", "appointment", "reserva", "disponibilidad", "pago",
+                  "factura", "invoice", "cliente", "provision"],
+    "comms":     ["notif", "notify", "email", "correo", "aviso", "mensaje"],
+    "builder":   ["genera", "generate", "landing", "social", "post", "qr",
+                  "formulario", "form", "video", "app", "component", "crud"],
+    "analytics": ["status", "jobs", "stats", "métricas", "platform", "dashboard",
+                  "benchmark", "openapi", "schema", "report", "reporte"],
+    "business2": ["propuesta", "proposal", "precio", "pricing", "lead", "crm",
+                  "contacto", "campaign"],
+    "memory":    ["recuerda", "memory", "tarea", "task", "plan", "resume",
+                  "resumen", "compress"],
+}
+
+_ALWAYS_ON = {"call_specialist_tool", "web_search", "web_browse", "list_agents"}
+_MAX_TOOLS_PER_REQUEST = 20
+
+
+def _select_tools_for_message(message: str, filtered_tools: list) -> list:
+    """Selecciona ≤MAX_TOOLS herramientas relevantes al mensaje. Token-efficient para Llama 8B."""
+    msg_lower = message.lower()
+    selected: set[str] = set(_ALWAYS_ON)
+    for bundle, keywords in _BUNDLE_KEYWORDS.items():
+        if any(kw in msg_lower for kw in keywords):
+            selected |= _TOOL_BUNDLES.get(bundle, set())
+    allowed_names = {t["function"]["name"] for t in filtered_tools}
+    selected &= allowed_names
+    result = [t for t in filtered_tools if t["function"]["name"] in selected]
+    if len(result) < 5:
+        result = filtered_tools[:_MAX_TOOLS_PER_REQUEST]
+    elif len(result) > _MAX_TOOLS_PER_REQUEST:
+        always = [t for t in result if t["function"]["name"] in _ALWAYS_ON]
+        rest = [t for t in result if t["function"]["name"] not in _ALWAYS_ON]
+        result = (always + rest)[:_MAX_TOOLS_PER_REQUEST]
+    return result
 
 
 # ============================================================
@@ -1614,6 +2594,9 @@ async def send_message(
     tools = _filter_tools(agent_tools, is_admin=is_admin) if agent_tools else None
     if tools is not None and len(tools) == 0:
         tools = None  # OpenAI rechaza tools=[]
+    # Token optimization: selecciona ≤20 tools relevantes al mensaje para Llama 3.1 8B
+    if tools is not None:
+        tools = _select_tools_for_message(data.text, tools)
     tool_calls_made = []
     extra_cost = 0
 

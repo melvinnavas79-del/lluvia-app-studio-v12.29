@@ -33,6 +33,31 @@ TOOL_NAMES = {
     "deploy_app_to_vps": 25,           # deploy completo end-to-end
     "tail_vps_logs": 0,
     "restart_vps_service": 1,
+    # ── Nuevas 30 tools E1 ────────────────────────────────────────────────────
+    "web_search": 1, "web_browse": 1,
+    "call_specialist_tool": 1,
+    # Plataforma
+    "get_platform_status": 0, "list_jobs": 0, "get_agent_stats": 0,
+    # Comms
+    "send_notification": 2, "send_quick_email": 5,
+    # Generadores contenido
+    "generate_social_post": 3, "generate_qr_card": 1,
+    "generate_landing_page": 5, "create_intake_form": 3,
+    # Awareness
+    "search_codebase": 0, "inspect_database": 0,
+    "get_openapi_schema": 0, "list_containers": 0,
+    # DevOps
+    "create_checkpoint": 2, "docker_exec": 3,
+    "run_tests": 3, "benchmark_endpoint": 2,
+    # Generadores código/UI
+    "generate_component": 5, "generate_crud": 8,
+    "generate_api_route": 5, "generate_agent_config": 10,
+    # Business/Agency
+    "generate_proposal": 6, "generate_pricing": 4,
+    "generate_report": 3, "crm_lookup": 1, "track_lead": 2,
+    # Memoria/Razonamiento
+    "memory_write": 1, "memory_search": 0,
+    "task_planner": 3, "summarize_context": 2,
 }
 
 COST_CHAT_MESSAGE = 1
@@ -360,53 +385,32 @@ AGENTS = {
         "voice": "onyx",
         "tagline": "Tu IDE full-stack: edita codigo, deploya a VPS, configura HTTPS",
         "system": (
-            "Eres Lluvia Studio, el orquestador E1 full-stack de Lluvia App Studio. "
-            "Modo: ANALISTA-EJECUTOR. Analizas primero (lees código, buscas en web si no sabes), "
-            "luego ejecutas sin pedir permiso para acciones no destructivas.\n"
-            "Si no entiendes algo → web_search primero, nunca inventes.\n"
-            "Si ves un error → analiza las causas, propón y ejecuta el fix.\n"
-            "Tienes 34 tools: workspace, VPS, GitHub, agentes, citas, pagos, apps, "
-            "búsqueda web, navegación y sub-agentes (E2-E11) via call_specialist_tool.\n\n"
-            "**WORKSPACE**:\n"
-            "**OJOS (buscar y navegar)**:\n"
-            "- web_search(query) → busca en DuckDuckGo cuando no sabes algo o necesitas docs\n"
-            "- web_browse(url) → lee el contenido completo de cualquier URL\n"
-            "  REGLA: si no entiendes algo, no inventes — busca primero.\n\n"
-            "**WORKSPACE**:\n"
-            "- list_workspace_files(app_slug) → arbol de archivos\n"
-            "- read_workspace_file(app_slug, path) → lee archivo completo\n"
-            "- write_workspace_file(app_slug, path, content) → reescribe archivo\n"
-            "- search_replace_workspace(app_slug, path, old_str, new_str) → edit puntual\n\n"
-            "**VPS / DEPLOY**:\n"
-            "- list_my_vps() → VPS del usuario\n"
-            "- run_vps_command(vps_id, command) → shell en VPS\n"
-            "- deploy_app_to_vps(vps_id, app_slug, repo_url, domain?) → deploy completo\n"
-            "- tail_vps_logs(vps_id, service, lines) → logs\n"
-            "- restart_vps_service(vps_id, service) → reinicia servicio\n"
-            "- shell_run(command) → shell local del servidor\n\n"
-            "**GITHUB**:\n"
-            "- push_to_my_github(app_name?, repo?, auto_create_repo?) → push\n"
-            "- github_list_repos() → repos del usuario\n"
-            "- github_list_files(repo, path) → archivos del repo\n"
-            "- github_read_file(repo, file_path) → lee archivo del repo\n"
-            "- github_search_code(repo, query) → busca en codigo\n\n"
-            "**AGENTES**:\n"
-            "- create_agent / update_agent / delete_agent / list_agents\n"
-            "- call_specialist_tool(agent, tool, params) → delega a E2-E11\n\n"
-            "**NEGOCIO**:\n"
-            "- book_appointment / check_availability / list_appointments / cancel_appointment\n"
-            "- paypal_invoice_card / service_card\n"
-            "- provision_client_quick(display_name, admin_email) → nuevo cliente\n\n"
-            "**GENERADORES**:\n"
-            "- generate_tiktok_app / generate_audio_room_app / generate_promo_video\n"
-            "- generate_haircut_preview / video_script_card\n\n"
-            "**REGLAS DURAS**:\n"
-            "1. ANTES de editar codigo: read_workspace_file primero.\n"
-            "2. Edicion < 10 lineas: search_replace_workspace. Mayor: write_workspace_file.\n"
-            "3. Acciones destructivas requieren confirmacion explicita del usuario.\n"
-            "4. Tono tecnico y conciso. Max 3 frases fuera de tool cards.\n"
-            "5. Para tareas E2-E11 (infra, legal, billing, analytics, social): "
-            "   usa call_specialist_tool con el agente correcto."
+            "Eres E1 — Supreme Orchestrator de Lluvia App Studio. "
+            "Rol: Senior Architect AI + CTO + DevOps Engineer + Agency Brain.\n"
+            "Modo: ANALISTA-EJECUTOR. Lees primero, luego actúas. "
+            "Si no sabes algo → web_search. Si hay un error → analiza, propón fix, ejecuta.\n\n"
+            "TOOLS POR CATEGORÍA (se cargan dinámicamente según contexto):\n"
+            "OJOS: web_search, web_browse, search_codebase, inspect_database, get_openapi_schema, "
+            "get_platform_status, list_containers\n"
+            "WORKSPACE: list/read/write_workspace_file, search_replace_workspace, search_codebase\n"
+            "VPS/DEVOPS: shell_run, list_my_vps, run_vps_command, deploy_app_to_vps, "
+            "tail_vps_logs, restart_vps_service, create_checkpoint, docker_exec, run_tests\n"
+            "GITHUB: push_to_my_github, github_list_repos/files/read/search\n"
+            "AGENTES: create/update/delete/list_agents, generate_agent_config\n"
+            "NEGOCIO: book_appointment, check_availability, list_appointments, cancel_appointment, "
+            "paypal_invoice_card, service_card, provision_client_quick\n"
+            "GENERADORES: generate_social_post, qr_card, landing_page, component, crud, "
+            "api_route, proposal, pricing, report, tiktok_app, promo_video\n"
+            "COMMS: send_notification, send_quick_email\n"
+            "ANALYTICS: get_platform_status, list_jobs, get_agent_stats, benchmark_endpoint\n"
+            "MEMORIA: memory_write/search, task_planner, summarize_context\n"
+            "CRM: crm_lookup, track_lead, create_intake_form\n"
+            "ESPECIALISTAS: call_specialist_tool(e2-e11)\n\n"
+            "REGLAS:\n"
+            "1. Antes de editar código → read_workspace_file primero.\n"
+            "2. Acciones destructivas → pide confirmación.\n"
+            "3. Tono técnico y conciso. ≤3 frases fuera de tool cards.\n"
+            "4. E2-E11 via call_specialist_tool para infra/legal/billing/social."
         ),
         "tools": [
             "shell_run",
@@ -422,6 +426,15 @@ AGENTS = {
             "list_workspace_files", "read_workspace_file", "write_workspace_file", "search_replace_workspace",
             "list_my_vps", "run_vps_command", "deploy_app_to_vps", "tail_vps_logs", "restart_vps_service",
             "call_specialist_tool",
+            # 30 nuevas tools
+            "get_platform_status", "list_jobs", "get_agent_stats",
+            "send_notification", "send_quick_email",
+            "generate_social_post", "generate_qr_card", "generate_landing_page", "create_intake_form",
+            "search_codebase", "inspect_database", "get_openapi_schema", "list_containers",
+            "create_checkpoint", "docker_exec", "run_tests", "benchmark_endpoint",
+            "generate_component", "generate_crud", "generate_api_route", "generate_agent_config",
+            "generate_proposal", "generate_pricing", "generate_report", "crm_lookup", "track_lead",
+            "memory_write", "memory_search", "task_planner", "summarize_context",
         ],
     },
     # ── E2-E9 Enterprise Sub-Orchestrators (additive) ─────────────────────────
